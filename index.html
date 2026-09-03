@@ -1,0 +1,836 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game Theory Live</title>
+<meta name="description" content="A live classroom instrument for game-theory exercises.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#EDF1F6; --surface:#FFFFFF; --surface-2:#F5F8FC; --raised:#FFFFFF;
+  --ink:#17222F; --ink-2:#39485A; --muted:#66788C; --faint:#93A3B5;
+  --line:#D9E1EB; --line-2:#E7EDF4;
+  --accent:#0E7A6E; --accent-ink:#0B5B52; --accent-wash:#E1F1EE;
+  --gold:#A8710F; --gold-wash:#F6ECD8;
+  --good:#2C7A54; --good-wash:#E2F0E7;
+  --bad:#BB4632; --bad-wash:#F6E4DF;
+  --warn:#B67A12;
+  --shadow:0 1px 2px rgba(20,35,55,.06),0 6px 20px rgba(20,35,55,.07);
+  --shadow-lg:0 2px 6px rgba(20,35,55,.08),0 18px 46px rgba(20,35,55,.13);
+  --radius:14px; --radius-sm:9px;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C131C; --surface:#131E2A; --surface-2:#182634; --raised:#1B2836;
+    --ink:#E9EFF6; --ink-2:#B9C7D6; --muted:#8598AB; --faint:#5E7085;
+    --line:#26333F; --line-2:#213040;
+    --accent:#3BB9A9; --accent-ink:#8FE0D4; --accent-wash:#123029;
+    --gold:#D6A548; --gold-wash:#2E2415;
+    --good:#4FB483; --good-wash:#16301F; --bad:#DE7A66; --bad-wash:#331A15; --warn:#D8A23E;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px rgba(0,0,0,.4);
+    --shadow-lg:0 2px 8px rgba(0,0,0,.5),0 22px 50px rgba(0,0,0,.55);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C131C; --surface:#131E2A; --surface-2:#182634; --raised:#1B2836;
+  --ink:#E9EFF6; --ink-2:#B9C7D6; --muted:#8598AB; --faint:#5E7085;
+  --line:#26333F; --line-2:#213040;
+  --accent:#3BB9A9; --accent-ink:#8FE0D4; --accent-wash:#123029;
+  --gold:#D6A548; --gold-wash:#2E2415;
+  --good:#4FB483; --good-wash:#16301F; --bad:#DE7A66; --bad-wash:#331A15; --warn:#D8A23E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px rgba(0,0,0,.4);
+  --shadow-lg:0 2px 8px rgba(0,0,0,.5),0 22px 50px rgba(0,0,0,.55);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+img{max-width:100%}
+h1,h2,h3{font-family:"Fraunces",Georgia,serif; font-weight:600; text-wrap:balance; margin:0; letter-spacing:-.01em; color:var(--ink)}
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace; font-variant-numeric:tabular-nums}
+button{font-family:inherit; cursor:pointer}
+input,select{font-family:inherit; font-size:1rem}
+a{color:var(--accent-ink)}
+code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding:1px 5px; border-radius:5px; font-size:.85em; border:1px solid var(--line)}
+
+.shell{max-width:1120px; margin:0 auto; padding:20px clamp(14px,3vw,30px) 72px}
+.topbar{display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:14px 4px 20px}
+.brand{display:flex; align-items:center; gap:12px; margin-right:auto}
+.brand .glyph{width:38px;height:38px;border-radius:10px;background:
+  radial-gradient(circle at 30% 28%,var(--accent) 0 42%,transparent 44%),
+  radial-gradient(circle at 72% 74%,var(--gold) 0 34%,transparent 36%),
+  var(--surface); border:1px solid var(--line); box-shadow:var(--shadow); flex:none}
+.brand h1{font-size:1.32rem}
+.brand .sub{font-size:.72rem; letter-spacing:.13em; text-transform:uppercase; color:var(--muted); font-weight:600}
+.pill{display:inline-flex; align-items:center; gap:7px; padding:6px 12px; border-radius:999px; font-size:.78rem; font-weight:600; border:1px solid var(--line); background:var(--surface); color:var(--ink-2); white-space:nowrap}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.pill.live{color:var(--good); border-color:color-mix(in srgb,var(--good) 40%,var(--line))}
+.pill.live .dot{background:var(--good); box-shadow:0 0 0 0 color-mix(in srgb,var(--good) 60%,transparent); animation:pulse 2s infinite}
+.pill.wait{color:var(--warn)}
+.pill.reveal{color:var(--gold); border-color:color-mix(in srgb,var(--gold) 40%,var(--line))}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--good) 55%,transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+.ghost-btn{background:var(--surface); border:1px solid var(--line); color:var(--ink-2); padding:8px 14px; border-radius:var(--radius-sm); font-weight:600; font-size:.85rem; transition:.15s}
+.ghost-btn:hover{border-color:var(--accent); color:var(--accent-ink)}
+
+.card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow)}
+.stage{padding:clamp(20px,3.4vw,40px)}
+.eyebrow{font-size:.74rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent-ink); font-weight:600}
+.eyebrow.gold{color:var(--gold)}
+.lead{color:var(--ink-2); font-size:1.02rem; max-width:60ch}
+
+.field{display:flex; flex-direction:column; gap:6px}
+.field label{font-size:.8rem; font-weight:600; color:var(--muted); letter-spacing:.02em}
+.input{width:100%; padding:11px 13px; border-radius:var(--radius-sm); border:1px solid var(--line); background:var(--surface-2); color:var(--ink); transition:.15s}
+.input:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-wash)}
+.btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:12px 20px; border-radius:var(--radius-sm); border:1px solid transparent; background:var(--accent); color:#fff; font-weight:600; font-size:.95rem; transition:.15s; box-shadow:var(--shadow)}
+.btn:hover{filter:brightness(1.05)}
+.btn:active{transform:translateY(1px)}
+.btn[disabled]{opacity:.5; cursor:not-allowed; filter:none}
+.btn.gold{background:var(--gold)}
+.btn.neutral{background:var(--surface); color:var(--ink); border-color:var(--line)}
+.btn.neutral:hover{border-color:var(--accent)}
+.btn.big{padding:15px 26px; font-size:1.05rem}
+.btn.wide{width:100%}
+
+.choices{display:grid; gap:14px}
+.choice{position:relative; text-align:left; padding:18px 18px 16px; border-radius:var(--radius); border:1.5px solid var(--line); background:var(--surface-2); transition:.16s; display:flex; flex-direction:column; gap:5px}
+.choice:hover{border-color:var(--accent); transform:translateY(-1px)}
+.choice.sel{border-color:var(--accent); background:var(--accent-wash); box-shadow:0 0 0 3px var(--accent-wash)}
+.choice.sel.coop{border-color:var(--good); background:var(--good-wash); box-shadow:0 0 0 3px var(--good-wash)}
+.choice.sel.defect{border-color:var(--bad); background:var(--bad-wash); box-shadow:0 0 0 3px var(--bad-wash)}
+.choice .ttl{font-weight:700; font-size:1.06rem; color:var(--ink)}
+.choice .desc{font-size:.86rem; color:var(--muted)}
+.choice .tag{position:absolute; top:14px; right:14px; font-size:.68rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted)}
+
+.stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px; background:var(--line-2); border-radius:var(--radius); overflow:hidden; border:1px solid var(--line)}
+.stat{background:var(--surface); padding:16px 18px; display:flex; flex-direction:column; gap:3px}
+.stat .k{font-size:.74rem; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); font-weight:600}
+.stat .v{font-size:1.7rem; font-weight:600; font-family:"Fraunces",serif; letter-spacing:-.02em; line-height:1.05}
+.stat .v.mono{font-family:"IBM Plex Mono",monospace; font-size:1.5rem}
+.stat .note{font-size:.76rem; color:var(--faint)}
+.stat.hl .v{color:var(--gold)}
+.stat.good .v{color:var(--good)} .stat.bad .v{color:var(--bad)}
+
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+.grid-analysis{display:grid; grid-template-columns:1.15fr .85fr; gap:20px; align-items:start}
+@media(max-width:800px){.grid2,.grid-analysis{grid-template-columns:1fr}}
+
+.chart-card{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius); padding:18px}
+.chart-card h3{font-size:1rem; margin-bottom:4px}
+.chart-card .cap{font-size:.8rem; color:var(--muted); margin-bottom:12px}
+svg{display:block; width:100%; height:auto; overflow:visible}
+
+.note-box{border-left:3px solid var(--gold); background:var(--gold-wash); padding:12px 16px; border-radius:0 var(--radius-sm) var(--radius-sm) 0; font-size:.9rem; color:var(--ink-2)}
+.note-box.teal{border-color:var(--accent); background:var(--accent-wash)}
+.note-box b{color:var(--ink)}
+
+.matrix{border-collapse:separate; border-spacing:0; width:100%; font-size:.9rem}
+.matrix td,.matrix th{border:1px solid var(--line); padding:12px 10px; text-align:center}
+.matrix th{background:var(--surface-2); color:var(--muted); font-weight:600; font-size:.78rem; letter-spacing:.03em}
+.matrix .cell{font-family:"IBM Plex Mono",monospace; font-weight:500}
+.matrix .nash{background:var(--bad-wash)} .matrix .pareto{background:var(--good-wash)}
+
+.console{display:grid; grid-template-columns:290px 1fr; gap:20px; align-items:start}
+@media(max-width:820px){.console{grid-template-columns:1fr}}
+.rail{position:sticky; top:16px; display:flex; flex-direction:column; gap:14px}
+.rail-sec{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow)}
+.rail-sec h3{font-size:.8rem; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); font-weight:600; margin-bottom:12px}
+.game-pick{display:flex; flex-direction:column; gap:8px}
+.gp{display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:var(--radius-sm); border:1px solid var(--line); background:var(--surface-2); text-align:left; transition:.14s; width:100%}
+.gp:hover{border-color:var(--accent)}
+.gp.on{border-color:var(--accent); background:var(--accent-wash)}
+.gp .n{font-weight:600; font-size:.9rem; color:var(--ink)}
+.gp .d{font-size:.74rem; color:var(--muted)}
+.gp .ic{width:26px;height:26px;flex:none;border-radius:7px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);font-weight:700;font-size:.8rem;color:var(--accent-ink)}
+.rowbtns{display:flex; gap:8px; flex-wrap:wrap}
+.seg{display:flex; align-items:center; gap:8px}
+.count-big{font-family:"Fraunces",serif; font-size:2.4rem; font-weight:600; line-height:1}
+
+.tinylabel{font-size:.76rem; color:var(--muted); font-weight:600}
+.center{text-align:center}
+.stack{display:flex; flex-direction:column; gap:16px}
+.row{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+.spread{justify-content:space-between}
+.divider{height:1px; background:var(--line-2); margin:4px 0}
+.mut{color:var(--muted)} .sm{font-size:.85rem}
+
+.setup-wrap{max-width:640px; margin:4vh auto 0}
+.paramgrid{display:grid; grid-template-columns:1fr 1fr; gap:12px}
+.legend{display:flex; gap:14px; flex-wrap:wrap; font-size:.78rem; color:var(--muted); margin-top:10px}
+.legc{display:inline-flex; align-items:center; gap:6px}
+.swatch{width:11px;height:11px;border-radius:3px}
+.steps{counter-reset:s; display:flex; flex-direction:column; gap:14px; margin-top:8px}
+.step{display:flex; gap:12px}
+.step .num{counter-increment:s; flex:none; width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:700;font-size:.85rem}
+.step .num::before{content:counter(s)}
+.step .body{font-size:.92rem; color:var(--ink-2); padding-top:2px}
+.step .body b{color:var(--ink)}
+
+.toast{position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); background:var(--ink); color:var(--bg); padding:11px 20px; border-radius:999px; font-size:.88rem; font-weight:500; box-shadow:var(--shadow-lg); opacity:0; transition:.25s; pointer-events:none; z-index:50}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+.badge{font-size:.7rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:3px 8px; border-radius:6px; background:var(--accent-wash); color:var(--accent-ink)}
+.myval{font-family:"IBM Plex Mono",monospace; font-weight:600; color:var(--accent-ink)}
+</style>
+</head>
+<body>
+
+<!-- ============================================================= -->
+<!--  Firebase JS SDK (compat build) — loads from Google's CDN.     -->
+<!-- ============================================================= -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">
+      <div class="glyph" aria-hidden="true"></div>
+      <div>
+        <h1>Game Theory Live</h1>
+        <div class="sub">Strategic Interaction Lab</div>
+      </div>
+    </div>
+    <span id="phasePill" class="pill"><span class="dot"></span><span id="phaseTxt">Connecting…</span></span>
+    <button id="roleBtn" class="ghost-btn">Instructor</button>
+    <button id="themeBtn" class="ghost-btn" title="Toggle theme">◐</button>
+  </div>
+  <div id="app"><div class="card stage center" style="padding:60px"><div class="mut">Loading the session…</div></div></div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   ①  PASTE YOUR FIREBASE CONFIG HERE  (see the setup screen for the 4 steps)
+   Create a free Firebase project → Realtime Database → Web app → copy config.
+   Replace the placeholder strings below. databaseURL is REQUIRED.
+   ═══════════════════════════════════════════════════════════════════════ */
+const FIREBASE_CONFIG = {
+  apiKey:      "PASTE_YOUR_API_KEY",
+  authDomain:  "PASTE_YOUR_PROJECT.firebaseapp.com",
+  databaseURL: "https://PASTE_YOUR_PROJECT-default-rtdb.firebaseio.com",
+  projectId:   "PASTE_YOUR_PROJECT"
+};
+/* Optional: change this per class or term to start with a fresh, empty room. */
+const ROOM = "main";
+/* ═══════════════════════════════════════════════════════════════════════ */
+
+const GAMES = {
+  guess23: { name:"Guess ⅔ of the Average", short:"⅔", icon:"⅔",
+    blurb:"Pick a number; target is a fraction of the class mean." },
+  pd: { name:"Prisoner's Dilemma", short:"PD", icon:"PD",
+    blurb:"Hold price or undercut — against a random rival." },
+  publicgoods: { name:"Public Goods", short:"PG", icon:"PG",
+    blurb:"Contribute to a shared fund that pays everyone." }
+};
+const DEFAULT_CONFIG = {
+  guess23:{ frac:2/3, min:0, max:100 },
+  pd:{ R:3, T:5, S:0, P:1, unit:"$M profit" },
+  publicgoods:{ E:20, mpcr:0.5 }
+};
+
+const $ = s => document.querySelector(s);
+const el = (t,c,txt)=>{const e=document.createElement(t); if(c)e.className=c; if(txt!=null)e.textContent=txt; return e;};
+const fmt = (n,d=1)=> (n==null||isNaN(n))?"—":Number(n).toLocaleString(undefined,{maximumFractionDigits:d,minimumFractionDigits:0});
+const pct = n => (n==null||isNaN(n))?"—":Math.round(n*100)+"%";
+function hash(str){let h=5381; for(let i=0;i<str.length;i++)h=((h<<5)+h+str.charCodeAt(i))>>>0; return h.toString(36);}
+function toast(m){const t=$("#toast"); t.textContent=m; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2200);}
+function ls(k,v){try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v);}catch(e){ return null; }}
+
+let myId = ls("gtl_id");
+if(!myId){ myId = "s_"+Math.random().toString(36).slice(2,9); ls("gtl_id",myId); }
+let myName = ls("gtl_name") || "";
+
+(function initTheme(){
+  const saved = ls("gtl_theme");
+  if(saved) document.documentElement.setAttribute("data-theme",saved);
+  $("#themeBtn").onclick=()=>{
+    const cur = document.documentElement.getAttribute("data-theme");
+    const isDark = cur ? cur==="dark" : matchMedia("(prefers-color-scheme:dark)").matches;
+    const next = isDark?"light":"dark";
+    document.documentElement.setAttribute("data-theme",next); ls("gtl_theme",next);
+  };
+})();
+
+/* ═══════════════════════ state + data layer (Firebase) ═══════════════════════ */
+let fb=null, control=null, allSubs={}, subs=[], curKey=null;
+let role = ls("gtl_role")==="teacher" ? "teacher" : "student";
+let unlocked = ls("gtl_role")==="teacher";
+
+const roundKey = (g,r)=> g+"-"+r;
+const CTRL_PATH = ()=> ROOM+"/control";
+const SUBS_PATH = ()=> ROOM+"/subs";
+
+function configMissing(){ return !FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.indexOf("PASTE")===0 || FIREBASE_CONFIG.databaseURL.indexOf("PASTE")>-1; }
+
+function recompute(){
+  curKey = control && control.activeGame ? roundKey(control.activeGame,control.round) : null;
+  subs = curKey ? Object.values(allSubs).filter(s=>s && s.roundKey===curKey) : [];
+}
+
+function boot(){
+  if(typeof firebase==="undefined"){ renderSdkError(); return; }
+  if(configMissing()){ renderSetup(); return; }
+  try{
+    fb = firebase.initializeApp(FIREBASE_CONFIG) && firebase.database();
+  }catch(e){ renderSetup(e); return; }
+  fb.ref(CTRL_PATH()).on("value",
+    snap=>{ control = snap.exists()?snap.val():null; recompute(); render(); },
+    err=>{ console.warn("control",err); renderRulesError(); });
+  fb.ref(SUBS_PATH()).on("value",
+    snap=>{ allSubs = snap.val()||{}; recompute(); render(); },
+    err=>{ console.warn("subs",err); });
+}
+document.addEventListener("DOMContentLoaded", boot);
+
+async function writeControl(patch){
+  try{
+    const ref = fb.ref(CTRL_PATH());
+    const cur = await ref.once("value");
+    if(cur.exists()) await ref.update(patch);
+    else await ref.set(Object.assign({createdAt:Date.now()},patch));
+  }catch(e){ toast("Couldn't update — check your connection"); }
+}
+function cfg(game){ return Object.assign({}, DEFAULT_CONFIG[game], (control&&control.config&&control.config[game])||{}); }
+
+async function submit(payload){
+  const key=roundKey(control.activeGame,control.round);
+  const doc={ roundKey:key, game:control.activeGame, round:control.round, studentId:myId, name:myName||"Anon", ts:Date.now() };
+  Object.assign(doc,payload);
+  try{ await fb.ref(SUBS_PATH()+"/"+key+"__"+myId).set(doc); }
+  catch(e){ toast("Submit failed — check connection"); }
+}
+function mySub(){ return subs.find(s=>s.studentId===myId) || null; }
+
+async function clearRound(){
+  if(!control||!control.activeGame) return;
+  const key=roundKey(control.activeGame,control.round);
+  for(const s of subs.slice()){ try{ await fb.ref(SUBS_PATH()+"/"+key+"__"+s.studentId).remove(); }catch(e){} }
+  toast("Round data cleared");
+}
+
+/* ═══════════════════════ RENDER ROOT ═══════════════════════ */
+function render(){
+  syncPhasePill();
+  const app = $("#app");
+  if(!control || !control.activeGame){
+    app.replaceChildren(role==="teacher" && unlocked ? teacherConsole() : studentWaiting());
+    return;
+  }
+  if(role==="teacher" && unlocked){ app.replaceChildren(teacherConsole()); return; }
+  app.replaceChildren(studentView());
+}
+function syncPhasePill(){
+  const p=$("#phasePill"), t=$("#phaseTxt");
+  p.className="pill";
+  if(!control||!control.activeGame){ t.textContent="Waiting to start"; p.classList.add("wait"); return; }
+  if(control.phase==="open"){ p.classList.add("live"); t.textContent="Submissions open · "+GAMES[control.activeGame].short+" R"+control.round; }
+  else if(control.phase==="revealed"){ p.classList.add("reveal"); t.textContent="Results revealed · "+GAMES[control.activeGame].short+" R"+control.round; }
+  else { p.classList.add("wait"); t.textContent="Round set — not open yet"; }
+}
+$("#roleBtn").onclick=()=>{
+  if(role==="teacher"){ role="student"; unlocked=false; ls("gtl_role","student"); $("#roleBtn").textContent="Instructor"; render(); return; }
+  openInstructorGate();
+};
+function refreshRoleBtn(){ $("#roleBtn").textContent = (role==="teacher"&&unlocked)?"Exit console":"Instructor"; }
+
+/* ═══════════════════════ STUDENT ═══════════════════════ */
+function studentWaiting(){
+  const c = el("div","card stage center"); c.style.padding="clamp(30px,6vw,64px)";
+  c.append(nameStripIfNeeded());
+  const h=el("h2"); h.style.fontSize="1.6rem"; h.textContent="Waiting for your instructor to open a round";
+  const p=el("p","lead"); p.style.margin="10px auto 0"; p.textContent="Keep this page open. When a game starts, it'll appear here automatically — no refresh needed.";
+  c.append(el("div","eyebrow","Live classroom"), h, p);
+  return c;
+}
+function nameStripIfNeeded(){
+  const wrap=el("div"); wrap.style.maxWidth="420px"; wrap.style.margin="0 auto 22px";
+  if(myName){
+    const r=el("div","row spread"); r.style.background="var(--surface-2)"; r.style.border="1px solid var(--line)"; r.style.borderRadius="var(--radius-sm)"; r.style.padding="9px 9px 9px 14px";
+    r.append(el("span","sm mut","Playing as"));
+    const nm=el("span"); nm.style.fontWeight="700"; nm.textContent=myName; r.append(nm);
+    const b=el("button","ghost-btn","Change"); b.onclick=()=>{ myName=""; ls("gtl_name",""); render(); }; r.append(b);
+    wrap.append(r); return wrap;
+  }
+  const f=el("div","field");
+  f.append(Object.assign(el("label"),{textContent:"Enter your name to join"}));
+  const row=el("div","row");
+  const inp=el("input","input"); inp.placeholder="e.g. Priya M."; inp.style.flex="1"; inp.maxLength=28;
+  const b=el("button","btn","Join");
+  const go=()=>{ const v=inp.value.trim(); if(!v){inp.focus();return;} myName=v; ls("gtl_name",v); render(); };
+  b.onclick=go; inp.onkeydown=e=>{if(e.key==="Enter")go();};
+  row.append(inp,b); f.append(row); wrap.append(f);
+  return wrap;
+}
+function studentView(){
+  const g=control.activeGame;
+  if(control.phase==="revealed") return analysisView(false);
+  const c=el("div","card stage");
+  c.append(el("div","eyebrow gold",GAMES[g].name));
+  if(!myName){ const w=el("div"); w.style.marginTop="8px"; w.append(nameStripIfNeeded()); c.append(w); return c; }
+  if(control.phase!=="open"){
+    const h=el("h2"); h.style.fontSize="1.5rem"; h.style.marginTop="6px"; h.textContent="Round "+control.round+" is set up";
+    c.append(h, el("p","lead","Waiting for your instructor to open submissions…"));
+    return c;
+  }
+  if(g==="guess23") studentGuess(c);
+  else if(g==="pd") studentPD(c);
+  else studentPG(c);
+  return c;
+}
+function submittedBadge(text){
+  const box=el("div","note-box teal"); box.style.marginTop="16px";
+  box.innerHTML="<b>Submitted.</b> "+text+" You can change it until the instructor reveals results.";
+  return box;
+}
+function liveCount(){
+  const r=el("div","row"); r.style.marginTop="18px"; r.style.gap="8px";
+  r.append(el("span","badge",subs.length+" submitted"), el("span","sm mut","· results hidden until reveal"));
+  return r;
+}
+function studentGuess(c){
+  const cf=cfg("guess23"); const cur=mySub();
+  const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="6px 0 4px"; h.textContent="Pick a whole number from "+cf.min+" to "+cf.max;
+  c.append(h, el("p","lead","The winner is whoever is closest to "+fmt(cf.frac*100,0)+"% of the average of everyone's guesses."));
+  const f=el("div","field"); f.style.maxWidth="260px"; f.style.marginTop="18px";
+  const inp=el("input","input mono"); inp.type="number"; inp.min=cf.min; inp.max=cf.max; inp.placeholder="0–100"; inp.style.fontSize="1.4rem"; inp.style.textAlign="center";
+  if(cur) inp.value=cur.value;
+  const b=el("button","btn big wide","Submit guess"); b.style.marginTop="12px"; b.style.maxWidth="260px";
+  const go=async()=>{ let v=Math.round(Number(inp.value)); if(isNaN(v)||v<cf.min||v>cf.max){toast("Enter "+cf.min+"–"+cf.max);inp.focus();return;}
+    await submit({value:v}); toast(cur?"Guess updated":"Guess submitted"); };
+  b.onclick=go; inp.onkeydown=e=>{if(e.key==="Enter")go();};
+  f.append(inp); c.append(f,b);
+  if(cur) c.append(submittedBadge("Your guess: <span class='myval'>"+cur.value+"</span>."));
+  c.append(liveCount());
+}
+function studentPD(c){
+  const cf=cfg("pd"); const cur=mySub();
+  const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="6px 0 4px"; h.textContent="You're one of two firms setting price";
+  c.append(h, el("p","lead","You'll be matched with a random classmate. Payoffs ("+cf.unit+") depend on both choices — pick yours."));
+  c.append(pdMatrix(cf, cur?cur.choice:null));
+  const ch=el("div","choices"); ch.style.marginTop="18px"; ch.style.gridTemplateColumns="1fr 1fr";
+  const mk=(key,ttl,desc)=>{const t=el("button","choice"+(cur&&cur.choice===key?" sel "+(key==="C"?"coop":"defect"):""));
+    t.append(el("span","tag",key==="C"?"Cooperate":"Defect"),el("span","ttl",ttl),el("span","desc",desc));
+    t.onclick=async()=>{ await submit({choice:key}); toast(key==="C"?"Held price":"Undercut"); }; return t;};
+  ch.append(
+    mk("C","Hold price high","Both hold → each earns "+cf.R+". The cooperative outcome."),
+    mk("D","Undercut rival","Tempting: if they hold, you grab "+cf.T+".")
+  );
+  c.append(ch);
+  if(cur) c.append(submittedBadge("Your move: <span class='myval'>"+(cur.choice==="C"?"Hold price":"Undercut")+"</span>."));
+  c.append(liveCount());
+}
+function studentPG(c){
+  const cf=cfg("publicgoods"); const cur=mySub();
+  const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="6px 0 4px"; h.textContent="You have "+cf.E+" tokens";
+  c.append(h, el("p","lead","Contribute any amount to the shared fund. The fund is boosted and split among everyone: each token you give returns "+cf.mpcr+" tokens to every member. Tokens you keep are yours."));
+  const cur0 = cur?cur.contrib:0;
+  const f=el("div"); f.style.marginTop="20px"; f.style.maxWidth="440px";
+  const val=el("div","count-big mono"); val.style.color="var(--accent-ink)"; val.textContent=cur0;
+  const sub=el("div","sm mut"); sub.style.marginBottom="10px"; const upd=v=>{ sub.textContent="Contribute "+v+" · keep "+(cf.E-v)+" for yourself"; }; upd(cur0);
+  const rng=el("input"); rng.type="range"; rng.min=0; rng.max=cf.E; rng.step=1; rng.value=cur0; rng.style.width="100%"; rng.style.accentColor="var(--accent)";
+  rng.oninput=()=>{ val.textContent=rng.value; upd(rng.value); };
+  const b=el("button","btn big wide","Submit contribution"); b.style.marginTop="16px";
+  b.onclick=async()=>{ await submit({contrib:Number(rng.value)}); toast(cur?"Updated":"Contribution submitted"); };
+  f.append(el("div","tinylabel","Your contribution"),val,sub,rng,b);
+  c.append(f);
+  if(cur) c.append(submittedBadge("You contributed <span class='myval'>"+cur.contrib+"</span> of "+cf.E+"."));
+  c.append(liveCount());
+}
+
+/* ═══════════════════════ ANALYSIS ═══════════════════════ */
+function analysisView(teacher){
+  const g=control.activeGame;
+  const c=el("div","stack");
+  const head=el("div","card stage");
+  head.append(el("div","eyebrow gold","Results · Round "+control.round),
+    Object.assign(el("h2"),{textContent:GAMES[g].name,style:"font-size:1.7rem;margin-top:4px"}));
+  const n=subs.length;
+  head.append(el("p","lead", n+" "+(n===1?"response":"responses")+" in. "+revealNarr(g)));
+  c.append(head);
+  if(n===0){ const e=el("div","card stage center mut"); e.textContent="No submissions to analyze yet."; c.append(e); return c; }
+  if(g==="guess23") c.append(analyzeGuess());
+  else if(g==="pd") c.append(analyzePD());
+  else c.append(analyzePG());
+  return c;
+}
+function revealNarr(g){
+  if(g==="guess23") return "Where did the class land relative to pure rationality?";
+  if(g==="pd") return "Did the class cooperate or chase the dominant strategy?";
+  return "How close did the group get to the socially optimal outcome?";
+}
+function analyzeGuess(){
+  const cf=cfg("guess23");
+  const vals=subs.map(s=>Number(s.value)).filter(v=>!isNaN(v)).sort((a,b)=>a-b);
+  const n=vals.length, mean=vals.reduce((a,b)=>a+b,0)/n;
+  const target=cf.frac*mean;
+  const median = n%2?vals[(n-1)/2]:(vals[n/2-1]+vals[n/2])/2;
+  let best=Infinity,winners=[]; subs.forEach(s=>{const d=Math.abs(Number(s.value)-target); if(d<best-1e-9){best=d;winners=[s];}else if(Math.abs(d-best)<1e-9)winners.push(s);});
+  const zeros=vals.filter(v=>v===0).length;
+  const markers=[{x:50,l:"L0 · random (50)"},{x:100*cf.frac*0.5,l:"L1 (33)"},{x:100*cf.frac*cf.frac*0.5,l:"L2 (22)"},{x:target,l:"Target",strong:true}];
+  const wrap=el("div","grid-analysis");
+  const left=el("div","chart-card");
+  left.append(Object.assign(el("h3"),{textContent:"Distribution of guesses"}),
+    Object.assign(el("div","cap"),{textContent:"Each bar counts guesses in a 5-wide bin. Markers show levels of strategic reasoning."}));
+  left.append(histogram(vals,cf.min,cf.max,5,markers,target));
+  left.append(levelLegend());
+  wrap.append(left);
+  const right=el("div","stack");
+  const st=el("div","stats");
+  st.append(statTile("Class average",fmt(mean,1),"of all guesses"),
+    statTile("⅔ Target",fmt(target,1),"closest wins",true),
+    statTile("Median",fmt(median,0)),
+    statTile("Guessed 0",zeros+" ("+pct(zeros/n)+")","fully rational"));
+  right.append(st);
+  const win=el("div","chart-card");
+  win.append(Object.assign(el("h3"),{textContent:winners.length>1?"Winners":"Winner"}));
+  const wl=el("div"); wl.style.marginTop="6px";
+  winners.slice(0,6).forEach(w=>{ const r=el("div","row spread"); r.style.padding="6px 0"; r.style.borderBottom="1px solid var(--line-2)";
+    r.append(el("span",null,w.name), Object.assign(el("span","mono"),{textContent:w.value})); wl.append(r); });
+  win.append(wl); win.append(Object.assign(el("div","sm mut"),{textContent:"Closest to "+fmt(target,1)+".",style:"margin-top:8px"}));
+  right.append(win);
+  const nb=el("div","note-box");
+  const avgLevel = mean>0 ? Math.max(0, Math.log(mean/50)/Math.log(cf.frac)) : 5;
+  nb.innerHTML="<b>Teaching point:</b> the only Nash equilibrium is everyone guessing 0. The class average of "+fmt(mean,1)+" implies roughly <b>"+fmt(avgLevel,1)+" levels</b> of iterated \"if they think, then I think…\" reasoning — real people stop a few steps short of full rationality (level-k thinking).";
+  right.append(nb);
+  wrap.append(right);
+  return wrap;
+}
+function levelLegend(){
+  const l=el("div","legend");
+  [["L0 = naïve","var(--faint)"],["L1–L2 = strategic","var(--accent)"],["Target","var(--gold)"]].forEach(([t,col])=>{
+    const s=el("span","legc"); const sw=el("span","swatch"); sw.style.background=col; s.append(sw,document.createTextNode(t)); l.append(s);});
+  return l;
+}
+function analyzePD(){
+  const cf=cfg("pd");
+  const nC=subs.filter(s=>s.choice==="C").length, nD=subs.filter(s=>s.choice==="D").length, n=nC+nD;
+  const p=n?nC/n:0;
+  const eC=p*cf.R+(1-p)*cf.S, eD=p*cf.T+(1-p)*cf.P;
+  const realized=p*eC+(1-p)*eD;
+  const wrap=el("div","grid-analysis");
+  const left=el("div","chart-card");
+  left.append(Object.assign(el("h3"),{textContent:"What the class chose"}));
+  left.append(Object.assign(el("div","cap"),{textContent:"Cooperate = hold price; Defect = undercut."}));
+  left.append(barChart([{label:"Cooperate (hold)",value:nC,color:"var(--good)"},{label:"Defect (undercut)",value:nD,color:"var(--bad)"}], n));
+  const eg=el("div"); eg.style.marginTop="18px";
+  eg.append(Object.assign(el("h3"),{textContent:"Expected payoff vs a random classmate",style:"font-size:.95rem;margin-bottom:4px"}));
+  eg.append(Object.assign(el("div","cap"),{textContent:"Given "+pct(p)+" of the class cooperated."}));
+  eg.append(barChart([{label:"If you cooperate",value:+eC.toFixed(2),color:"var(--good)"},{label:"If you defect",value:+eD.toFixed(2),color:"var(--bad)"}], Math.max(cf.T,eD,eC), true));
+  left.append(eg);
+  wrap.append(left);
+  const right=el("div","stack");
+  const st=el("div","stats");
+  st.append(statTile("Cooperation rate",pct(p),nC+" of "+n,true),
+    statTile("Avg payoff earned",fmt(realized,2),cf.unit),
+    statTile("If all cooperated",fmt(cf.R,2),"the (C,C) payoff","good"),
+    statTile("Left on the table",fmt(cf.R-realized,2),"per player","bad"));
+  right.append(st);
+  right.append(pdMatrix(cf,null,true));
+  const nb=el("div","note-box");
+  nb.innerHTML="<b>Teaching point:</b> defection strictly dominates — whatever your rival does, undercutting pays more ("+cf.T+">"+cf.R+" and "+cf.P+">"+cf.S+"). So rational play drives both firms to (Defect, Defect), earning "+cf.P+" each, when mutual cooperation would have paid "+cf.R+". The class "+ (p>0.5?"resisted the pull toward":"fell into") +" the dominant strategy.";
+  right.append(nb);
+  wrap.append(right);
+  return wrap;
+}
+function analyzePG(){
+  const cf=cfg("publicgoods");
+  const contribs=subs.map(s=>Number(s.contrib)).filter(v=>!isNaN(v));
+  const n=contribs.length, total=contribs.reduce((a,b)=>a+b,0), avg=total/n;
+  const perHead=cf.mpcr*total;
+  const freeRiders=contribs.filter(v=>v===0).length, fullCoop=contribs.filter(v=>v===cf.E).length;
+  const groupEarnings=contribs.reduce((a,c)=>a+(cf.E-c)+perHead,0);
+  const maxEarnings=n*(cf.mpcr*(n*cf.E));
+  const nashEarnings=n*cf.E;
+  const efficiency=(groupEarnings-nashEarnings)/(maxEarnings-nashEarnings);
+  const wrap=el("div","grid-analysis");
+  const left=el("div","chart-card");
+  left.append(Object.assign(el("h3"),{textContent:"How much each person contributed"}),
+    Object.assign(el("div","cap"),{textContent:"Bins across the 0–"+cf.E+" token range. Left pile = free-riders, right pile = full contributors."}));
+  left.append(histogram(contribs,0,cf.E,Math.max(1,Math.round(cf.E/10)),[{x:avg,l:"Avg "+fmt(avg,1),strong:true}],avg));
+  const bar=el("div"); bar.style.marginTop="18px";
+  bar.append(Object.assign(el("h3"),{textContent:"Group earnings vs the two benchmarks",style:"font-size:.95rem;margin-bottom:8px"}));
+  bar.append(barChart([
+    {label:"Nash (all keep)",value:Math.round(nashEarnings),color:"var(--bad)"},
+    {label:"This class",value:Math.round(groupEarnings),color:"var(--accent)"},
+    {label:"Social optimum",value:Math.round(maxEarnings),color:"var(--good)"}
+  ], maxEarnings, false, " tok"));
+  left.append(bar);
+  wrap.append(left);
+  const right=el("div","stack");
+  const st=el("div","stats");
+  st.append(statTile("Avg contribution",fmt(avg,1)+" / "+cf.E,pct(avg/cf.E)+" of endowment",true),
+    statTile("Group efficiency",pct(efficiency),"of gains captured","good"),
+    statTile("Free-riders",freeRiders,"contributed 0","bad"),
+    statTile("Full contributors",fullCoop,"gave everything","good"));
+  right.append(st);
+  const nb=el("div","note-box");
+  nb.innerHTML="<b>Teaching point:</b> each token you keep is worth 1 to you; each token you contribute returns only "+cf.mpcr+" to <i>you</i> — so the private incentive is to give nothing (Nash). Yet every contributed token creates "+fmt(cf.mpcr*n,1)+" tokens of total value, so the group optimum is for everyone to give everything. The class captured <b>"+pct(efficiency)+"</b> of that surplus — the gap is the cost of free-riding.";
+  right.append(nb);
+  const nb2=el("div","note-box teal");
+  nb2.innerHTML="Total contributed to the fund: <b>"+fmt(total,0)+"</b> tokens → boosted to <b>"+fmt(perHead*n,0)+"</b> and shared, paying each member "+fmt(perHead,1)+" back.";
+  right.append(nb2);
+  wrap.append(right);
+  return wrap;
+}
+
+/* ═══════════════════════ chart primitives ═══════════════════════ */
+function statTile(k,v,note,kind){
+  const t=el("div","stat"+(kind==="good"?" good":kind==="bad"?" bad":kind===true?" hl":""));
+  t.append(Object.assign(el("div","k"),{textContent:k}));
+  const vv=el("div","v"); vv.textContent=v; t.append(vv);
+  if(note) t.append(Object.assign(el("div","note"),{textContent:note}));
+  return t;
+}
+function barChart(items, maxRef, showVals, suffix){
+  suffix=suffix||"";
+  const max=Math.max(maxRef||0, ...items.map(i=>i.value), 1);
+  const W=520,rowH=46,pad=8, labelW=150, H=items.length*rowH+pad;
+  const svg=svgEl("svg",{viewBox:`0 0 ${W} ${H}`,role:"img"});
+  items.forEach((it,i)=>{
+    const y=i*rowH+pad, bw=(W-labelW-70)*(it.value/max);
+    svg.append(svgEl("text",{x:labelW-10,y:y+rowH/2,"text-anchor":"end","dominant-baseline":"middle",fill:"var(--ink-2)","font-size":"13","font-family":"IBM Plex Sans"},it.label));
+    svg.append(svgEl("rect",{x:labelW,y:y+8,width:Math.max(0,bw),height:rowH-22,rx:5,fill:it.color}));
+    svg.append(svgEl("text",{x:labelW+Math.max(0,bw)+8,y:y+rowH/2,"dominant-baseline":"middle",fill:"var(--ink)","font-size":"13","font-weight":"600","font-family":"IBM Plex Mono"}, (showVals?fmt(it.value,2):it.value)+suffix));
+  });
+  return svg;
+}
+function histogram(values,min,max,binW,markers,meanLine){
+  const bins=[]; const nb=Math.ceil((max-min)/binW)+1;
+  for(let i=0;i<nb;i++)bins.push(0);
+  values.forEach(v=>{ let idx=Math.floor((v-min)/binW); if(idx<0)idx=0; if(idx>=nb)idx=nb-1; bins[idx]++; });
+  const maxC=Math.max(...bins,1);
+  const W=540,H=230, padL=34,padR=14,padT=18,padB=42, iw=W-padL-padR, ih=H-padT-padB;
+  const svg=svgEl("svg",{viewBox:`0 0 ${W} ${H}`,role:"img"});
+  for(let g=0;g<=maxC;g+=Math.max(1,Math.ceil(maxC/4))){
+    const y=padT+ih-(g/maxC)*ih;
+    svg.append(svgEl("line",{x1:padL,y1:y,x2:W-padR,y2:y,stroke:"var(--line-2)","stroke-width":1}));
+    svg.append(svgEl("text",{x:padL-6,y:y+3,"text-anchor":"end",fill:"var(--faint)","font-size":"10","font-family":"IBM Plex Mono"},g));
+  }
+  const bw=iw/nb;
+  bins.forEach((c,i)=>{
+    const x=padL+i*bw, h=(c/maxC)*ih, y=padT+ih-h;
+    svg.append(svgEl("rect",{x:x+1.5,y,width:Math.max(0,bw-3),height:h,rx:3,fill:"var(--accent)","fill-opacity":c?0.82:0}));
+    if(c) svg.append(svgEl("text",{x:x+bw/2,y:y-4,"text-anchor":"middle",fill:"var(--muted)","font-size":"10","font-family":"IBM Plex Mono"},c));
+  });
+  for(let v=min; v<=max; v+=Math.max(binW, Math.round((max-min)/5))){
+    const x=padL+((v-min)/(max-min||1))*iw;
+    svg.append(svgEl("text",{x,y:H-padB+16,"text-anchor":"middle",fill:"var(--muted)","font-size":"11","font-family":"IBM Plex Mono"},Math.round(v)));
+  }
+  svg.append(svgEl("line",{x1:padL,y1:padT+ih,x2:W-padR,y2:padT+ih,stroke:"var(--line)","stroke-width":1.5}));
+  (markers||[]).forEach(m=>{
+    if(m.x<min||m.x>max) return;
+    const x=padL+((m.x-min)/(max-min||1))*iw;
+    const col=m.strong?"var(--gold)":"var(--faint)";
+    svg.append(svgEl("line",{x1:x,y1:padT-6,x2:x,y2:padT+ih,stroke:col,"stroke-width":m.strong?2:1.2,"stroke-dasharray":m.strong?"":"3 3"}));
+    svg.append(svgEl("text",{x:Math.min(Math.max(x,padL+2),W-padR-2),y:padT-9,"text-anchor":"middle",fill:col,"font-size":"10","font-weight":m.strong?"700":"500","font-family":"IBM Plex Sans"},m.l));
+  });
+  return svg;
+}
+function svgEl(tag,attrs,text){
+  const e=document.createElementNS("http://www.w3.org/2000/svg",tag);
+  for(const k in attrs) e.setAttribute(k,attrs[k]);
+  if(text!=null) e.textContent=text;
+  return e;
+}
+function pdMatrix(cf,mine,full){
+  const wrap=el("div"); if(full){ wrap.className="chart-card"; wrap.append(Object.assign(el("h3"),{textContent:"Payoff matrix ("+cf.unit+")",style:"margin-bottom:10px"})); } else { wrap.style.marginTop="16px"; wrap.style.overflowX="auto"; }
+  const t=el("table","matrix");
+  t.innerHTML=
+    "<tr><th></th><th colspan='2'>Rival firm</th></tr>"+
+    "<tr><th></th><th>Holds price</th><th>Undercuts</th></tr>"+
+    "<tr><th>You hold</th>"+
+      "<td class='cell pareto'>"+cf.R+", "+cf.R+"</td>"+
+      "<td class='cell'>"+cf.S+", "+cf.T+"</td></tr>"+
+    "<tr><th>You undercut</th>"+
+      "<td class='cell'>"+cf.T+", "+cf.S+"</td>"+
+      "<td class='cell nash'>"+cf.P+", "+cf.P+"</td></tr>";
+  wrap.append(t);
+  const lg=el("div","legend");
+  const g=el("span","legc"); const gs=el("span","swatch"); gs.style.background="var(--good)"; g.append(gs,document.createTextNode("Pareto-optimal (C,C)"));
+  const r=el("span","legc"); const rs=el("span","swatch"); rs.style.background="var(--bad)"; r.append(rs,document.createTextNode("Nash equilibrium (D,D)"));
+  lg.append(g,r); wrap.append(lg);
+  return wrap;
+}
+
+/* ═══════════════════════ TEACHER ═══════════════════════ */
+function openInstructorGate(){
+  const app=$("#app");
+  const wrap=el("div","setup-wrap");
+  const card=el("div","card stage");
+  const exists = !!(control && control.passHash);
+  card.append(el("div","eyebrow","Instructor access"),
+    Object.assign(el("h2"),{textContent: exists?"Enter instructor passcode":"Set up this classroom session",style:"font-size:1.5rem;margin:6px 0 6px"}));
+  card.append(el("p","lead", exists?"Enter the passcode you chose when you created this session.":"You're the first here. Choose a passcode — you'll re-enter it to run the console. Students never need it."));
+  const f=el("div","field"); f.style.marginTop="16px"; f.style.maxWidth="300px";
+  const inp=el("input","input"); inp.type="password"; inp.placeholder="Passcode"; inp.autofocus=true;
+  f.append(inp);
+  const row=el("div","row"); row.style.marginTop="16px";
+  const b=el("button","btn", exists?"Unlock console":"Create session");
+  const cancel=el("button","btn neutral","Cancel"); cancel.onclick=render;
+  row.append(b,cancel);
+  const err=el("div","sm"); err.style.color="var(--bad)"; err.style.marginTop="10px";
+  const go=async()=>{
+    const code=inp.value.trim(); if(!code){inp.focus();return;}
+    if(exists){
+      if(hash(code)===control.passHash){ becomeTeacher(); }
+      else { err.textContent="Incorrect passcode."; inp.value=""; inp.focus(); }
+    } else {
+      await writeControl({ passHash:hash(code), config:DEFAULT_CONFIG, activeGame:null, round:1, phase:"waiting" });
+      becomeTeacher();
+    }
+  };
+  b.onclick=go; inp.onkeydown=e=>{if(e.key==="Enter")go();};
+  card.append(f,row,err); wrap.append(card); app.replaceChildren(wrap);
+}
+function becomeTeacher(){ role="teacher"; unlocked=true; ls("gtl_role","teacher"); refreshRoleBtn(); render(); }
+
+function teacherConsole(){
+  refreshRoleBtn();
+  const c=el("div","console");
+  const rail=el("div","rail");
+  const s1=el("div","rail-sec");
+  s1.append(el("h3","Choose exercise"));
+  const gp=el("div","game-pick");
+  Object.keys(GAMES).forEach(k=>{
+    const b=el("button","gp"+(control&&control.activeGame===k?" on":""));
+    b.append(Object.assign(el("span","ic"),{textContent:GAMES[k].icon}));
+    const tx=el("div"); tx.append(el("div","n",GAMES[k].name),el("div","d",GAMES[k].blurb)); b.append(tx);
+    b.onclick=()=>writeControl({activeGame:k, round:1, phase:"waiting"});
+    gp.append(b);
+  });
+  s1.append(gp); rail.append(s1);
+
+  if(control&&control.activeGame){
+    const s2=el("div","rail-sec");
+    s2.append(el("h3","Round control"));
+    const rr=el("div","row spread"); rr.style.marginBottom="12px";
+    rr.append(el("span","tinylabel","Round"));
+    const rc=el("div","seg");
+    const minus=el("button","ghost-btn","–"); minus.onclick=()=>{ if(control.round>1) writeControl({round:control.round-1,phase:"waiting"}); };
+    const rnum=el("span","mono"); rnum.style.fontWeight="700"; rnum.style.fontSize="1.1rem"; rnum.textContent=control.round;
+    const plus=el("button","ghost-btn","+"); plus.onclick=()=>writeControl({round:control.round+1,phase:"waiting"});
+    rc.append(minus,rnum,plus); rr.append(rc); s2.append(rr);
+    const phase=control.phase;
+    const openBtn=el("button","btn wide",phase==="open"?"Close submissions":"Open submissions");
+    if(phase==="open"){ openBtn.classList.add("neutral"); openBtn.onclick=()=>writeControl({phase:"waiting"}); }
+    else openBtn.onclick=()=>writeControl({phase:"open"});
+    const revealBtn=el("button","btn gold wide","Reveal results"); revealBtn.style.marginTop="8px";
+    revealBtn.onclick=()=>writeControl({phase:"revealed"});
+    if(phase==="revealed"){ revealBtn.textContent="Results revealed ✓"; revealBtn.classList.add("neutral"); revealBtn.classList.remove("gold"); }
+    s2.append(openBtn,revealBtn);
+    const s2b=el("div","row"); s2b.style.marginTop="12px"; s2b.style.gap="8px";
+    const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>writeControl({round:control.round+1,phase:"open"});
+    const clr=el("button","ghost-btn","Clear round data"); clr.onclick=clearRound;
+    s2b.append(nextR,clr); s2.append(s2b);
+    rail.append(s2);
+    const s3=el("div","rail-sec");
+    s3.append(el("h3","Parameters"));
+    s3.append(paramEditor());
+    rail.append(s3);
+  }
+  const s4=el("div","rail-sec");
+  const shareRow=el("div","stack");
+  shareRow.append(el("div","tinylabel","Share with students"));
+  shareRow.append(Object.assign(el("div","sm mut"),{textContent:"Send them this page's link. They enter a name and join — no login needed."}));
+  const copyB=el("button","ghost-btn","Copy link");
+  copyB.onclick=()=>{ try{navigator.clipboard.writeText(location.href); toast("Link copied");}catch(e){toast(location.href);} };
+  shareRow.append(copyB);
+  s4.append(shareRow); rail.append(s4);
+  c.append(rail);
+
+  const main=el("div","stack");
+  if(!control||!control.activeGame){
+    const w=el("div","card stage center"); w.style.padding="60px 30px";
+    w.append(el("div","eyebrow","Ready"),Object.assign(el("h2"),{textContent:"Pick an exercise to begin",style:"font-size:1.6rem;margin:8px 0"}),
+      el("p","lead","Choose a game from the left, open submissions, and share the link. Live responses and the full analysis appear here."));
+    main.append(w);
+  } else if(control.phase==="revealed"){
+    main.append(analysisView(true));
+  } else {
+    const mon=el("div","card stage");
+    mon.append(el("div","eyebrow gold",GAMES[control.activeGame].name+" · Round "+control.round));
+    mon.append(Object.assign(el("h2"),{textContent: control.phase==="open"?"Submissions are open":"Round set up — not open yet",style:"font-size:1.6rem;margin:6px 0 4px"}));
+    const cnt=el("div","row"); cnt.style.alignItems="baseline"; cnt.style.gap="10px"; cnt.style.marginTop="14px";
+    cnt.append(Object.assign(el("span","count-big"),{textContent:subs.length}), el("span","mut","responses in"));
+    mon.append(cnt);
+    if(control.phase!=="open") mon.append(Object.assign(el("p","lead"),{textContent:"Click “Open submissions” when the class is ready.",style:"margin-top:8px"}));
+    else mon.append(Object.assign(el("p","lead"),{textContent:"Watch the count climb, then hit “Reveal results” to project the analysis. Students can't see aggregates until you reveal.",style:"margin-top:8px"}));
+    main.append(mon);
+    if(subs.length){
+      const roster=el("div","card stage");
+      roster.append(el("h3","Who's submitted"),Object.assign(el("div","sm mut"),{textContent:"Choices stay hidden below — names only.",style:"margin:2px 0 12px"}));
+      const names=el("div","row"); names.style.gap="8px";
+      subs.slice().sort((a,b)=>a.ts-b.ts).forEach(s=>{ const b=el("span","badge"); b.style.background="var(--surface-2)"; b.style.color="var(--ink-2)"; b.style.fontWeight="600"; b.textContent=s.name; names.append(b); });
+      roster.append(names); main.append(roster);
+    }
+  }
+  c.append(main);
+  return c;
+}
+function paramEditor(){
+  const g=control.activeGame, cf=cfg(g); const wrap=el("div","stack");
+  const mk=(label,key,val,step)=>{ const f=el("div","field");
+    f.append(Object.assign(el("label"),{textContent:label}));
+    const i=el("input","input mono"); i.type="number"; i.value=val; if(step)i.step=step; i.style.padding="8px 10px";
+    i.onchange=()=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc[key]=Number(i.value);
+      const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
+    f.append(i); return f; };
+  if(g==="guess23"){ const grid=el("div","paramgrid");
+    grid.append(mk("Fraction (⅔)","frac",cf.frac,"0.01"),mk("Max value","max",cf.max)); wrap.append(grid); }
+  else if(g==="pd"){ const grid=el("div","paramgrid");
+    grid.append(mk("Both hold (R)","R",cf.R),mk("Undercut wins (T)","T",cf.T),mk("Both undercut (P)","P",cf.P),mk("Sucker (S)","S",cf.S));
+    wrap.append(grid); wrap.append(Object.assign(el("div","sm mut"),{textContent:"Keep T>R>P>S for a true dilemma."})); }
+  else { const grid=el("div","paramgrid");
+    grid.append(mk("Endowment","E",cf.E),mk("Return / token","mpcr",cf.mpcr,"0.05")); wrap.append(grid);
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Return<1 keeps free-riding tempting individually."})); }
+  return wrap;
+}
+
+/* ═══════════════════════ SETUP / ERROR SCREENS ═══════════════════════ */
+function setupPill(txt){ const t=$("#phaseTxt"),p=$("#phasePill"); p.className="pill wait"; t.textContent=txt; }
+function renderSetup(){
+  setupPill("Setup needed");
+  const wrap=el("div","setup-wrap");
+  const card=el("div","card stage");
+  card.append(el("div","eyebrow gold","One-time setup"),
+    Object.assign(el("h2"),{textContent:"Connect your free Firebase backend",style:"font-size:1.6rem;margin:6px 0 8px"}),
+    Object.assign(el("p","lead"),{textContent:"This page syncs everyone through Firebase — Google's free realtime database. It takes about 5 minutes, once. Then any student opens your link and joins, no account needed."}));
+  const steps=el("div","steps");
+  const S=(html)=>{ const d=el("div","step"); d.append(el("div","num")); const b=el("div","body"); b.innerHTML=html; d.append(b); return d; };
+  steps.append(
+    S("Go to <b>console.firebase.google.com</b> → <b>Add project</b> (any name; you can skip Google Analytics)."),
+    S("In the left menu: <b>Build → Realtime Database → Create Database</b>. Pick a location, and start in <b>test mode</b>."),
+    S("Project settings (gear icon) → <b>Your apps</b> → click the <b>Web</b> icon <code>&lt;/&gt;</code> → register the app → copy the <code>firebaseConfig</code> values."),
+    S("Open this HTML file in a text editor, paste those values into the <code>FIREBASE_CONFIG</code> block near the top (keep the quotes; make sure <code>databaseURL</code> is filled), and save."),
+    S("Host the file so students can reach it: drag it onto <b>app.netlify.com/drop</b> (easiest), or use Firebase Hosting / GitHub Pages / any web server. Share that URL with your class.")
+  );
+  card.append(steps);
+  const nb=el("div","note-box teal"); nb.style.marginTop="18px";
+  nb.innerHTML="<b>Database rules:</b> in Realtime Database → <b>Rules</b>, use <code>{ \"rules\": { \".read\": true, \".write\": true } }</code> and Publish so students can submit without signing in. Fine for a classroom — you can tighten it later. The included README has the full walkthrough.";
+  card.append(nb);
+  wrap.append(card); $("#app").replaceChildren(wrap);
+}
+function renderSdkError(){
+  setupPill("Offline");
+  const c=el("div","card stage"); c.append(el("div","eyebrow gold","Can't load Firebase"),
+    Object.assign(el("h2"),{textContent:"The Firebase library didn't load",style:"font-size:1.4rem;margin:6px 0 8px"}),
+    Object.assign(el("p","lead"),{textContent:"This page needs internet access to reach Google's Firebase CDN. Check the connection and reload. If you're opening the file directly from disk, host it (e.g. Netlify Drop) instead."}));
+  $("#app").replaceChildren(c);
+}
+function renderRulesError(){
+  setupPill("Permission error");
+  const c=el("div","card stage"); c.append(el("div","eyebrow gold","Database blocked the request"),
+    Object.assign(el("h2"),{textContent:"Check your Realtime Database rules",style:"font-size:1.4rem;margin:6px 0 8px"}),
+    Object.assign(el("p","lead"),{textContent:"Firebase is connected but refused read/write — usually because the database is still in locked mode. In Realtime Database → Rules, set both .read and .write to true and Publish, then reload."}));
+  $("#app").replaceChildren(c);
+}
+</script>
+</body>
+</html>
