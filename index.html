@@ -262,7 +262,7 @@ let myName = ls("gtl_name") || "";
 })();
 
 /* ═══════════════════════ state + data layer (Firebase) ═══════════════════════ */
-let fb=null, control=null, allSubs={}, subs=[], curKey=null;
+let fb=null, control=null, controlLoaded=false, allSubs={}, subs=[], curKey=null;
 let role = ls("gtl_role")==="teacher" ? "teacher" : "student";
 let unlocked = ls("gtl_role")==="teacher";
 
@@ -284,7 +284,7 @@ function boot(){
     fb = firebase.initializeApp(FIREBASE_CONFIG) && firebase.database();
   }catch(e){ renderSetup(e); return; }
   fb.ref(CTRL_PATH()).on("value",
-    snap=>{ control = snap.exists()?snap.val():null; recompute(); render(); },
+    snap=>{ control = snap.exists()?snap.val():null; controlLoaded=true; recompute(); render(); },
     err=>{ console.warn("control",err); renderRulesError(); });
   fb.ref(SUBS_PATH()).on("value",
     snap=>{ allSubs = snap.val()||{}; recompute(); render(); },
@@ -298,7 +298,8 @@ async function writeControl(patch){
     const cur = await ref.once("value");
     if(cur.exists()) await ref.update(patch);
     else await ref.set(Object.assign({createdAt:Date.now()},patch));
-  }catch(e){ toast("Couldn't update — check your connection"); }
+    return true;
+  }catch(e){ toast("Couldn't update — check your connection"); return false; }
 }
 function cfg(game){ return Object.assign({}, DEFAULT_CONFIG[game], (control&&control.config&&control.config[game])||{}); }
 
@@ -667,27 +668,39 @@ function openInstructorGate(){
   const app=$("#app");
   const wrap=el("div","setup-wrap");
   const card=el("div","card stage");
-  const exists = !!(control && control.passHash);
+  const hasPass = !!(control && control.passHash);
+  const controlExists = !!control;
   card.append(el("div","eyebrow","Instructor access"),
-    Object.assign(el("h2"),{textContent: exists?"Enter instructor passcode":"Set up this classroom session",style:"font-size:1.5rem;margin:6px 0 6px"}));
-  card.append(el("p","lead", exists?"Enter the passcode you chose when you created this session.":"You're the first here. Choose a passcode — you'll re-enter it to run the console. Students never need it."));
+    Object.assign(el("h2"),{textContent: hasPass?"Enter instructor passcode":controlExists?"Set an instructor passcode":"Set up this classroom session",style:"font-size:1.5rem;margin:6px 0 6px"}));
+  card.append(el("p","lead", hasPass?"Enter the passcode you chose when you created this session.":controlExists?"This room has no instructor passcode yet. Choose one to take control — the current round stays exactly as it is.":"You're the first here. Choose a passcode — you'll re-enter it to run the console. Students never need it."));
   const f=el("div","field"); f.style.marginTop="16px"; f.style.maxWidth="300px";
   const inp=el("input","input"); inp.type="password"; inp.placeholder="Passcode"; inp.autofocus=true;
   f.append(inp);
   const row=el("div","row"); row.style.marginTop="16px";
-  const b=el("button","btn", exists?"Unlock console":"Create session");
+  const b=el("button","btn", hasPass?"Unlock console":controlExists?"Set passcode":"Create session");
   const cancel=el("button","btn neutral","Cancel"); cancel.onclick=render;
   row.append(b,cancel);
   const err=el("div","sm"); err.style.color="var(--bad)"; err.style.marginTop="10px";
   const go=async()=>{
     const code=inp.value.trim(); if(!code){inp.focus();return;}
-    if(exists){
+    // Re-read live state at click time — control may have loaded since the gate opened.
+    if(control && control.passHash){
       if(hash(code)===control.passHash){ becomeTeacher(); }
       else { err.textContent="Incorrect passcode."; inp.value=""; inp.focus(); }
-    } else {
-      await writeControl({ passHash:hash(code), config:DEFAULT_CONFIG, activeGame:null, round:1, phase:"waiting" });
-      becomeTeacher();
+      return;
     }
+    // No passcode set yet. Don't guess at DB state until we've heard from the server —
+    // otherwise a click during load could create a fresh room and wipe a live round.
+    if(!controlLoaded){ err.textContent="Still connecting to the room — wait a second and try again."; return; }
+    b.disabled=true; err.textContent="";
+    // If a room already exists, only add the passcode; never reset the active game/round/phase.
+    const patch = control
+      ? { passHash:hash(code) }
+      : { passHash:hash(code), config:DEFAULT_CONFIG, activeGame:null, round:1, phase:"waiting" };
+    const ok = await writeControl(patch);
+    b.disabled=false;
+    if(ok){ becomeTeacher(); }
+    else { err.textContent="Couldn't save the passcode — check your connection and try again."; }
   };
   b.onclick=go; inp.onkeydown=e=>{if(e.key==="Enter")go();};
   card.append(f,row,err); wrap.append(card); app.replaceChildren(wrap);
