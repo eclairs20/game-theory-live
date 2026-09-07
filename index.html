@@ -227,14 +227,14 @@ const ROOM = "main";
 const GAMES = {
   guess23: { name:"Guess ⅔ of the Average", short:"⅔", icon:"⅔",
     blurb:"Pick a number; target is a fraction of the class mean." },
-  pd: { name:"Prisoner's Dilemma", short:"PD", icon:"PD",
-    blurb:"Hold price or undercut — against a random rival." },
+  pd: { name:"Red or Black", short:"R/B", icon:"RB",
+    blurb:"Keep money for yourself, or give more to your partner." },
   publicgoods: { name:"Public Goods", short:"PG", icon:"PG",
     blurb:"Contribute to a shared fund that pays everyone." }
 };
 const DEFAULT_CONFIG = {
   guess23:{ frac:2/3, min:0, max:100 },
-  pd:{ R:3, T:5, S:0, P:1, unit:"$M profit" },
+  pd:{ red:2, black:3 },
   publicgoods:{ E:20, mpcr:0.5 }
 };
 
@@ -384,7 +384,7 @@ function studentView(){
     return c;
   }
   if(g==="guess23") studentGuess(c);
-  else if(g==="pd") studentPD(c);
+  else if(g==="pd") studentColor(c);
   else studentPG(c);
   return c;
 }
@@ -413,21 +413,21 @@ function studentGuess(c){
   if(cur) c.append(submittedBadge("Your guess: <span class='myval'>"+cur.value+"</span>."));
   c.append(liveCount());
 }
-function studentPD(c){
+function studentColor(c){
   const cf=cfg("pd"); const cur=mySub();
-  const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="6px 0 4px"; h.textContent="You're one of two firms setting price";
-  c.append(h, el("p","lead","You'll be matched with a random classmate. Payoffs ("+cf.unit+") depend on both choices — pick yours."));
-  c.append(pdMatrix(cf, cur?cur.choice:null));
+  const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="6px 0 4px"; h.textContent="Choose your card: Red or Black";
+  c.append(h, el("p","lead","You'll be matched with one classmate, and you both choose at the same time. Red adds $"+cf.red+" to your own earnings. Black adds $"+cf.black+" to your partner's earnings — nothing to you."));
+  c.append(colorMatrix(cf, cur?cur.choice:null));
   const ch=el("div","choices"); ch.style.marginTop="18px"; ch.style.gridTemplateColumns="1fr 1fr";
-  const mk=(key,ttl,desc)=>{const t=el("button","choice"+(cur&&cur.choice===key?" sel "+(key==="C"?"coop":"defect"):""));
-    t.append(el("span","tag",key==="C"?"Cooperate":"Defect"),el("span","ttl",ttl),el("span","desc",desc));
-    t.onclick=async()=>{ await submit({choice:key}); toast(key==="C"?"Held price":"Undercut"); }; return t;};
+  const mk=(key,ttl,desc)=>{const t=el("button","choice"+(cur&&cur.choice===key?(key==="red"?" sel defect":" sel"):""));
+    t.append(el("span","tag",key==="red"?"+$"+cf.red+" you":"+$"+cf.black+" partner"),el("span","ttl",ttl),el("span","desc",desc));
+    t.onclick=async()=>{ await submit({choice:key}); toast(key==="red"?"Chose Red":"Chose Black"); }; return t;};
   ch.append(
-    mk("C","Hold price high","Both hold → each earns "+cf.R+". The cooperative outcome."),
-    mk("D","Undercut rival","Tempting: if they hold, you grab "+cf.T+".")
+    mk("red","Red","Add $"+cf.red+" to your own earnings, whatever your partner does."),
+    mk("black","Black","Give your partner $"+cf.black+". You gain nothing directly.")
   );
   c.append(ch);
-  if(cur) c.append(submittedBadge("Your move: <span class='myval'>"+(cur.choice==="C"?"Hold price":"Undercut")+"</span>."));
+  if(cur) c.append(submittedBadge("Your card: <span class='myval'>"+(cur.choice==="red"?"Red":"Black")+"</span>."));
   c.append(liveCount());
 }
 function studentPG(c){
@@ -460,13 +460,13 @@ function analysisView(teacher){
   c.append(head);
   if(n===0){ const e=el("div","card stage center mut"); e.textContent="No submissions to analyze yet."; c.append(e); return c; }
   if(g==="guess23") c.append(analyzeGuess());
-  else if(g==="pd") c.append(analyzePD());
+  else if(g==="pd") c.append(analyzeColor(teacher));
   else c.append(analyzePG());
   return c;
 }
 function revealNarr(g){
   if(g==="guess23") return "Where did the class land relative to pure rationality?";
-  if(g==="pd") return "Did the class cooperate or chase the dominant strategy?";
+  if(g==="pd") return "Did people keep the money for themselves or give it to their partner?";
   return "How close did the group get to the socially optimal outcome?";
 }
 function analyzeGuess(){
@@ -512,36 +512,108 @@ function levelLegend(){
     const s=el("span","legc"); const sw=el("span","swatch"); sw.style.background=col; s.append(sw,document.createTextNode(t)); l.append(s);});
   return l;
 }
-function analyzePD(){
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
+/* Deterministic PRNG (xorshift) seeded from a string — same pairing on every device. */
+function seededRand(seedStr){
+  let s=5381; for(let i=0;i<seedStr.length;i++) s=((s<<5)+s+seedStr.charCodeAt(i))>>>0;
+  if(s===0) s=1;
+  return ()=>{ s^=s<<13; s>>>=0; s^=s>>>17; s^=s<<5; s>>>=0; return s/4294967296; };
+}
+/* Randomly pair the round's submissions. Sorted by studentId first so the shuffle is
+   identical for the instructor and every student; last player unpaired if odd. */
+function pairSubs(list){
+  const a=list.slice().sort((x,y)=> x.studentId<y.studentId?-1:x.studentId>y.studentId?1:0);
+  const rand=seededRand("pair-"+(curKey||""));
+  for(let i=a.length-1;i>0;i--){ const j=Math.floor(rand()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; }
+  const pairs=[]; for(let i=0;i<a.length;i+=2){ pairs.push([a[i], a[i+1]||null]); }
+  return pairs;
+}
+/* Payoff to a player who chose `mine` against a partner who chose `partner`. */
+function colorPay(cf,mine,partner){ return (mine==="red"?cf.red:0)+(partner==="black"?cf.black:0); }
+
+function analyzeColor(teacher){
   const cf=cfg("pd");
-  const nC=subs.filter(s=>s.choice==="C").length, nD=subs.filter(s=>s.choice==="D").length, n=nC+nD;
-  const p=n?nC/n:0;
-  const eC=p*cf.R+(1-p)*cf.S, eD=p*cf.T+(1-p)*cf.P;
-  const realized=p*eC+(1-p)*eD;
+  const nRed=subs.filter(s=>s.choice==="red").length, nBlack=subs.filter(s=>s.choice==="black").length, n=nRed+nBlack;
+  const pBlack=n?nBlack/n:0;
+  const pairs=pairSubs(subs);
+  const earn={}; let paired=0, totalEarn=0;
+  pairs.forEach(([a,b])=>{ if(a&&b){ const ea=colorPay(cf,a.choice,b.choice), eb=colorPay(cf,b.choice,a.choice);
+    earn[a.studentId]=ea; earn[b.studentId]=eb; paired+=2; totalEarn+=ea+eb; } });
+  const avgEarn=paired?totalEarn/paired:0;
   const wrap=el("div","grid-analysis");
   const left=el("div","chart-card");
   left.append(Object.assign(el("h3"),{textContent:"What the class chose"}));
-  left.append(Object.assign(el("div","cap"),{textContent:"Cooperate = hold price; Defect = undercut."}));
-  left.append(barChart([{label:"Cooperate (hold)",value:nC,color:"var(--good)"},{label:"Defect (undercut)",value:nD,color:"var(--bad)"}], n));
+  left.append(Object.assign(el("div","cap"),{textContent:"Red keeps $"+cf.red+" for yourself; Black gives your partner $"+cf.black+"."}));
+  left.append(barChart([{label:"Black (give $"+cf.black+")",value:nBlack,color:"var(--good)"},{label:"Red (keep $"+cf.red+")",value:nRed,color:"var(--bad)"}], n));
   const eg=el("div"); eg.style.marginTop="18px";
-  eg.append(Object.assign(el("h3"),{textContent:"Expected payoff vs a random classmate",style:"font-size:.95rem;margin-bottom:4px"}));
-  eg.append(Object.assign(el("div","cap"),{textContent:"Given "+pct(p)+" of the class cooperated."}));
-  eg.append(barChart([{label:"If you cooperate",value:+eC.toFixed(2),color:"var(--good)"},{label:"If you defect",value:+eD.toFixed(2),color:"var(--bad)"}], Math.max(cf.T,eD,eC), true));
+  eg.append(Object.assign(el("h3"),{textContent:"Average earnings per player",style:"font-size:.95rem;margin-bottom:4px"}));
+  eg.append(Object.assign(el("div","cap"),{textContent:"Between the two benchmarks: everyone Red vs everyone Black."}));
+  eg.append(barChart([
+    {label:"If all keep (Red)",value:+cf.red.toFixed(2),color:"var(--bad)"},
+    {label:"This class",value:+avgEarn.toFixed(2),color:"var(--accent)"},
+    {label:"If all give (Black)",value:+cf.black.toFixed(2),color:"var(--good)"}
+  ], Math.max(cf.black,avgEarn), true));
   left.append(eg);
   wrap.append(left);
   const right=el("div","stack");
   const st=el("div","stats");
-  st.append(statTile("Cooperation rate",pct(p),nC+" of "+n,true),
-    statTile("Avg payoff earned",fmt(realized,2),cf.unit),
-    statTile("If all cooperated",fmt(cf.R,2),"the (C,C) payoff","good"),
-    statTile("Left on the table",fmt(cf.R-realized,2),"per player","bad"));
+  st.append(statTile("Chose Black",pct(pBlack),nBlack+" of "+n+" gave",true),
+    statTile("Avg earned","$"+fmt(avgEarn,2),"per matched player"),
+    statTile("If all gave","$"+fmt(cf.black,2),"the (Black,Black) payoff","good"),
+    statTile("Chose Red",nRed+" ("+pct(n?nRed/n:0)+")","kept for self","bad"));
   right.append(st);
-  right.append(pdMatrix(cf,null,true));
+  right.append(colorMatrix(cf,null,true));
   const nb=el("div","note-box");
-  nb.innerHTML="<b>Teaching point:</b> defection strictly dominates — whatever your rival does, undercutting pays more ("+cf.T+">"+cf.R+" and "+cf.P+">"+cf.S+"). So rational play drives both firms to (Defect, Defect), earning "+cf.P+" each, when mutual cooperation would have paid "+cf.R+". The class "+ (p>0.5?"resisted the pull toward":"fell into") +" the dominant strategy.";
+  nb.innerHTML="<b>Teaching point:</b> Red pays you $"+cf.red+" no matter what your partner does, so it strictly dominates — a purely self-interested player always picks Red. Yet if both pick Black, each earns $"+cf.black+" &gt; $"+cf.red+". Individual logic points to (Red, Red); the group does best at (Black, Black). The class "+(pBlack>0.5?"leaned toward giving":"leaned toward keeping")+".";
+  if(teacher){ const t2=el("div","sm mut"); t2.style.marginTop="8px"; t2.textContent="Instructor note: structurally this is the classic Prisoner's Dilemma, framed as a giving game — Red = defect, Black = cooperate."; nb.appendChild(t2); }
   right.append(nb);
   wrap.append(right);
-  return wrap;
+  const out=el("div","stack");
+  if(teacher){ out.append(wrap, pairingsTable(cf,pairs,earn)); }
+  else { out.append(myMatchCard(cf,pairs), wrap); }
+  return out;
+}
+function pairingsTable(cf,pairs,earn){
+  const card=el("div","card stage");
+  card.append(el("h3","Who played whom"),
+    Object.assign(el("div","sm mut"),{textContent:"Pairs are matched at random each round. Cards and $ earnings below.",style:"margin:2px 0 12px"}));
+  const chip=ch=> ch==="red"?"<span style='color:var(--bad);font-weight:700'>Red</span>":"<span style='color:var(--ink);font-weight:700'>Black</span>";
+  let rows="<tr><th>#</th><th>Player</th><th>Card</th><th>$</th><th>Player</th><th>Card</th><th>$</th></tr>";
+  pairs.forEach(([a,b],i)=>{
+    if(a&&b){
+      rows+="<tr><td>"+(i+1)+"</td>"+
+        "<td>"+esc(a.name)+"</td><td>"+chip(a.choice)+"</td><td class='cell'>$"+earn[a.studentId]+"</td>"+
+        "<td>"+esc(b.name)+"</td><td>"+chip(b.choice)+"</td><td class='cell'>$"+earn[b.studentId]+"</td></tr>";
+    } else if(a){
+      rows+="<tr><td>"+(i+1)+"</td><td>"+esc(a.name)+"</td><td>"+chip(a.choice)+"</td><td class='cell'>—</td>"+
+        "<td colspan='3' class='mut' style='text-align:left'>No partner (odd number of players)</td></tr>";
+    }
+  });
+  const t=el("table","matrix"); t.style.fontSize=".86rem"; t.innerHTML=rows;
+  const scroll=el("div"); scroll.style.overflowX="auto"; scroll.append(t); card.append(scroll);
+  return card;
+}
+function myMatchCard(cf,pairs){
+  const card=el("div","card stage");
+  card.append(el("div","eyebrow gold","Your match"));
+  let mine=null, partner=null;
+  for(const [a,b] of pairs){ if(a&&a.studentId===myId){mine=a;partner=b;break;} if(b&&b.studentId===myId){mine=b;partner=a;break;} }
+  if(!mine){ card.append(Object.assign(el("h3"),{textContent:"You didn't submit a card this round",style:"margin-top:6px"})); return card; }
+  const col=ch=> ch==="red"?"var(--bad)":"var(--ink)";
+  const name=ch=> ch==="red"?"Red":"Black";
+  if(!partner){
+    card.append(Object.assign(el("h3"),{textContent:"No partner this round",style:"margin-top:6px"}),
+      Object.assign(el("p","lead"),{textContent:"There was an odd number of players, so you were left unmatched. You chose "+name(mine.choice)+"."}));
+    return card;
+  }
+  const myPay=colorPay(cf,mine.choice,partner.choice), thPay=colorPay(cf,partner.choice,mine.choice);
+  const h=el("h3"); h.style.marginTop="6px";
+  h.innerHTML="You played <b style='color:"+col(mine.choice)+"'>"+name(mine.choice)+"</b> against <b>"+esc(partner.name)+"</b>, who played <b style='color:"+col(partner.choice)+"'>"+name(partner.choice)+"</b>.";
+  card.append(h);
+  const st=el("div","stats"); st.style.marginTop="14px";
+  st.append(statTile("You earned","$"+myPay,"this round",true), statTile(partner.name+" earned","$"+thPay,"this round"));
+  card.append(st);
+  return card;
 }
 function analyzePG(){
   const cf=cfg("publicgoods");
@@ -643,22 +715,25 @@ function svgEl(tag,attrs,text){
   if(text!=null) e.textContent=text;
   return e;
 }
-function pdMatrix(cf,mine,full){
-  const wrap=el("div"); if(full){ wrap.className="chart-card"; wrap.append(Object.assign(el("h3"),{textContent:"Payoff matrix ("+cf.unit+")",style:"margin-bottom:10px"})); } else { wrap.style.marginTop="16px"; wrap.style.overflowX="auto"; }
+function colorMatrix(cf,mine,full){
+  const wrap=el("div"); if(full){ wrap.className="chart-card"; wrap.append(Object.assign(el("h3"),{textContent:"Payoff matrix (you, partner)",style:"margin-bottom:10px"})); } else { wrap.style.marginTop="16px"; wrap.style.overflowX="auto"; }
+  const pay=(a,b)=> (a==="red"?cf.red:0)+(b==="black"?cf.black:0);
+  const cellTxt=(a,b)=> pay(a,b)+", "+pay(b,a);
+  const R="<span style='color:var(--bad);font-weight:700'>Red</span>", B="<span style='color:var(--ink);font-weight:700'>Black</span>";
   const t=el("table","matrix");
   t.innerHTML=
-    "<tr><th></th><th colspan='2'>Rival firm</th></tr>"+
-    "<tr><th></th><th>Holds price</th><th>Undercuts</th></tr>"+
-    "<tr><th>You hold</th>"+
-      "<td class='cell pareto'>"+cf.R+", "+cf.R+"</td>"+
-      "<td class='cell'>"+cf.S+", "+cf.T+"</td></tr>"+
-    "<tr><th>You undercut</th>"+
-      "<td class='cell'>"+cf.T+", "+cf.S+"</td>"+
-      "<td class='cell nash'>"+cf.P+", "+cf.P+"</td></tr>";
+    "<tr><th></th><th colspan='2'>Your partner</th></tr>"+
+    "<tr><th></th><th>"+R+"</th><th>"+B+"</th></tr>"+
+    "<tr><th>You "+R+"</th>"+
+      "<td class='cell nash'>"+cellTxt("red","red")+"</td>"+
+      "<td class='cell'>"+cellTxt("red","black")+"</td></tr>"+
+    "<tr><th>You "+B+"</th>"+
+      "<td class='cell'>"+cellTxt("black","red")+"</td>"+
+      "<td class='cell pareto'>"+cellTxt("black","black")+"</td></tr>";
   wrap.append(t);
   const lg=el("div","legend");
-  const g=el("span","legc"); const gs=el("span","swatch"); gs.style.background="var(--good)"; g.append(gs,document.createTextNode("Pareto-optimal (C,C)"));
-  const r=el("span","legc"); const rs=el("span","swatch"); rs.style.background="var(--bad)"; r.append(rs,document.createTextNode("Nash equilibrium (D,D)"));
+  const g=el("span","legc"); const gs=el("span","swatch"); gs.style.background="var(--good)"; g.append(gs,document.createTextNode("Best for the pair (Black, Black)"));
+  const r=el("span","legc"); const rs=el("span","swatch"); rs.style.background="var(--bad)"; r.append(rs,document.createTextNode("Nash equilibrium (Red, Red)"));
   lg.append(g,r); wrap.append(lg);
   return wrap;
 }
@@ -767,25 +842,20 @@ function teacherConsole(){
     w.append(el("div","eyebrow","Ready"),Object.assign(el("h2"),{textContent:"Pick an exercise to begin",style:"font-size:1.6rem;margin:8px 0"}),
       el("p","lead","Choose a game from the left, open submissions, and share the link. Live responses and the full analysis appear here."));
     main.append(w);
-  } else if(control.phase==="revealed"){
+  } else if(subs.length){
+    // Instructor always sees live results — before, during, or after reveal.
+    if(control.phase!=="revealed"){
+      const banner=el("div","note-box teal");
+      banner.innerHTML="<b>Instructor preview.</b> "+subs.length+" response"+(subs.length===1?"":"s")+" in"+(control.phase==="open"?" and counting":"")+" — students still see only their own screen until you press <b>Reveal results</b>.";
+      main.append(banner);
+    }
     main.append(analysisView(true));
   } else {
     const mon=el("div","card stage");
     mon.append(el("div","eyebrow gold",GAMES[control.activeGame].name+" · Round "+control.round));
-    mon.append(Object.assign(el("h2"),{textContent: control.phase==="open"?"Submissions are open":"Round set up — not open yet",style:"font-size:1.6rem;margin:6px 0 4px"}));
-    const cnt=el("div","row"); cnt.style.alignItems="baseline"; cnt.style.gap="10px"; cnt.style.marginTop="14px";
-    cnt.append(Object.assign(el("span","count-big"),{textContent:subs.length}), el("span","mut","responses in"));
-    mon.append(cnt);
-    if(control.phase!=="open") mon.append(Object.assign(el("p","lead"),{textContent:"Click “Open submissions” when the class is ready.",style:"margin-top:8px"}));
-    else mon.append(Object.assign(el("p","lead"),{textContent:"Watch the count climb, then hit “Reveal results” to project the analysis. Students can't see aggregates until you reveal.",style:"margin-top:8px"}));
+    mon.append(Object.assign(el("h2"),{textContent: control.phase==="open"?"Submissions are open — waiting for responses":"Round set up — not open yet",style:"font-size:1.6rem;margin:6px 0 4px"}));
+    mon.append(Object.assign(el("p","lead"),{textContent: control.phase==="open"?"Share the link and watch responses arrive. Results appear here live — for your eyes only — until you reveal.":"Click “Open submissions” when the class is ready.",style:"margin-top:8px"}));
     main.append(mon);
-    if(subs.length){
-      const roster=el("div","card stage");
-      roster.append(el("h3","Who's submitted"),Object.assign(el("div","sm mut"),{textContent:"Choices stay hidden below — names only.",style:"margin:2px 0 12px"}));
-      const names=el("div","row"); names.style.gap="8px";
-      subs.slice().sort((a,b)=>a.ts-b.ts).forEach(s=>{ const b=el("span","badge"); b.style.background="var(--surface-2)"; b.style.color="var(--ink-2)"; b.style.fontWeight="600"; b.textContent=s.name; names.append(b); });
-      roster.append(names); main.append(roster);
-    }
   }
   c.append(main);
   return c;
@@ -801,8 +871,8 @@ function paramEditor(){
   if(g==="guess23"){ const grid=el("div","paramgrid");
     grid.append(mk("Fraction (⅔)","frac",cf.frac,"0.01"),mk("Max value","max",cf.max)); wrap.append(grid); }
   else if(g==="pd"){ const grid=el("div","paramgrid");
-    grid.append(mk("Both hold (R)","R",cf.R),mk("Undercut wins (T)","T",cf.T),mk("Both undercut (P)","P",cf.P),mk("Sucker (S)","S",cf.S));
-    wrap.append(grid); wrap.append(Object.assign(el("div","sm mut"),{textContent:"Keep T>R>P>S for a true dilemma."})); }
+    grid.append(mk("Red: $ to self","red",cf.red),mk("Black: $ to partner","black",cf.black));
+    wrap.append(grid); wrap.append(Object.assign(el("div","sm mut"),{textContent:"Keep Black > Red (giving is socially better) and Red > 0 (keeping stays tempting)."})); }
   else { const grid=el("div","paramgrid");
     grid.append(mk("Endowment","E",cf.E),mk("Return / token","mpcr",cf.mpcr,"0.05")); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Return<1 keeps free-riding tempting individually."})); }
