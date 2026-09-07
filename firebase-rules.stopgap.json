@@ -1,0 +1,33 @@
+{
+  "//": "STOPGAP rules — safe to publish TODAY, before Google sign-in is fully rolled out.",
+  "//1": "Keeps the classroom open (anyone can still read/submit) but removes the two",
+  "//2": "worst risks of fully-public rules: (a) nobody can write at the tree root or to",
+  "//3": "unknown paths, so the whole database can't be wiped or polluted with junk nodes;",
+  "//4": "(b) submissions and control must have the expected shape. Names are length-capped.",
+  "//5": "This does NOT require sign-in — it is a blast-radius fix, not authentication.",
+  "//6": "When Google sign-in is live + roster loaded + REQUIRE_GOOGLE flipped to true in",
+  "//7": "index.html, replace this with firebase-rules.lockdown.json.",
+  "rules": {
+    ".read": true,
+    ".write": false,
+    "main": {
+      "control": {
+        ".read": true,
+        ".write": true,
+        ".validate": "!newData.exists() || newData.hasChildren(['phase'])"
+      },
+      "roster": {
+        ".read": true,
+        ".write": true
+      },
+      "subs": {
+        ".read": true,
+        "$sub": {
+          ".write": true,
+          ".validate": "!newData.exists() || newData.hasChildren(['studentId','game','round'])",
+          "name": { ".validate": "newData.isString() && newData.val().length <= 80" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "//": "FULL LOCKDOWN rules — publish only AFTER all of: (1) Google sign-in is enabled",
+  "//1": "and working (provider on + eclairs20.github.io authorized), (2) the class roster",
+  "//2": "is loaded, (3) every instructor's Google email is in BOTH the list below AND the",
+  "//3": "INSTRUCTOR_EMAILS array in index.html, and (4) REQUIRE_GOOGLE is set to true in",
+  "//4": "index.html and deployed. Publishing this before those steps will lock people out.",
+  "//5": "",
+  "//6": "What it enforces server-side:",
+  "//7": "  - Only signed-in Google users can read or write anything.",
+  "//8": "  - A student may only write a submission that carries their own verified email,",
+  "//9": "    so nobody can submit as someone else's identity.",
+  "//10": "  - control (game/round/phase/config) and roster can be written ONLY by the",
+  "//11": "    allowlisted instructor emails — this is what actually protects the class.",
+  "//12": "  - Root and unknown paths are unwritable.",
+  "//13": "  - Residual note: the per-submission key isn't cryptographically tied to identity,",
+  "//14": "    so a determined signed-in student could overwrite another key while still",
+  "//15": "    stamping their own email on it. Their email is on the record, so it's traceable;",
+  "//16": "    acceptable for a classroom. Tightening further needs a Cloud Function or uid keys.",
+  "rules": {
+    ".read": "auth != null",
+    ".write": false,
+    "main": {
+      "control": {
+        ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'REPLACE_WITH_PROF_SONIA_GOOGLE_EMAIL')",
+        ".validate": "!newData.exists() || newData.hasChildren(['phase'])"
+      },
+      "roster": {
+        ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'REPLACE_WITH_PROF_SONIA_GOOGLE_EMAIL')"
+      },
+      "subs": {
+        "$sub": {
+          ".write": "auth != null && auth.token.email_verified == true",
+          ".validate": "!newData.exists() || (newData.hasChildren(['studentId','game','round','email']) && newData.child('email').val() == auth.token.email)",
+          "name": { ".validate": "newData.isString() && newData.val().length <= 80" }
+        }
+      }
+    }
+  }
+}

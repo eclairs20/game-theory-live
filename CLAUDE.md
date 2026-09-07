@@ -88,3 +88,14 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   `student<Game>()` view, an `analyze<Game>()` function, and a branch in `paramEditor()`.
 - Optional hardening: tighten Firebase rules or add Firebase App Check to limit who can write.
 - A per-round CSV export, or a persistent leaderboard across rounds.
+
+## Security / Firebase rules
+See `SECURITY.md`. Two rule sets ship in the repo: `firebase-rules.stopgap.json` (a
+blast-radius fix, safe to publish anytime — no sign-in required) and
+`firebase-rules.lockdown.json` (real auth: only signed-in Google users read/write,
+students submit only as their own verified email, only allowlisted instructor emails
+write `control`/`roster`). The app supports the lockdown via `INSTRUCTOR_EMAILS`
+(allowlisted Google accounts get the console with no passcode) and `REQUIRE_GOOGLE`
+(when `true`: student join is Google-only, instructor access is allowlist-only). Both
+consts live at the top of `index.html`; rules are pasted into the Firebase console by
+hand (not auto-deployed).

@@ -234,6 +234,21 @@ const FIREBASE_CONFIG = {
 };
 /* Optional: change this per class or term to start with a fresh, empty room. */
 const ROOM = "main";
+
+/* Instructor allowlist. Any Google account whose email is listed here gets the
+   console straight away on sign-in — no passcode. Add EVERY instructor's Google
+   address BEFORE publishing the strict Firebase rules, or they'll be locked out
+   of their own class. */
+const INSTRUCTOR_EMAILS = [
+  "ankit.khandelwal@gmail.com"
+  // , "add-prof-sonia-google-email@example.com"   // ← add Prof Sonia's Google email
+];
+/* Flip to true ONLY after the strict rules (see firebase-rules.lockdown.json) are
+   published AND Google sign-in is confirmed working. It makes student joining
+   Google-only (no anonymous name-join) and instructor access allowlist-only
+   (no passcode) — matching what the strict rules enforce on the server. */
+const REQUIRE_GOOGLE = false;
+const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* ═══════════════════════════════════════════════════════════════════════ */
 
 const GAMES = {
@@ -466,23 +481,31 @@ function nameStripIfNeeded(){
 }
 function joinPanel(){
   const wrap=el("div"); wrap.style.maxWidth="440px"; wrap.style.margin="0 auto 22px"; wrap.style.textAlign="left";
+  const nameAllowed = !REQUIRE_GOOGLE;   // lockdown mode: Google sign-in only
   if(fbAuth){
     const gb=el("button","gbtn");
     gb.innerHTML="<svg class='g' viewBox='0 0 48 48' aria-hidden='true'><path fill='#EA4335' d='M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.5 5.4 2.5 13.3l7.8 6.1C12.2 13.2 17.6 9.5 24 9.5z'/><path fill='#4285F4' d='M46.1 24.6c0-1.6-.1-3.1-.4-4.6H24v9.1h12.4c-.5 2.9-2.1 5.3-4.6 7l7.1 5.5c4.1-3.8 6.5-9.4 6.5-16z'/><path fill='#FBBC05' d='M10.3 28.6c-.5-1.4-.7-2.9-.7-4.6s.3-3.2.7-4.6l-7.8-6.1C.9 16.5 0 20.1 0 24s.9 7.5 2.5 10.7l7.8-6.1z'/><path fill='#34A853' d='M24 48c6.2 0 11.5-2 15.3-5.5l-7.1-5.5c-2 1.3-4.6 2.1-8.2 2.1-6.4 0-11.8-3.7-13.7-9.1l-7.8 6.1C6.5 42.6 14.6 48 24 48z'/></svg>Continue with Google";
     gb.onclick=googleSignIn; wrap.append(gb);
-    wrap.append(Object.assign(el("div","orline"),{textContent:"or join with a name"}));
+    if(nameAllowed) wrap.append(Object.assign(el("div","orline"),{textContent:"or join with a name"}));
+  } else if(REQUIRE_GOOGLE){
+    wrap.append(Object.assign(el("p","lead"),{textContent:"Google sign-in is required to join but isn't available right now. Reload the page, or ask your instructor."}));
+    return wrap;
   }
-  const f=el("div","field");
-  f.append(Object.assign(el("label"),{textContent: fbAuth?"Join with a name (guest)":"Enter your name to join"}));
-  const row=el("div","row");
-  const inp=el("input","input"); inp.placeholder="e.g. Priya M."; inp.style.flex="1"; inp.maxLength=28;
-  const b=el("button","btn","Join");
-  const go=()=>{ const v=inp.value.trim(); if(!v){inp.focus();return;} myName=v; ls("gtl_name",v); render(); };
-  b.onclick=go; inp.onkeydown=e=>{if(e.key==="Enter")go();};
-  row.append(inp,b); f.append(row); wrap.append(f);
-  if(fbAuth){ wrap.append(Object.assign(el("div","sm mut"),{textContent: haveRoster()
-    ? "Enrolled students: use Continue with Google so your instructor can match you to the class list."
-    : "Tip: Continue with Google so your instructor gets your name — a typed name joins as an anonymous guest.",style:"margin-top:8px"})); }
+  if(nameAllowed){
+    const f=el("div","field");
+    f.append(Object.assign(el("label"),{textContent: fbAuth?"Join with a name (guest)":"Enter your name to join"}));
+    const row=el("div","row");
+    const inp=el("input","input"); inp.placeholder="e.g. Priya M."; inp.style.flex="1"; inp.maxLength=28;
+    const b=el("button","btn","Join");
+    const go=()=>{ const v=inp.value.trim(); if(!v){inp.focus();return;} myName=v; ls("gtl_name",v); render(); };
+    b.onclick=go; inp.onkeydown=e=>{if(e.key==="Enter")go();};
+    row.append(inp,b); f.append(row); wrap.append(f);
+  }
+  if(fbAuth){ wrap.append(Object.assign(el("div","sm mut"),{textContent: !nameAllowed
+    ? "Sign in with your Google account to join."
+    : haveRoster()
+      ? "Enrolled students: use Continue with Google so your instructor can match you to the class list."
+      : "Tip: Continue with Google so your instructor gets your name — a typed name joins as an anonymous guest.",style:"margin-top:8px"})); }
   return wrap;
 }
 function studentView(){
@@ -859,6 +882,22 @@ function colorMatrix(cf,mine,full){
 /* ═══════════════════════ TEACHER ═══════════════════════ */
 function openInstructorGate(){
   const app=$("#app");
+  // Allowlisted Google instructors skip the passcode entirely.
+  if(authUser && isInstructorEmail(authUser.email)){ becomeTeacher(); return; }
+  // Lockdown mode: instructor access is Google-allowlist only, no passcode.
+  if(REQUIRE_GOOGLE){
+    const wrap=el("div","setup-wrap"); const card=el("div","card stage");
+    card.append(el("div","eyebrow","Instructor access"),
+      Object.assign(el("h2"),{textContent:"Sign in as an instructor",style:"font-size:1.5rem;margin:6px 0 6px"}));
+    card.append(el("p","lead", authUser
+      ? "The account "+(authUser.email||"you're signed in with")+" isn't on the instructor list. Sign in with an instructor Google account, or ask to be added."
+      : "Sign in with your instructor Google account to open the console."));
+    const row=el("div","stack"); row.style.marginTop="16px"; row.style.maxWidth="320px";
+    if(fbAuth){ const gb=el("button","gbtn"); gb.textContent="Continue with Google"; gb.onclick=googleSignIn; row.append(gb); }
+    if(authUser){ const so=el("button","ghost-btn","Sign out"); so.onclick=async()=>{ await signOutStudent(); }; row.append(so); }
+    const cancel=el("button","btn neutral","Cancel"); cancel.onclick=render; row.append(cancel);
+    card.append(row); wrap.append(card); app.replaceChildren(wrap); return;
+  }
   const wrap=el("div","setup-wrap");
   const card=el("div","card stage");
   const hasPass = !!(control && control.passHash);
