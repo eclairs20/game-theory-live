@@ -178,6 +178,17 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
 .badge{font-size:.7rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:3px 8px; border-radius:6px; background:var(--accent-wash); color:var(--accent-ink)}
 .myval{font-family:"IBM Plex Mono",monospace; font-weight:600; color:var(--accent-ink)}
+textarea.input{resize:vertical; min-height:96px; line-height:1.45; width:100%}
+.gbtn{display:inline-flex; align-items:center; justify-content:center; gap:10px; width:100%; padding:12px 18px; border-radius:var(--radius-sm); border:1px solid var(--line); background:var(--surface); color:var(--ink); font-weight:600; font-size:.95rem; transition:.15s; box-shadow:var(--shadow)}
+.gbtn:hover{border-color:var(--accent)}
+.gbtn .g{width:18px;height:18px;flex:none}
+.orline{display:flex; align-items:center; gap:12px; color:var(--faint); font-size:.78rem; margin:16px 0; text-transform:uppercase; letter-spacing:.1em}
+.orline::before,.orline::after{content:""; height:1px; background:var(--line); flex:1}
+.chips{display:flex; flex-wrap:wrap; gap:7px}
+.chip{font-size:.8rem; font-weight:600; padding:4px 10px; border-radius:999px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink-2); display:inline-flex; align-items:center; gap:6px}
+.chip.done{color:var(--good); border-color:color-mix(in srgb,var(--good) 40%,var(--line)); background:var(--good-wash)}
+.chip.todo{color:var(--muted)}
+.chip.guest{color:var(--gold); border-color:color-mix(in srgb,var(--gold) 45%,var(--line)); background:var(--gold-wash)}
 </style>
 </head>
 <body>
@@ -187,6 +198,7 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 <!-- ============================================================= -->
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 
 <div class="shell">
   <div class="topbar">
@@ -246,9 +258,17 @@ function hash(str){let h=5381; for(let i=0;i<str.length;i++)h=((h<<5)+h+str.char
 function toast(m){const t=$("#toast"); t.textContent=m; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2200);}
 function ls(k,v){try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v);}catch(e){ return null; }}
 
-let myId = ls("gtl_id");
-if(!myId){ myId = "s_"+Math.random().toString(36).slice(2,9); ls("gtl_id",myId); }
+/* Identity: a student is either signed in with Google (authUser) or joined
+   manually with a typed name (manualId + gtl_name). `myId`/`myName` are the
+   *effective* identity, recomputed by applyIdentity() on every render. */
+let manualId = ls("gtl_id");
+if(!manualId){ manualId = "s_"+Math.random().toString(36).slice(2,9); ls("gtl_id",manualId); }
+let myId = manualId;
 let myName = ls("gtl_name") || "";
+let meGuest = false;
+/* Firebase keys can't contain . # $ [ ] / — percent-encode them so an email
+   works as a path segment. Random ids and roll numbers pass through unchanged. */
+function encodeKey(s){ return String(s).replace(/[.#$\[\]\/]/g, c=>"%"+c.charCodeAt(0).toString(16)); }
 
 (function initTheme(){
   const saved = ls("gtl_theme");
@@ -262,13 +282,36 @@ let myName = ls("gtl_name") || "";
 })();
 
 /* ═══════════════════════ state + data layer (Firebase) ═══════════════════════ */
-let fb=null, control=null, controlLoaded=false, allSubs={}, subs=[], curKey=null;
+let fb=null, fbAuth=null, authUser=null, control=null, controlLoaded=false, allSubs={}, subs=[], curKey=null;
+let roster={}, rosterList=[];
 let role = ls("gtl_role")==="teacher" ? "teacher" : "student";
 let unlocked = ls("gtl_role")==="teacher";
 
 const roundKey = (g,r)=> g+"-"+r;
 const CTRL_PATH = ()=> ROOM+"/control";
 const SUBS_PATH = ()=> ROOM+"/subs";
+const ROSTER_PATH = ()=> ROOM+"/roster";
+const SUB_DOC = (key,sid)=> SUBS_PATH()+"/"+key+"__"+encodeKey(sid);
+const haveRoster = ()=> rosterList.length>0;
+function setRoster(val){
+  rosterList=[]; roster={};
+  if(val){ (Array.isArray(val)?val:Object.values(val)).forEach(e=>{
+    if(!e||!e.email) return; const em=String(e.email).toLowerCase().trim(); if(!em) return;
+    const nm=(e.name&&String(e.name).trim())||em; roster[em]=nm; rosterList.push({email:em,name:nm});
+  }); }
+}
+/* Resolve the effective identity from Google auth (if signed in) or the manual name. */
+function applyIdentity(){
+  if(authUser){
+    const email=(authUser.email||"").toLowerCase();
+    const rn=roster[email];
+    myId=email; myName=rn||authUser.displayName||email;
+    meGuest = haveRoster() && !rn;
+  } else {
+    myId=manualId; myName=ls("gtl_name")||""; meGuest=false;
+  }
+}
+function haveIdentity(){ return !!authUser || !!myName; }
 
 function configMissing(){ return !FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.indexOf("PASTE")===0 || FIREBASE_CONFIG.databaseURL.indexOf("PASTE")>-1; }
 
@@ -281,14 +324,27 @@ function boot(){
   if(typeof firebase==="undefined"){ renderSdkError(); return; }
   if(configMissing()){ renderSetup(); return; }
   try{
-    fb = firebase.initializeApp(FIREBASE_CONFIG) && firebase.database();
+    firebase.initializeApp(FIREBASE_CONFIG); fb = firebase.database();
   }catch(e){ renderSetup(e); return; }
+  /* Google sign-in — optional. Works once the instructor enables the Google
+     provider and authorizes this domain in the Firebase console. If the auth
+     SDK is absent or setup isn't done, the app still runs with name-join. */
+  try{
+    if(firebase.auth){
+      fbAuth=firebase.auth();
+      fbAuth.onAuthStateChanged(u=>{ authUser=u; applyIdentity(); render(); });
+      fbAuth.getRedirectResult().catch(()=>{});
+    }
+  }catch(e){ fbAuth=null; }
   fb.ref(CTRL_PATH()).on("value",
     snap=>{ control = snap.exists()?snap.val():null; controlLoaded=true; recompute(); render(); },
     err=>{ console.warn("control",err); renderRulesError(); });
   fb.ref(SUBS_PATH()).on("value",
     snap=>{ allSubs = snap.val()||{}; recompute(); render(); },
     err=>{ console.warn("subs",err); });
+  fb.ref(ROSTER_PATH()).on("value",
+    snap=>{ setRoster(snap.val()); render(); },
+    err=>{ console.warn("roster",err); });
 }
 document.addEventListener("DOMContentLoaded", boot);
 
@@ -306,8 +362,9 @@ function cfg(game){ return Object.assign({}, DEFAULT_CONFIG[game], (control&&con
 async function submit(payload){
   const key=roundKey(control.activeGame,control.round);
   const doc={ roundKey:key, game:control.activeGame, round:control.round, studentId:myId, name:myName||"Anon", ts:Date.now() };
+  if(meGuest) doc.guest=true;
   Object.assign(doc,payload);
-  try{ await fb.ref(SUBS_PATH()+"/"+key+"__"+myId).set(doc); }
+  try{ await fb.ref(SUB_DOC(key,myId)).set(doc); }
   catch(e){ toast("Submit failed — check connection"); }
 }
 function mySub(){ return subs.find(s=>s.studentId===myId) || null; }
@@ -315,12 +372,49 @@ function mySub(){ return subs.find(s=>s.studentId===myId) || null; }
 async function clearRound(){
   if(!control||!control.activeGame) return;
   const key=roundKey(control.activeGame,control.round);
-  for(const s of subs.slice()){ try{ await fb.ref(SUBS_PATH()+"/"+key+"__"+s.studentId).remove(); }catch(e){} }
+  for(const s of subs.slice()){ try{ await fb.ref(SUB_DOC(key,s.studentId)).remove(); }catch(e){} }
   toast("Round data cleared");
 }
 
+/* ─── roster (instructor) ─── */
+async function writeRoster(list){ try{ await fb.ref(ROSTER_PATH()).set(list); return true; }catch(e){ toast("Couldn't save roster"); return false; } }
+async function removeRoster(){ try{ await fb.ref(ROSTER_PATH()).remove(); toast("Roster cleared"); }catch(e){} }
+function parseRoster(text){
+  const out=[], seen={};
+  String(text||"").split(/\r?\n/).forEach(line=>{
+    line=line.trim(); if(!line) return;
+    const parts=line.split(/[,\t;]/);
+    const email=(parts[0]||"").trim().toLowerCase(); if(!email) return;
+    const name=parts.slice(1).join(" ").trim()||email;
+    if(seen[email]) return; seen[email]=1; out.push({email,name});
+  });
+  return out;
+}
+
+/* ─── Google sign-in (student) ─── */
+async function googleSignIn(){
+  if(!fbAuth){ toast("Google sign-in isn't available here"); return; }
+  const provider=new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt:"select_account" });
+  try{ await fbAuth.signInWithPopup(provider); }
+  catch(e){
+    const c=e&&e.code;
+    if(c==="auth/popup-blocked"||c==="auth/popup-closed-by-user"||c==="auth/cancelled-popup-request"){
+      try{ await fbAuth.signInWithRedirect(provider); return; }catch(e2){ toast(googleErr(e2)); }
+    } else { toast(googleErr(e)); }
+  }
+}
+function googleErr(e){
+  const c=e&&e.code||"";
+  if(c==="auth/operation-not-allowed") return "Google sign-in isn't switched on yet — ask your instructor.";
+  if(c==="auth/unauthorized-domain") return "This page isn't authorized for Google sign-in yet.";
+  return "Google sign-in didn't complete — try again, or join with your name.";
+}
+async function signOutStudent(){ try{ if(fbAuth) await fbAuth.signOut(); }catch(e){} }
+
 /* ═══════════════════════ RENDER ROOT ═══════════════════════ */
 function render(){
+  applyIdentity();
   syncPhasePill();
   const app = $("#app");
   if(!control || !control.activeGame){
@@ -353,23 +447,39 @@ function studentWaiting(){
   c.append(el("div","eyebrow","Live classroom"), h, p);
   return c;
 }
+/* Compact identity strip when signed in / named; full join panel otherwise. */
 function nameStripIfNeeded(){
-  const wrap=el("div"); wrap.style.maxWidth="420px"; wrap.style.margin="0 auto 22px";
-  if(myName){
+  const wrap=el("div"); wrap.style.maxWidth="440px"; wrap.style.margin="0 auto 22px";
+  if(haveIdentity()){
     const r=el("div","row spread"); r.style.background="var(--surface-2)"; r.style.border="1px solid var(--line)"; r.style.borderRadius="var(--radius-sm)"; r.style.padding="9px 9px 9px 14px";
-    r.append(el("span","sm mut","Playing as"));
-    const nm=el("span"); nm.style.fontWeight="700"; nm.textContent=myName; r.append(nm);
-    const b=el("button","ghost-btn","Change"); b.onclick=()=>{ myName=""; ls("gtl_name",""); render(); }; r.append(b);
+    const lft=el("div","row"); lft.style.gap="8px"; lft.style.justifyContent="flex-start";
+    lft.append(el("span","sm mut","Playing as"));
+    const nm=el("span"); nm.style.fontWeight="700"; nm.textContent=myName; lft.append(nm);
+    if(meGuest){ const g=el("span","chip guest"); g.textContent="guest — not on class list"; lft.append(g); }
+    r.append(lft);
+    if(authUser){ const b=el("button","ghost-btn","Sign out"); b.onclick=async()=>{ await signOutStudent(); }; r.append(b); }
+    else { const b=el("button","ghost-btn","Change"); b.onclick=()=>{ myName=""; ls("gtl_name",""); render(); }; r.append(b); }
     wrap.append(r); return wrap;
   }
+  return joinPanel();
+}
+function joinPanel(){
+  const wrap=el("div"); wrap.style.maxWidth="440px"; wrap.style.margin="0 auto 22px"; wrap.style.textAlign="left";
+  if(fbAuth){
+    const gb=el("button","gbtn");
+    gb.innerHTML="<svg class='g' viewBox='0 0 48 48' aria-hidden='true'><path fill='#EA4335' d='M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.5 5.4 2.5 13.3l7.8 6.1C12.2 13.2 17.6 9.5 24 9.5z'/><path fill='#4285F4' d='M46.1 24.6c0-1.6-.1-3.1-.4-4.6H24v9.1h12.4c-.5 2.9-2.1 5.3-4.6 7l7.1 5.5c4.1-3.8 6.5-9.4 6.5-16z'/><path fill='#FBBC05' d='M10.3 28.6c-.5-1.4-.7-2.9-.7-4.6s.3-3.2.7-4.6l-7.8-6.1C.9 16.5 0 20.1 0 24s.9 7.5 2.5 10.7l7.8-6.1z'/><path fill='#34A853' d='M24 48c6.2 0 11.5-2 15.3-5.5l-7.1-5.5c-2 1.3-4.6 2.1-8.2 2.1-6.4 0-11.8-3.7-13.7-9.1l-7.8 6.1C6.5 42.6 14.6 48 24 48z'/></svg>Continue with Google";
+    gb.onclick=googleSignIn; wrap.append(gb);
+    wrap.append(Object.assign(el("div","orline"),{textContent:"or join with a name"}));
+  }
   const f=el("div","field");
-  f.append(Object.assign(el("label"),{textContent:"Enter your name to join"}));
+  f.append(Object.assign(el("label"),{textContent: fbAuth?"Join with a name (guest)":"Enter your name to join"}));
   const row=el("div","row");
   const inp=el("input","input"); inp.placeholder="e.g. Priya M."; inp.style.flex="1"; inp.maxLength=28;
   const b=el("button","btn","Join");
   const go=()=>{ const v=inp.value.trim(); if(!v){inp.focus();return;} myName=v; ls("gtl_name",v); render(); };
   b.onclick=go; inp.onkeydown=e=>{if(e.key==="Enter")go();};
   row.append(inp,b); f.append(row); wrap.append(f);
+  if(haveRoster()) wrap.append(Object.assign(el("div","sm mut"),{textContent:"Enrolled students: use Continue with Google so your instructor can see you on the class list.",style:"margin-top:8px"}));
   return wrap;
 }
 function studentView(){
@@ -377,7 +487,7 @@ function studentView(){
   if(control.phase==="revealed") return analysisView(false);
   const c=el("div","card stage");
   c.append(el("div","eyebrow gold",GAMES[g].name));
-  if(!myName){ const w=el("div"); w.style.marginTop="8px"; w.append(nameStripIfNeeded()); c.append(w); return c; }
+  if(!haveIdentity()){ const w=el("div"); w.style.marginTop="8px"; w.append(joinPanel()); c.append(w); return c; }
   if(control.phase!=="open"){
     const h=el("h2"); h.style.fontSize="1.5rem"; h.style.marginTop="6px"; h.textContent="Round "+control.round+" is set up";
     c.append(h, el("p","lead","Waiting for your instructor to open submissions…"));
@@ -831,10 +941,15 @@ function teacherConsole(){
     s3.append(paramEditor());
     rail.append(s3);
   }
+  const sR=el("div","rail-sec");
+  sR.append(el("h3","Class roster"));
+  sR.append(rosterEditor());
+  rail.append(sR);
+
   const s4=el("div","rail-sec");
   const shareRow=el("div","stack");
   shareRow.append(el("div","tinylabel","Share with students"));
-  shareRow.append(Object.assign(el("div","sm mut"),{textContent:"Send them this page's link. They enter a name and join — no login needed."}));
+  shareRow.append(Object.assign(el("div","sm mut"),{textContent: haveRoster()?"Send them this page's link. Enrolled students tap “Continue with Google”; anyone else can still join with a name (flagged as a guest).":"Send them this page's link. They sign in with Google, or just enter a name."}));
   const copyB=el("button","ghost-btn","Copy link");
   copyB.onclick=()=>{ try{navigator.clipboard.writeText(location.href); toast("Link copied");}catch(e){toast(location.href);} };
   shareRow.append(copyB);
@@ -862,8 +977,53 @@ function teacherConsole(){
     mon.append(Object.assign(el("p","lead"),{textContent: control.phase==="open"?"Share the link and watch responses arrive. Results appear here live — for your eyes only — until you reveal.":"Click “Open submissions” when the class is ready.",style:"margin-top:8px"}));
     main.append(mon);
   }
+  if(control&&control.activeGame&&haveRoster()) main.append(attendanceCard());
   c.append(main);
   return c;
+}
+function rosterEditor(){
+  const wrap=el("div","stack");
+  const ta=el("textarea","input mono"); ta.rows=5; ta.style.fontSize=".8rem";
+  ta.placeholder="priya@iiml.ac.in, Priya M\nrahul@iiml.ac.in, Rahul K";
+  ta.value=rosterList.map(e=>e.email+", "+e.name).join("\n");
+  wrap.append(Object.assign(el("div","sm mut"),{textContent:"One student per line: email, name (name optional). Paste straight from a spreadsheet column."}));
+  wrap.append(ta);
+  const info=el("div","sm mut"); info.textContent = haveRoster()? rosterList.length+" students enrolled" : "No roster yet — anyone can join.";
+  wrap.append(info);
+  const save=el("button","btn wide","Save roster"); save.style.marginTop="2px";
+  save.onclick=async()=>{ const list=parseRoster(ta.value);
+    const ok=await writeRoster(list); if(ok) toast(list.length?(list.length+" students saved"):"Roster saved (empty)"); };
+  wrap.append(save);
+  if(haveRoster()){
+    const clr=el("button","ghost-btn","Clear roster"); clr.style.marginTop="6px";
+    clr.onclick=removeRoster; wrap.append(clr);
+  }
+  return wrap;
+}
+function attendanceCard(){
+  const card=el("div","card stage");
+  const subByEmail={}; subs.forEach(s=>{ subByEmail[String(s.studentId).toLowerCase()]=s; });
+  const done=[], todo=[];
+  rosterList.forEach(e=>{ (subByEmail[e.email]?done:todo).push(e); });
+  const guests=subs.filter(s=>!roster[String(s.studentId).toLowerCase()]);
+  card.append(el("div","eyebrow","Attendance"),
+    Object.assign(el("h3"),{textContent:done.length+" of "+rosterList.length+" enrolled have submitted this round",style:"margin:4px 0 2px"}));
+  if(guests.length) card.append(Object.assign(el("div","sm mut"),{textContent:guests.length+" guest"+(guests.length===1?"":"s")+" not on the class list also submitted.",style:"margin-bottom:10px"}));
+  else card.append(el("div","sm mut",""));
+  const mkChips=(label,arr,cls)=>{
+    if(!arr.length) return null;
+    const blk=el("div"); blk.style.marginTop="12px";
+    blk.append(Object.assign(el("div","tinylabel"),{textContent:label+" ("+arr.length+")",style:"margin-bottom:6px"}));
+    const chips=el("div","chips");
+    arr.forEach(x=>{ const ch=el("span","chip "+cls); ch.textContent = x.name||x; chips.append(ch); });
+    blk.append(chips); return blk;
+  };
+  const d=mkChips("Submitted",done,"done"); if(d) card.append(d);
+  const t=mkChips("Not yet",todo,"todo"); if(t) card.append(t);
+  if(guests.length){
+    const g=mkChips("Guests",guests.map(s=>({name:s.name})),"guest"); if(g) card.append(g);
+  }
+  return card;
 }
 function paramEditor(){
   const g=control.activeGame, cf=cfg(g); const wrap=el("div","stack");

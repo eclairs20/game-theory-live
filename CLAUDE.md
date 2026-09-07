@@ -24,24 +24,46 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - `phase`: `"waiting" | "open" | "revealed"`
   - `passHash`: djb2 hash of the instructor passcode (front-end gate only, not real security)
   - `config`: per-game parameter overrides on top of `DEFAULT_CONFIG`
-- `main/subs/<roundKey>__<studentId>` — one per student per round:
-  `{ roundKey, game, round, studentId, name, ts, value|choice|contrib }`
-  where `roundKey = game + "-" + round`.
+- `main/subs/<roundKey>__<encodeKey(studentId)>` — one per student per round:
+  `{ roundKey, game, round, studentId, name, ts, guest?, value|choice|contrib }`
+  where `roundKey = game + "-" + round`. `studentId` is the Google email (for signed-in
+  students) or a random `s_…` id (for name-join). The path segment is `encodeKey()`d because
+  Firebase keys can't contain `. # $ [ ] /`; the doc keeps the raw `studentId`. `guest:true`
+  marks a submission whose id isn't on the roster.
+- `main/roster` — array of `{ email, name }` for the enrolled class (optional). When present,
+  the student join screen prefers Google sign-in; a Google email matching the roster joins
+  under that name, a non-matching email joins as a flagged `guest`. Name-join is the fallback.
 - The data layer is a thin adapter over the Firebase compat SDK; the app only uses
   `.ref().on()/.once()/.set()/.update()/.remove()`. Preserve these paths and shapes.
+
+## Student identity (Google sign-in + roster)
+- Firebase Auth (compat) provides "Continue with Google". `applyIdentity()` recomputes the
+  effective `myId`/`myName`/`meGuest` on every render from `authUser` (Google) or the manual
+  name (`manualId` + `gtl_name`). Sign-in is optional: if the auth SDK is missing or the
+  Google provider/authorized-domain isn't set up in the Firebase console, the app falls back
+  to name-join and the Google button errors gracefully.
+- One-time console setup for Google: Authentication → Sign-in method → enable **Google**;
+  Authentication → Settings → Authorized domains → add `eclairs20.github.io`.
+- Instructor console has a **Class roster** editor (paste `email, name` lines) and a live
+  **Attendance** card (submitted vs not-yet, by name; guests flagged). Public DB rules mean
+  the roster is world-readable/writable — same soft-gate trust model as `passHash`.
 
 ## The three games
 - `guess23` — Guess ⅔ of the average. Analysis: histogram + level-k markers, ⅔ target,
   winner, implied reasoning level.
-- `pd` — Prisoner's Dilemma (framed as two firms setting price). Payoffs R/T/P/S
-  (default 3/5/1/0). Analysis: cooperation rate, shaded Nash/Pareto payoff matrix,
-  expected payoff of cooperate vs defect given the class split.
+- `pd` — "Give or Keep" giving game (a Prisoner's Dilemma; the PD term is instructor-only,
+  never shown to students). Config `{ keep, give }` (default 2/3): Keep adds `keep` to your own
+  earnings, Give adds `give` to your partner's. Choices are `keep`/`give`. Students are randomly
+  but deterministically paired (`pairSubs`, seeded by round). Analysis: choice split, average
+  earnings vs all-Keep/all-Give benchmarks, shaded Nash/best-for-pair matrix (shading + legend
+  only in results, never on the submission screen), a "who played whom" table (instructor) and
+  each student's own match (on reveal).
 - `publicgoods` — Public Goods. Endowment E (20), return-per-token `mpcr` (0.5). Analysis:
   contribution histogram, free-riders, group earnings vs Nash & social optimum, efficiency.
 
 ## Roles & flow
-- Student: open link → enter name → submit → sees own submission + a count. Aggregates are
-  hidden until the instructor reveals.
+- Student: open link → sign in with Google (or enter a name) → submit → sees own submission +
+  a count. Aggregates are hidden until the instructor reveals.
 - Instructor: click "Instructor" → passcode → console (pick game, open/close submissions,
   reveal, next round, clear round data, edit parameters). First run sets the passcode.
 
