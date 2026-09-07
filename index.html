@@ -227,14 +227,14 @@ const ROOM = "main";
 const GAMES = {
   guess23: { name:"Guess ⅔ of the Average", short:"⅔", icon:"⅔",
     blurb:"Pick a number; target is a fraction of the class mean." },
-  pd: { name:"Red or Black", short:"R/B", icon:"RB",
+  pd: { name:"Give or Keep", short:"G/K", icon:"GK",
     blurb:"Keep money for yourself, or give more to your partner." },
   publicgoods: { name:"Public Goods", short:"PG", icon:"PG",
     blurb:"Contribute to a shared fund that pays everyone." }
 };
 const DEFAULT_CONFIG = {
   guess23:{ frac:2/3, min:0, max:100 },
-  pd:{ red:2, black:3 },
+  pd:{ keep:2, give:3 },
   publicgoods:{ E:20, mpcr:0.5 }
 };
 
@@ -415,19 +415,19 @@ function studentGuess(c){
 }
 function studentColor(c){
   const cf=cfg("pd"); const cur=mySub();
-  const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="6px 0 4px"; h.textContent="Choose your card: Red or Black";
-  c.append(h, el("p","lead","You'll be matched with one classmate, and you both choose at the same time. Red adds $"+cf.red+" to your own earnings. Black adds $"+cf.black+" to your partner's earnings — nothing to you."));
+  const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="6px 0 4px"; h.textContent="Make your choice: Give or Keep";
+  c.append(h, el("p","lead","You'll be matched with one classmate, and you both choose at the same time. Keep adds $"+cf.keep+" to your own earnings. Give adds $"+cf.give+" to your partner's earnings — nothing to you."));
   c.append(colorMatrix(cf, cur?cur.choice:null));
   const ch=el("div","choices"); ch.style.marginTop="18px"; ch.style.gridTemplateColumns="1fr 1fr";
-  const mk=(key,ttl,desc)=>{const t=el("button","choice"+(cur&&cur.choice===key?(key==="red"?" sel defect":" sel"):""));
-    t.append(el("span","tag",key==="red"?"+$"+cf.red+" you":"+$"+cf.black+" partner"),el("span","ttl",ttl),el("span","desc",desc));
-    t.onclick=async()=>{ await submit({choice:key}); toast(key==="red"?"Chose Red":"Chose Black"); }; return t;};
+  const mk=(key,ttl,desc)=>{const t=el("button","choice"+(cur&&cur.choice===key?" sel":""));
+    t.append(el("span","tag",key==="keep"?"+$"+cf.keep+" you":"+$"+cf.give+" partner"),el("span","ttl",ttl),el("span","desc",desc));
+    t.onclick=async()=>{ await submit({choice:key}); toast(key==="keep"?"Chose Keep":"Chose Give"); }; return t;};
   ch.append(
-    mk("red","Red","Add $"+cf.red+" to your own earnings, whatever your partner does."),
-    mk("black","Black","Give your partner $"+cf.black+". You gain nothing directly.")
+    mk("give","Give","Give your partner $"+cf.give+". You gain nothing directly."),
+    mk("keep","Keep","Add $"+cf.keep+" to your own earnings, whatever your partner does.")
   );
   c.append(ch);
-  if(cur) c.append(submittedBadge("Your card: <span class='myval'>"+(cur.choice==="red"?"Red":"Black")+"</span>."));
+  if(cur) c.append(submittedBadge("Your choice: <span class='myval'>"+(cur.choice==="keep"?"Keep":"Give")+"</span>."));
   c.append(liveCount());
 }
 function studentPG(c){
@@ -529,12 +529,12 @@ function pairSubs(list){
   return pairs;
 }
 /* Payoff to a player who chose `mine` against a partner who chose `partner`. */
-function colorPay(cf,mine,partner){ return (mine==="red"?cf.red:0)+(partner==="black"?cf.black:0); }
+function colorPay(cf,mine,partner){ return (mine==="keep"?cf.keep:0)+(partner==="give"?cf.give:0); }
 
 function analyzeColor(teacher){
   const cf=cfg("pd");
-  const nRed=subs.filter(s=>s.choice==="red").length, nBlack=subs.filter(s=>s.choice==="black").length, n=nRed+nBlack;
-  const pBlack=n?nBlack/n:0;
+  const nKeep=subs.filter(s=>s.choice==="keep").length, nGive=subs.filter(s=>s.choice==="give").length, n=nKeep+nGive;
+  const pGive=n?nGive/n:0;
   const pairs=pairSubs(subs);
   const earn={}; let paired=0, totalEarn=0;
   pairs.forEach(([a,b])=>{ if(a&&b){ const ea=colorPay(cf,a.choice,b.choice), eb=colorPay(cf,b.choice,a.choice);
@@ -543,29 +543,29 @@ function analyzeColor(teacher){
   const wrap=el("div","grid-analysis");
   const left=el("div","chart-card");
   left.append(Object.assign(el("h3"),{textContent:"What the class chose"}));
-  left.append(Object.assign(el("div","cap"),{textContent:"Red keeps $"+cf.red+" for yourself; Black gives your partner $"+cf.black+"."}));
-  left.append(barChart([{label:"Black (give $"+cf.black+")",value:nBlack,color:"var(--good)"},{label:"Red (keep $"+cf.red+")",value:nRed,color:"var(--bad)"}], n));
+  left.append(Object.assign(el("div","cap"),{textContent:"Keep adds $"+cf.keep+" to yourself; Give adds $"+cf.give+" to your partner."}));
+  left.append(barChart([{label:"Give (+$"+cf.give+" partner)",value:nGive,color:"var(--good)"},{label:"Keep (+$"+cf.keep+" self)",value:nKeep,color:"var(--bad)"}], n));
   const eg=el("div"); eg.style.marginTop="18px";
   eg.append(Object.assign(el("h3"),{textContent:"Average earnings per player",style:"font-size:.95rem;margin-bottom:4px"}));
-  eg.append(Object.assign(el("div","cap"),{textContent:"Between the two benchmarks: everyone Red vs everyone Black."}));
+  eg.append(Object.assign(el("div","cap"),{textContent:"Between the two benchmarks: everyone Keeps vs everyone Gives."}));
   eg.append(barChart([
-    {label:"If all keep (Red)",value:+cf.red.toFixed(2),color:"var(--bad)"},
+    {label:"If all keep",value:+cf.keep.toFixed(2),color:"var(--bad)"},
     {label:"This class",value:+avgEarn.toFixed(2),color:"var(--accent)"},
-    {label:"If all give (Black)",value:+cf.black.toFixed(2),color:"var(--good)"}
-  ], Math.max(cf.black,avgEarn), true));
+    {label:"If all give",value:+cf.give.toFixed(2),color:"var(--good)"}
+  ], Math.max(cf.give,avgEarn), true));
   left.append(eg);
   wrap.append(left);
   const right=el("div","stack");
   const st=el("div","stats");
-  st.append(statTile("Chose Black",pct(pBlack),nBlack+" of "+n+" gave",true),
+  st.append(statTile("Chose Give",pct(pGive),nGive+" of "+n+" gave",true),
     statTile("Avg earned","$"+fmt(avgEarn,2),"per matched player"),
-    statTile("If all gave","$"+fmt(cf.black,2),"the (Black,Black) payoff","good"),
-    statTile("Chose Red",nRed+" ("+pct(n?nRed/n:0)+")","kept for self","bad"));
+    statTile("If all gave","$"+fmt(cf.give,2),"the (Give,Give) payoff","good"),
+    statTile("Chose Keep",nKeep+" ("+pct(n?nKeep/n:0)+")","kept for self","bad"));
   right.append(st);
   right.append(colorMatrix(cf,null,true));
   const nb=el("div","note-box");
-  nb.innerHTML="<b>Teaching point:</b> Red pays you $"+cf.red+" no matter what your partner does, so it strictly dominates — a purely self-interested player always picks Red. Yet if both pick Black, each earns $"+cf.black+" &gt; $"+cf.red+". Individual logic points to (Red, Red); the group does best at (Black, Black). The class "+(pBlack>0.5?"leaned toward giving":"leaned toward keeping")+".";
-  if(teacher){ const t2=el("div","sm mut"); t2.style.marginTop="8px"; t2.textContent="Instructor note: structurally this is the classic Prisoner's Dilemma, framed as a giving game — Red = defect, Black = cooperate."; nb.appendChild(t2); }
+  nb.innerHTML="<b>Teaching point:</b> Keep pays you $"+cf.keep+" no matter what your partner does, so it strictly dominates — a purely self-interested player always Keeps. Yet if both Give, each earns $"+cf.give+" &gt; $"+cf.keep+". Individual logic points to (Keep, Keep); the group does best at (Give, Give). The class "+(pGive>0.5?"leaned toward giving":"leaned toward keeping")+".";
+  if(teacher){ const t2=el("div","sm mut"); t2.style.marginTop="8px"; t2.textContent="Instructor note: structurally this is the classic Prisoner's Dilemma, framed as a giving game — Keep = defect, Give = cooperate."; nb.appendChild(t2); }
   right.append(nb);
   wrap.append(right);
   const out=el("div","stack");
@@ -576,9 +576,9 @@ function analyzeColor(teacher){
 function pairingsTable(cf,pairs,earn){
   const card=el("div","card stage");
   card.append(el("h3","Who played whom"),
-    Object.assign(el("div","sm mut"),{textContent:"Pairs are matched at random each round. Cards and $ earnings below.",style:"margin:2px 0 12px"}));
-  const chip=ch=> ch==="red"?"<span style='color:var(--bad);font-weight:700'>Red</span>":"<span style='color:var(--ink);font-weight:700'>Black</span>";
-  let rows="<tr><th>#</th><th>Player</th><th>Card</th><th>$</th><th>Player</th><th>Card</th><th>$</th></tr>";
+    Object.assign(el("div","sm mut"),{textContent:"Pairs are matched at random each round. Choices and $ earnings below.",style:"margin:2px 0 12px"}));
+  const chip=ch=> ch==="keep"?"<span style='color:var(--bad);font-weight:700'>Keep</span>":"<span style='color:var(--good);font-weight:700'>Give</span>";
+  let rows="<tr><th>#</th><th>Player</th><th>Choice</th><th>$</th><th>Player</th><th>Choice</th><th>$</th></tr>";
   pairs.forEach(([a,b],i)=>{
     if(a&&b){
       rows+="<tr><td>"+(i+1)+"</td>"+
@@ -599,8 +599,8 @@ function myMatchCard(cf,pairs){
   let mine=null, partner=null;
   for(const [a,b] of pairs){ if(a&&a.studentId===myId){mine=a;partner=b;break;} if(b&&b.studentId===myId){mine=b;partner=a;break;} }
   if(!mine){ card.append(Object.assign(el("h3"),{textContent:"You didn't submit a card this round",style:"margin-top:6px"})); return card; }
-  const col=ch=> ch==="red"?"var(--bad)":"var(--ink)";
-  const name=ch=> ch==="red"?"Red":"Black";
+  const col=ch=> ch==="keep"?"var(--bad)":"var(--good)";
+  const name=ch=> ch==="keep"?"Keep":"Give";
   if(!partner){
     card.append(Object.assign(el("h3"),{textContent:"No partner this round",style:"margin-top:6px"}),
       Object.assign(el("p","lead"),{textContent:"There was an odd number of players, so you were left unmatched. You chose "+name(mine.choice)+"."}));
@@ -717,24 +717,29 @@ function svgEl(tag,attrs,text){
 }
 function colorMatrix(cf,mine,full){
   const wrap=el("div"); if(full){ wrap.className="chart-card"; wrap.append(Object.assign(el("h3"),{textContent:"Payoff matrix (you, partner)",style:"margin-bottom:10px"})); } else { wrap.style.marginTop="16px"; wrap.style.overflowX="auto"; }
-  const pay=(a,b)=> (a==="red"?cf.red:0)+(b==="black"?cf.black:0);
+  const pay=(a,b)=> (a==="keep"?cf.keep:0)+(b==="give"?cf.give:0);
   const cellTxt=(a,b)=> pay(a,b)+", "+pay(b,a);
-  const R="<span style='color:var(--bad);font-weight:700'>Red</span>", B="<span style='color:var(--ink);font-weight:700'>Black</span>";
+  const K="<b>Keep</b>", G="<b>Give</b>";
+  // Equilibrium / social-optimum shading and legend only in the results view — never on the
+  // student submission screen, so the class doesn't see the analysis before they choose.
+  const nash=full?" nash":"", pareto=full?" pareto":"";
   const t=el("table","matrix");
   t.innerHTML=
     "<tr><th></th><th colspan='2'>Your partner</th></tr>"+
-    "<tr><th></th><th>"+R+"</th><th>"+B+"</th></tr>"+
-    "<tr><th>You "+R+"</th>"+
-      "<td class='cell nash'>"+cellTxt("red","red")+"</td>"+
-      "<td class='cell'>"+cellTxt("red","black")+"</td></tr>"+
-    "<tr><th>You "+B+"</th>"+
-      "<td class='cell'>"+cellTxt("black","red")+"</td>"+
-      "<td class='cell pareto'>"+cellTxt("black","black")+"</td></tr>";
+    "<tr><th></th><th>"+K+"</th><th>"+G+"</th></tr>"+
+    "<tr><th>You "+K+"</th>"+
+      "<td class='cell"+nash+"'>"+cellTxt("keep","keep")+"</td>"+
+      "<td class='cell'>"+cellTxt("keep","give")+"</td></tr>"+
+    "<tr><th>You "+G+"</th>"+
+      "<td class='cell'>"+cellTxt("give","keep")+"</td>"+
+      "<td class='cell"+pareto+"'>"+cellTxt("give","give")+"</td></tr>";
   wrap.append(t);
-  const lg=el("div","legend");
-  const g=el("span","legc"); const gs=el("span","swatch"); gs.style.background="var(--good)"; g.append(gs,document.createTextNode("Best for the pair (Black, Black)"));
-  const r=el("span","legc"); const rs=el("span","swatch"); rs.style.background="var(--bad)"; r.append(rs,document.createTextNode("Nash equilibrium (Red, Red)"));
-  lg.append(g,r); wrap.append(lg);
+  if(full){
+    const lg=el("div","legend");
+    const g=el("span","legc"); const gs=el("span","swatch"); gs.style.background="var(--good)"; g.append(gs,document.createTextNode("Best for the pair (Give, Give)"));
+    const r=el("span","legc"); const rs=el("span","swatch"); rs.style.background="var(--bad)"; r.append(rs,document.createTextNode("Nash equilibrium (Keep, Keep)"));
+    lg.append(g,r); wrap.append(lg);
+  }
   return wrap;
 }
 
@@ -871,8 +876,8 @@ function paramEditor(){
   if(g==="guess23"){ const grid=el("div","paramgrid");
     grid.append(mk("Fraction (⅔)","frac",cf.frac,"0.01"),mk("Max value","max",cf.max)); wrap.append(grid); }
   else if(g==="pd"){ const grid=el("div","paramgrid");
-    grid.append(mk("Red: $ to self","red",cf.red),mk("Black: $ to partner","black",cf.black));
-    wrap.append(grid); wrap.append(Object.assign(el("div","sm mut"),{textContent:"Keep Black > Red (giving is socially better) and Red > 0 (keeping stays tempting)."})); }
+    grid.append(mk("Keep: $ to self","keep",cf.keep),mk("Give: $ to partner","give",cf.give));
+    wrap.append(grid); wrap.append(Object.assign(el("div","sm mut"),{textContent:"Set Give > Keep so giving is socially better, and Keep > 0 so keeping stays individually tempting."})); }
   else { const grid=el("div","paramgrid");
     grid.append(mk("Endowment","E",cf.E),mk("Return / token","mpcr",cf.mpcr,"0.05")); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Return<1 keeps free-riding tempting individually."})); }
