@@ -306,9 +306,9 @@ function applyIdentity(){
     const email=(authUser.email||"").toLowerCase();
     const rn=roster[email];
     myId=email; myName=rn||authUser.displayName||email;
-    meGuest = haveRoster() && !rn;
+    meGuest = !rn;                       // enrolled only if the email is on the roster
   } else {
-    myId=manualId; myName=ls("gtl_name")||""; meGuest=false;
+    myId=manualId; myName=ls("gtl_name")||""; meGuest = !!myName;  // a typed name is always a guest
   }
 }
 function haveIdentity(){ return !!authUser || !!myName; }
@@ -363,6 +363,7 @@ async function submit(payload){
   const key=roundKey(control.activeGame,control.round);
   const doc={ roundKey:key, game:control.activeGame, round:control.round, studentId:myId, name:myName||"Anon", ts:Date.now() };
   if(meGuest) doc.guest=true;
+  if(authUser&&authUser.email) doc.email=authUser.email.toLowerCase();
   Object.assign(doc,payload);
   try{ await fb.ref(SUB_DOC(key,myId)).set(doc); }
   catch(e){ toast("Submit failed — check connection"); }
@@ -455,7 +456,7 @@ function nameStripIfNeeded(){
     const lft=el("div","row"); lft.style.gap="8px"; lft.style.justifyContent="flex-start";
     lft.append(el("span","sm mut","Playing as"));
     const nm=el("span"); nm.style.fontWeight="700"; nm.textContent=myName; lft.append(nm);
-    if(meGuest){ const g=el("span","chip guest"); g.textContent="guest — not on class list"; lft.append(g); }
+    if(meGuest&&haveRoster()){ const g=el("span","chip guest"); g.textContent="guest — not on class list"; lft.append(g); }
     r.append(lft);
     if(authUser){ const b=el("button","ghost-btn","Sign out"); b.onclick=async()=>{ await signOutStudent(); }; r.append(b); }
     else { const b=el("button","ghost-btn","Change"); b.onclick=()=>{ myName=""; ls("gtl_name",""); render(); }; r.append(b); }
@@ -479,7 +480,9 @@ function joinPanel(){
   const go=()=>{ const v=inp.value.trim(); if(!v){inp.focus();return;} myName=v; ls("gtl_name",v); render(); };
   b.onclick=go; inp.onkeydown=e=>{if(e.key==="Enter")go();};
   row.append(inp,b); f.append(row); wrap.append(f);
-  if(haveRoster()) wrap.append(Object.assign(el("div","sm mut"),{textContent:"Enrolled students: use Continue with Google so your instructor can see you on the class list.",style:"margin-top:8px"}));
+  if(fbAuth){ wrap.append(Object.assign(el("div","sm mut"),{textContent: haveRoster()
+    ? "Enrolled students: use Continue with Google so your instructor can match you to the class list."
+    : "Tip: Continue with Google so your instructor gets your name — a typed name joins as an anonymous guest.",style:"margin-top:8px"})); }
   return wrap;
 }
 function studentView(){
@@ -977,7 +980,7 @@ function teacherConsole(){
     mon.append(Object.assign(el("p","lead"),{textContent: control.phase==="open"?"Share the link and watch responses arrive. Results appear here live — for your eyes only — until you reveal.":"Click “Open submissions” when the class is ready.",style:"margin-top:8px"}));
     main.append(mon);
   }
-  if(control&&control.activeGame&&haveRoster()) main.append(attendanceCard());
+  if(control&&control.activeGame&&(haveRoster()||subs.length)) main.append(attendanceCard());
   c.append(main);
   return c;
 }
@@ -1006,10 +1009,6 @@ function attendanceCard(){
   const done=[], todo=[];
   rosterList.forEach(e=>{ (subByEmail[e.email]?done:todo).push(e); });
   const guests=subs.filter(s=>!roster[String(s.studentId).toLowerCase()]);
-  card.append(el("div","eyebrow","Attendance"),
-    Object.assign(el("h3"),{textContent:done.length+" of "+rosterList.length+" enrolled have submitted this round",style:"margin:4px 0 2px"}));
-  if(guests.length) card.append(Object.assign(el("div","sm mut"),{textContent:guests.length+" guest"+(guests.length===1?"":"s")+" not on the class list also submitted.",style:"margin-bottom:10px"}));
-  else card.append(el("div","sm mut",""));
   const mkChips=(label,arr,cls)=>{
     if(!arr.length) return null;
     const blk=el("div"); blk.style.marginTop="12px";
@@ -1018,10 +1017,18 @@ function attendanceCard(){
     arr.forEach(x=>{ const ch=el("span","chip "+cls); ch.textContent = x.name||x; chips.append(ch); });
     blk.append(chips); return blk;
   };
-  const d=mkChips("Submitted",done,"done"); if(d) card.append(d);
-  const t=mkChips("Not yet",todo,"todo"); if(t) card.append(t);
-  if(guests.length){
+  if(haveRoster()){
+    card.append(el("div","eyebrow","Attendance"),
+      Object.assign(el("h3"),{textContent:done.length+" of "+rosterList.length+" enrolled have submitted this round",style:"margin:4px 0 2px"}));
+    if(guests.length) card.append(Object.assign(el("div","sm mut"),{textContent:guests.length+" guest"+(guests.length===1?"":"s")+" not on the class list also submitted.",style:"margin-bottom:2px"}));
+    const d=mkChips("Submitted",done,"done"); if(d) card.append(d);
+    const t=mkChips("Not yet",todo,"todo"); if(t) card.append(t);
     const g=mkChips("Guests",guests.map(s=>({name:s.name})),"guest"); if(g) card.append(g);
+  } else {
+    card.append(el("div","eyebrow","Who's here"),
+      Object.assign(el("h3"),{textContent:subs.length+" submitted this round",style:"margin:4px 0 2px"}),
+      Object.assign(el("div","sm mut"),{textContent:"No class roster loaded yet — everyone joins as a guest. Load the roster (left) to track enrolled attendance.",style:"margin-bottom:2px"}));
+    const g=mkChips("Submitted",subs.slice().sort((a,b)=>a.ts-b.ts).map(s=>({name:s.name})),"guest"); if(g) card.append(g);
   }
   return card;
 }
