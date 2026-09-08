@@ -471,20 +471,25 @@ function studentWaiting(){
   return c;
 }
 /* Compact identity strip when signed in / named; full join panel otherwise. */
-function nameStripIfNeeded(){
-  const wrap=el("div"); wrap.style.maxWidth="440px"; wrap.style.margin="0 auto 22px";
-  if(haveIdentity()){
-    const r=el("div","row spread"); r.style.background="var(--surface-2)"; r.style.border="1px solid var(--line)"; r.style.borderRadius="var(--radius-sm)"; r.style.padding="9px 9px 9px 14px";
-    const lft=el("div","row"); lft.style.gap="8px"; lft.style.justifyContent="flex-start";
-    lft.append(el("span","sm mut","Playing as"));
-    const nm=el("span"); nm.style.fontWeight="700"; nm.textContent=myName; lft.append(nm);
-    if(meGuest&&haveRoster()){ const g=el("span","chip guest"); g.textContent="guest — not on class list"; lft.append(g); }
-    r.append(lft);
-    if(authUser){ const b=el("button","ghost-btn","Sign out"); b.onclick=async()=>{ await signOutStudent(); }; r.append(b); }
-    else { const b=el("button","ghost-btn","Change"); b.onclick=()=>{ myName=""; ls("gtl_name",""); render(); }; r.append(b); }
-    wrap.append(r); return wrap;
-  }
-  return joinPanel();
+function nameStripIfNeeded(){ return haveIdentity() ? identityBar() : joinPanel(); }
+/* Shows who's signed in (name + email) with a Sign out button, so a different
+   person can sign in from the same phone/browser. */
+function identityBar(){
+  const box=el("div","row spread");
+  box.style.cssText="background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:9px 9px 9px 14px;margin:0 0 18px;gap:10px;width:100%";
+  const lft=el("div"); lft.style.minWidth="0";
+  const l1=el("div"); l1.style.cssText="display:flex;align-items:center;gap:8px;flex-wrap:wrap";
+  l1.append(el("span","sm mut","Signed in as"));
+  const nm=el("span"); nm.style.fontWeight="700"; nm.textContent=myName; l1.append(nm);
+  if(meGuest&&haveRoster()){ const g=el("span","chip guest"); g.textContent="guest"; l1.append(g); }
+  lft.append(l1);
+  if(authUser&&authUser.email){ const em=el("div","sm mut mono"); em.style.cssText="margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"; em.textContent=authUser.email; lft.append(em); }
+  box.append(lft);
+  const b=el("button","ghost-btn", authUser?"Sign out":"Change"); b.style.flex="none";
+  if(authUser) b.onclick=async()=>{ await signOutStudent(); };
+  else b.onclick=()=>{ myName=""; ls("gtl_name",""); render(); };
+  box.append(b);
+  return box;
 }
 function joinPanel(){
   const wrap=el("div"); wrap.style.maxWidth="440px"; wrap.style.margin="0 auto 22px"; wrap.style.textAlign="left";
@@ -517,10 +522,14 @@ function joinPanel(){
 }
 function studentView(){
   const g=control.activeGame;
-  if(control.phase==="revealed") return analysisView(false);
+  if(control.phase==="revealed"){
+    if(!haveIdentity()) return analysisView(false);
+    const wrap=el("div","stack"); wrap.append(identityBar(), analysisView(false)); return wrap;
+  }
   const c=el("div","card stage");
   c.append(el("div","eyebrow gold",GAMES[g].name));
   if(!haveIdentity()){ const w=el("div"); w.style.marginTop="8px"; w.append(joinPanel()); c.append(w); return c; }
+  c.append(identityBar());
   if(control.phase!=="open"){
     const h=el("h2"); h.style.fontSize="1.5rem"; h.style.marginTop="6px"; h.textContent="Round "+control.round+" is set up";
     c.append(h, el("p","lead","Waiting for your instructor to open submissions…"));
