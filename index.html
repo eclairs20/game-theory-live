@@ -203,6 +203,8 @@ textarea.input{resize:vertical; min-height:96px; line-height:1.45; width:100%}
 .pick.teal.sel{background:var(--accent); border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-wash)}
 .pick.gold.sel{background:var(--gold); border-color:var(--gold); box-shadow:0 0 0 3px var(--gold-wash)}
 .pick.sel .ttl,.pick.sel .desc,.pick.sel .tag{color:#fff; opacity:1}
+.footer{text-align:center; color:var(--faint); font-size:.78rem; line-height:1.5; padding:30px 12px 0}
+.footer b{color:var(--muted); font-weight:600}
 </style>
 </head>
 <body>
@@ -228,6 +230,7 @@ textarea.input{resize:vertical; min-height:96px; line-height:1.45; width:100%}
     <button id="themeBtn" class="ghost-btn" title="Toggle theme">◐</button>
   </div>
   <div id="app"><div class="card stage center" style="padding:60px"><div class="mut">Loading the session…</div></div></div>
+  <footer class="footer">A <b>Strategic Interaction Lab</b> instrument · designed by <b>Prof. Sonia</b>, IIM Lucknow</footer>
 </div>
 <div id="toast" class="toast"></div>
 
@@ -265,16 +268,17 @@ const REQUIRE_GOOGLE = true;
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* ═══════════════════════════════════════════════════════════════════════ */
 
+/* Instructor-panel order follows the key order here: Give or Keep (G1) first. */
 const GAMES = {
-  guess23: { name:"Guess ⅔ of the Average", short:"⅔", icon:"⅔",
-    blurb:"Pick a number; target is a fraction of the class mean." },
-  pd: { name:"Give or Keep", short:"G/K", icon:"GK",
+  pd: { name:"Give or Keep", short:"G1", icon:"G1",
     blurb:"Keep money for yourself, or give more to your partner." },
-  publicgoods: { name:"Public Goods", short:"PG", icon:"PG",
+  guess23: { name:"Guess ½ of the Average", short:"G2", icon:"G2",
+    blurb:"Pick a number; target is a fraction of the class mean." },
+  publicgoods: { name:"Public Goods", short:"G3", icon:"G3",
     blurb:"Contribute to a shared fund that pays everyone." }
 };
 const DEFAULT_CONFIG = {
-  guess23:{ frac:2/3, min:0, max:100 },
+  guess23:{ frac:1/2, min:0, max:100 },
   pd:{ keep:2, give:3 },
   publicgoods:{ E:20, mpcr:0.5 }
 };
@@ -644,7 +648,7 @@ function analyzeGuess(){
   const median = n%2?vals[(n-1)/2]:(vals[n/2-1]+vals[n/2])/2;
   let best=Infinity,winners=[]; subs.forEach(s=>{const d=Math.abs(Number(s.value)-target); if(d<best-1e-9){best=d;winners=[s];}else if(Math.abs(d-best)<1e-9)winners.push(s);});
   const zeros=vals.filter(v=>v===0).length;
-  const markers=[{x:50,l:"L0 · random (50)"},{x:100*cf.frac*0.5,l:"L1 (33)"},{x:100*cf.frac*cf.frac*0.5,l:"L2 (22)"},{x:target,l:"Target",strong:true}];
+  const markers=[{x:50,l:"L0 · random (50)"},{x:cf.frac*50,l:"L1 ("+Math.round(cf.frac*50)+")"},{x:cf.frac*cf.frac*50,l:"L2 ("+Math.round(cf.frac*cf.frac*50)+")"},{x:target,l:"Target",strong:true}];
   const wrap=el("div","grid-analysis");
   const left=el("div","chart-card");
   left.append(Object.assign(el("h3"),{textContent:"Distribution of guesses"}),
@@ -655,7 +659,7 @@ function analyzeGuess(){
   const right=el("div","stack");
   const st=el("div","stats");
   st.append(statTile("Class average",fmt(mean,1),"of all guesses"),
-    statTile("⅔ Target",fmt(target,1),"closest wins",true),
+    statTile("Target",fmt(target,1),fmt(cf.frac*100,0)+"% of the mean · closest wins",true),
     statTile("Median",fmt(median,0)),
     statTile("Guessed 0",zeros+" ("+pct(zeros/n)+")","fully rational"));
   right.append(st);
@@ -1111,7 +1115,7 @@ function paramEditor(){
       const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
     f.append(i); return f; };
   if(g==="guess23"){ const grid=el("div","paramgrid");
-    grid.append(mk("Fraction (⅔)","frac",cf.frac,"0.01"),mk("Max value","max",cf.max)); wrap.append(grid); }
+    grid.append(mk("Fraction of average","frac",cf.frac,"0.01"),mk("Max value","max",cf.max)); wrap.append(grid); }
   else if(g==="pd"){ const grid=el("div","paramgrid");
     grid.append(mk("Keep: $ to self","keep",cf.keep),mk("Give: $ to partner","give",cf.give));
     wrap.append(grid); wrap.append(Object.assign(el("div","sm mut"),{textContent:"Set Give > Keep so giving is socially better, and Keep > 0 so keeping stays individually tempting."})); }

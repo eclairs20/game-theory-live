@@ -49,8 +49,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   the roster is world-readable/writable — same soft-gate trust model as `passHash`.
 
 ## The three games
-- `guess23` — Guess ⅔ of the average. Analysis: histogram + level-k markers, ⅔ target,
-  winner, implied reasoning level.
+- `guess23` — Guess ½ of the average (the `frac` default is now 1/2; key kept as `guess23`).
+  Analysis: histogram + level-k markers, target, winner, implied reasoning level.
 - `pd` — "Give or Keep" giving game (a Prisoner's Dilemma; the PD term is instructor-only,
   never shown to students). Config `{ keep, give }` (default 2/3): Keep adds `keep` to your own
   earnings, Give adds `give` to your partner's. Choices are `keep`/`give`. Students are randomly
