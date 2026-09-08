@@ -137,6 +137,7 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .matrix th{background:var(--surface-2); color:var(--muted); font-weight:600; font-size:.78rem; letter-spacing:.03em}
 .matrix .cell{font-family:"IBM Plex Mono",monospace; font-weight:500}
 .matrix .nash{background:var(--bad-wash)} .matrix .pareto{background:var(--good-wash)}
+.matrix .played{outline:2px solid var(--accent); outline-offset:-2px}
 
 .console{display:grid; grid-template-columns:290px 1fr; gap:20px; align-items:start}
 @media(max-width:820px){.console{grid-template-columns:1fr}}
@@ -756,31 +757,43 @@ function analyzeColor(teacher){
   pairs.forEach(([a,b])=>{ if(a&&b){ const ea=colorPay(cf,a.choice,b.choice), eb=colorPay(cf,b.choice,a.choice);
     earn[a.studentId]=ea; earn[b.studentId]=eb; paired+=2; totalEarn+=ea+eb; } });
   const avgEarn=paired?totalEarn/paired:0;
+  // The participant's own played cell (own choice, partner's choice) for the matrix highlight.
+  let played=null;
+  if(!teacher){ for(const [a,b] of pairs){
+    if(a&&a.studentId===myId&&b){ played={you:a.choice,partner:b.choice}; break; }
+    if(b&&b.studentId===myId&&a){ played={you:b.choice,partner:a.choice}; break; } } }
   const wrap=el("div","grid-analysis");
   const left=el("div","chart-card");
   left.append(Object.assign(el("h3"),{textContent:"What the class chose"}));
   left.append(Object.assign(el("div","cap"),{textContent:"Keep adds $"+cf.keep+" to yourself; Give adds $"+cf.give+" to your partner."}));
   left.append(barChart([{label:"Give (+$"+cf.give+" partner)",value:nGive,color:"var(--good)"},{label:"Keep (+$"+cf.keep+" self)",value:nKeep,color:"var(--bad)"}], n));
-  const eg=el("div"); eg.style.marginTop="18px";
-  eg.append(Object.assign(el("h3"),{textContent:"Average earnings per player",style:"font-size:.95rem;margin-bottom:4px"}));
-  eg.append(Object.assign(el("div","cap"),{textContent:"Between the two benchmarks: everyone Keeps vs everyone Gives."}));
-  eg.append(barChart([
-    {label:"If all keep",value:+cf.keep.toFixed(2),color:"var(--bad)"},
-    {label:"This class",value:+avgEarn.toFixed(2),color:"var(--accent)"},
-    {label:"If all give",value:+cf.give.toFixed(2),color:"var(--good)"}
-  ], Math.max(cf.give,avgEarn), true));
-  left.append(eg);
+  if(teacher){
+    const eg=el("div"); eg.style.marginTop="18px";
+    eg.append(Object.assign(el("h3"),{textContent:"Average earnings per player",style:"font-size:.95rem;margin-bottom:4px"}));
+    eg.append(Object.assign(el("div","cap"),{textContent:"Between the two benchmarks: everyone Keeps vs everyone Gives."}));
+    eg.append(barChart([
+      {label:"If all keep",value:+cf.keep.toFixed(2),color:"var(--bad)"},
+      {label:"This class",value:+avgEarn.toFixed(2),color:"var(--accent)"},
+      {label:"If all give",value:+cf.give.toFixed(2),color:"var(--good)"}
+    ], Math.max(cf.give,avgEarn), true));
+    left.append(eg);
+  }
   wrap.append(left);
   const right=el("div","stack");
   const st=el("div","stats");
-  st.append(statTile("Chose Give",pct(pGive),nGive+" of "+n+" gave",true),
-    statTile("Avg earned","$"+fmt(avgEarn,2),"per matched player"),
-    statTile("If all gave","$"+fmt(cf.give,2),"the (Give,Give) payoff","good"),
-    statTile("Chose Keep",nKeep+" ("+pct(n?nKeep/n:0)+")","kept for self","bad"));
+  if(teacher){
+    st.append(statTile("Chose Give",pct(pGive),nGive+" of "+n+" gave",true),
+      statTile("Avg earned","$"+fmt(avgEarn,2),"per matched player"),
+      statTile("If all gave","$"+fmt(cf.give,2),"the (Give,Give) payoff","good"),
+      statTile("Chose Keep",nKeep+" ("+pct(n?nKeep/n:0)+")","kept for self","bad"));
+  } else {
+    st.append(statTile("Chose Give",pct(pGive),nGive+" of "+n+" gave",true),
+      statTile("Chose Keep",nKeep+" ("+pct(n?nKeep/n:0)+")","kept for self","bad"));
+  }
   right.append(st);
-  right.append(colorMatrix(cf,null,true));
+  right.append(teacher ? colorMatrix(cf,null,true) : colorMatrix(cf,null,true,played,true));
   const nb=el("div","note-box");
-  nb.innerHTML="<b>Teaching point:</b> Keep pays you $"+cf.keep+" no matter what your partner does, so it strictly dominates — a purely self-interested player always Keeps. Yet if both Give, each earns $"+cf.give+" &gt; $"+cf.keep+". Individual logic points to (Keep, Keep); the group does best at (Give, Give). The class "+(pGive>0.5?"leaned toward giving":"leaned toward keeping")+".";
+  nb.innerHTML="<b>Remark:</b> Keep pays you $"+cf.keep+" no matter what your partner does, so it strictly dominates — a purely self-interested player always Keeps. Yet if both Give, each earns $"+cf.give+" &gt; $"+cf.keep+". Individual logic points to (Keep, Keep); the group does best at (Give, Give). The class "+(pGive>0.5?"leaned toward giving":"leaned toward keeping")+".";
   if(teacher){ const t2=el("div","sm mut"); t2.style.marginTop="8px"; t2.textContent="Instructor note: structurally this is the classic Prisoner's Dilemma, framed as a giving game — Keep = defect, Give = cooperate."; nb.appendChild(t2); }
   right.append(nb);
   wrap.append(right);
@@ -932,30 +945,41 @@ function svgEl(tag,attrs,text){
   if(text!=null) e.textContent=text;
   return e;
 }
-function colorMatrix(cf,mine,full){
+function colorMatrix(cf,mine,full,played,participant){
   const wrap=el("div"); if(full){ wrap.className="chart-card"; wrap.append(Object.assign(el("h3"),{textContent:"Payoff matrix (you, partner)",style:"margin-bottom:10px"})); } else { wrap.style.marginTop="16px"; wrap.style.overflowX="auto"; }
   const pay=(a,b)=> (a==="keep"?cf.keep:0)+(b==="give"?cf.give:0);
   const cellTxt=(a,b)=> pay(a,b)+", "+pay(b,a);
+  const nm=ch=> ch==="keep"?"Keep":"Give";
   const K="<b>Keep</b>", G="<b>Give</b>";
-  // Equilibrium / social-optimum shading and legend only in the results view — never on the
-  // student submission screen, so the class doesn't see the analysis before they choose.
-  const nash=full?" nash":"", pareto=full?" pareto":"";
+  // Shading + legend only in the results view. The participant view highlights the cell
+  // they actually landed in ("You played") instead of the Nash equilibrium.
+  const showNash = full && !participant;
+  const cellCls=(row,col)=>{ let c="cell";
+    if(showNash && row==="keep" && col==="keep") c+=" nash";
+    if(full && row==="give" && col==="give") c+=" pareto";
+    if(played && played.you===row && played.partner===col) c+=" played";
+    return c; };
   const t=el("table","matrix");
   t.innerHTML=
     "<tr><th></th><th colspan='2'>Your partner</th></tr>"+
     "<tr><th></th><th>"+K+"</th><th>"+G+"</th></tr>"+
     "<tr><th>You "+K+"</th>"+
-      "<td class='cell"+nash+"'>"+cellTxt("keep","keep")+"</td>"+
-      "<td class='cell'>"+cellTxt("keep","give")+"</td></tr>"+
+      "<td class='"+cellCls("keep","keep")+"'>"+cellTxt("keep","keep")+"</td>"+
+      "<td class='"+cellCls("keep","give")+"'>"+cellTxt("keep","give")+"</td></tr>"+
     "<tr><th>You "+G+"</th>"+
-      "<td class='cell'>"+cellTxt("give","keep")+"</td>"+
-      "<td class='cell"+pareto+"'>"+cellTxt("give","give")+"</td></tr>";
+      "<td class='"+cellCls("give","keep")+"'>"+cellTxt("give","keep")+"</td>"+
+      "<td class='"+cellCls("give","give")+"'>"+cellTxt("give","give")+"</td></tr>";
   wrap.append(t);
   if(full){
     const lg=el("div","legend");
     const g=el("span","legc"); const gs=el("span","swatch"); gs.style.background="var(--good)"; g.append(gs,document.createTextNode("Best for the pair (Give, Give)"));
-    const r=el("span","legc"); const rs=el("span","swatch"); rs.style.background="var(--bad)"; r.append(rs,document.createTextNode("Nash equilibrium (Keep, Keep)"));
-    lg.append(g,r); wrap.append(lg);
+    lg.append(g);
+    if(participant){
+      if(played){ const y=el("span","legc"); const ys=el("span","swatch"); ys.style.cssText="background:transparent;border:2px solid var(--accent)"; y.append(ys,document.createTextNode("You played ("+nm(played.you)+", "+nm(played.partner)+")")); lg.append(y); }
+    } else {
+      const r=el("span","legc"); const rs=el("span","swatch"); rs.style.background="var(--bad)"; r.append(rs,document.createTextNode("Nash equilibrium (Keep, Keep)")); lg.append(r);
+    }
+    wrap.append(lg);
   }
   return wrap;
 }
