@@ -189,6 +189,20 @@ textarea.input{resize:vertical; min-height:96px; line-height:1.45; width:100%}
 .chip.done{color:var(--good); border-color:color-mix(in srgb,var(--good) 40%,var(--line)); background:var(--good-wash)}
 .chip.todo{color:var(--muted)}
 .chip.guest{color:var(--gold); border-color:color-mix(in srgb,var(--gold) 45%,var(--line)); background:var(--gold-wash)}
+.pickprompt{font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:1.15rem; color:var(--ink); margin:22px 0 12px}
+.picks{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+@media(max-width:520px){.picks{grid-template-columns:1fr}}
+.pick{position:relative; text-align:left; padding:20px 18px 16px; border-radius:var(--radius); border:2px solid var(--line); background:var(--surface-2); transition:.16s; display:flex; flex-direction:column; gap:6px}
+.pick .ttl{font-weight:800; font-size:1.25rem; color:var(--ink)}
+.pick .desc{font-size:.86rem; color:var(--muted)}
+.pick .tag{position:absolute; top:14px; right:14px; font-size:.66rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; opacity:.85}
+.pick:hover{transform:translateY(-2px); box-shadow:var(--shadow-lg)}
+.pick:active{transform:translateY(0)}
+.pick.teal{border-color:var(--accent); background:var(--accent-wash)} .pick.teal .ttl{color:var(--accent-ink)}
+.pick.gold{border-color:var(--gold); background:var(--gold-wash)} .pick.gold .ttl{color:var(--gold)}
+.pick.teal.sel{background:var(--accent); border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-wash)}
+.pick.gold.sel{background:var(--gold); border-color:var(--gold); box-shadow:0 0 0 3px var(--gold-wash)}
+.pick.sel .ttl,.pick.sel .desc,.pick.sel .tag{color:#fff; opacity:1}
 </style>
 </head>
 <body>
@@ -570,13 +584,14 @@ function studentColor(c){
   const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="6px 0 4px"; h.textContent="Make your choice: Give or Keep";
   c.append(h, el("p","lead","You'll be matched with one classmate, and you both choose at the same time. Keep adds $"+cf.keep+" to your own earnings. Give adds $"+cf.give+" to your partner's earnings — nothing to you."));
   c.append(colorMatrix(cf, cur?cur.choice:null));
-  const ch=el("div","choices"); ch.style.marginTop="18px"; ch.style.gridTemplateColumns="1fr 1fr";
-  const mk=(key,ttl,desc)=>{const t=el("button","choice"+(cur&&cur.choice===key?" sel":""));
+  c.append(Object.assign(el("div","pickprompt"),{textContent:"Choose wisely from the choices below"}));
+  const ch=el("div","picks");
+  const mk=(key,ttl,desc,variant)=>{const t=el("button","pick "+variant+(cur&&cur.choice===key?" sel":""));
     t.append(el("span","tag",key==="keep"?"+$"+cf.keep+" you":"+$"+cf.give+" partner"),el("span","ttl",ttl),el("span","desc",desc));
     t.onclick=async()=>{ await submit({choice:key}); toast(key==="keep"?"Chose Keep":"Chose Give"); }; return t;};
   ch.append(
-    mk("give","Give","Give your partner $"+cf.give+". You gain nothing directly."),
-    mk("keep","Keep","Add $"+cf.keep+" to your own earnings, whatever your partner does.")
+    mk("give","Give","Give your partner $"+cf.give+". You gain nothing directly.","teal"),
+    mk("keep","Keep","Add $"+cf.keep+" to your own earnings, whatever your partner does.","gold")
   );
   c.append(ch);
   if(cur) c.append(submittedBadge("Your choice: <span class='myval'>"+(cur.choice==="keep"?"Keep":"Give")+"</span>."));
