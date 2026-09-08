@@ -247,7 +247,7 @@ const INSTRUCTOR_EMAILS = [
    published AND Google sign-in is confirmed working. It makes student joining
    Google-only (no anonymous name-join) and instructor access allowlist-only
    (no passcode) — matching what the strict rules enforce on the server. */
-const REQUIRE_GOOGLE = false;
+const REQUIRE_GOOGLE = true;
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* ═══════════════════════════════════════════════════════════════════════ */
 
