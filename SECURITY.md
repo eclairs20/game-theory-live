@@ -11,7 +11,7 @@ are not deployed from this repo automatically.
 | File | When to publish | What it does |
 |------|-----------------|--------------|
 | `firebase-rules.stopgap.json` | **Now** — safe immediately | Blast-radius fix. Still open (no sign-in required), but the database root and unknown paths become unwritable (no full wipes / junk nodes), and `control` + submissions must have the right shape. Names length-capped. |
-| `firebase-rules.lockdown.json` | **Later**, once the checklist below is all true | Real authentication. Only signed-in Google users read/write; students can only submit as their own verified email; only allowlisted instructor emails can change the game/round/phase/config or the roster. |
+| `firebase-rules.lockdown.json` | **Later**, once the checklist below is all true | Real write-security. Reads stay open (so the page can load its sign-in screen); every write requires a verified Google account; students can only submit as their own verified email; only allowlisted instructor emails can change the game/round/phase/config or the roster. |
 
 ## Apply the stopgap now
 1. Firebase console → project **game-theory-live** → Realtime Database → **Rules**.
@@ -44,7 +44,9 @@ To roll back at any point: re-publish `firebase-rules.stopgap.json` and set
   through the normal paths — the instructor passcode is still only a front-end gate.
 - **Lockdown:** the game state (`control`) and roster can only be changed by the
   allowlisted instructor accounts, enforced by Google's servers — the real fix.
-  Students can only write submissions stamped with their own verified email.
+  Students can only write submissions stamped with their own verified email. Reads
+  stay open (roster emails + submissions are world-readable) so the page can load
+  its sign-in screen before anyone authenticates; the value is write-integrity.
   Residual: a submission's storage key isn't cryptographically bound to the writer, so
   a determined signed-in student could overwrite another submission key while still
   stamping their own email on the record (so it's traceable). Closing that fully would

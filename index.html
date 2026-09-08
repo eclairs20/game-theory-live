@@ -429,15 +429,22 @@ function googleErr(e){
 async function signOutStudent(){ try{ if(fbAuth) await fbAuth.signOut(); }catch(e){} }
 
 /* ═══════════════════════ RENDER ROOT ═══════════════════════ */
+/* Under lockdown, console access requires an allowlisted Google sign-in (matching
+   what the strict rules enforce) — a leftover passcode session isn't enough. */
+function isTeacher(){
+  if(!(role==="teacher" && unlocked)) return false;
+  if(REQUIRE_GOOGLE) return !!(authUser && isInstructorEmail(authUser.email));
+  return true;
+}
 function render(){
   applyIdentity();
   syncPhasePill();
   const app = $("#app");
   if(!control || !control.activeGame){
-    app.replaceChildren(role==="teacher" && unlocked ? teacherConsole() : studentWaiting());
+    app.replaceChildren(isTeacher() ? teacherConsole() : studentWaiting());
     return;
   }
-  if(role==="teacher" && unlocked){ app.replaceChildren(teacherConsole()); return; }
+  if(isTeacher()){ app.replaceChildren(teacherConsole()); return; }
   app.replaceChildren(studentView());
 }
 function syncPhasePill(){
@@ -449,10 +456,10 @@ function syncPhasePill(){
   else { p.classList.add("wait"); t.textContent="Round set — not open yet"; }
 }
 $("#roleBtn").onclick=()=>{
-  if(role==="teacher"){ role="student"; unlocked=false; ls("gtl_role","student"); $("#roleBtn").textContent="Instructor"; render(); return; }
+  if(isTeacher()){ role="student"; unlocked=false; ls("gtl_role","student"); $("#roleBtn").textContent="Instructor"; render(); return; }
   openInstructorGate();
 };
-function refreshRoleBtn(){ $("#roleBtn").textContent = (role==="teacher"&&unlocked)?"Exit console":"Instructor"; }
+function refreshRoleBtn(){ $("#roleBtn").textContent = isTeacher()?"Exit console":"Instructor"; }
 
 /* ═══════════════════════ STUDENT ═══════════════════════ */
 function studentWaiting(){

@@ -6,7 +6,8 @@
   "//4": "index.html and deployed. Publishing this before those steps will lock people out.",
   "//5": "",
   "//6": "What it enforces server-side:",
-  "//7": "  - Only signed-in Google users can read or write anything.",
+  "//7": "  - Reads stay open (so the page loads before sign-in, to show the Google button);",
+  "//7b": "    writes are locked down. Roster emails and submissions are world-readable.",
   "//8": "  - A student may only write a submission that carries their own verified email,",
   "//9": "    so nobody can submit as someone else's identity.",
   "//10": "  - control (game/round/phase/config) and roster can be written ONLY by the",
@@ -17,7 +18,7 @@
   "//15": "    stamping their own email on it. Their email is on the record, so it's traceable;",
   "//16": "    acceptable for a classroom. Tightening further needs a Cloud Function or uid keys.",
   "rules": {
-    ".read": "auth != null",
+    ".read": true,
     ".write": false,
     "main": {
       "control": {
