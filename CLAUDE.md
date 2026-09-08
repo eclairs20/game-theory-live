@@ -96,6 +96,9 @@ blast-radius fix, safe to publish anytime — no sign-in required) and
 students submit only as their own verified email, only allowlisted instructor emails
 write `control`/`roster`). The app supports the lockdown via `INSTRUCTOR_EMAILS`
 (allowlisted Google accounts get the console with no passcode) and `REQUIRE_GOOGLE`
-(when `true`: student join is Google-only, instructor access is allowlist-only). Both
-consts live at the top of `index.html`; rules are pasted into the Firebase console by
+(when `true`: student join is Google-only, instructor access is allowlist-only, and the
+app is **sign-in-first** — `boot()` defers the `control`/`subs`/`roster` listeners until
+`onAuthStateChanged` fires with a user via `attachData()`, and `detachData()`s on sign-out,
+so nothing is read or shown before authentication and the rules can require `.read: auth != null`).
+Both consts live at the top of `index.html`; rules are pasted into the Firebase console by
 hand (not auto-deployed).

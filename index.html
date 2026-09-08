@@ -325,6 +325,7 @@ function encodeKey(s){ return String(s).replace(/[.#$\[\]\/]/g, c=>"%"+c.charCod
 /* ═══════════════════════ state + data layer (Firebase) ═══════════════════════ */
 let fb=null, fbAuth=null, authUser=null, control=null, controlLoaded=false, allSubs={}, subs=[], curKey=null;
 let roster={}, rosterList=[];
+let authResolved=false, listenersOn=false;
 let role = ls("gtl_role")==="teacher" ? "teacher" : "student";
 let unlocked = ls("gtl_role")==="teacher";
 
@@ -373,19 +374,35 @@ function boot(){
   try{
     if(firebase.auth){
       fbAuth=firebase.auth();
-      fbAuth.onAuthStateChanged(u=>{ authUser=u; applyIdentity(); render(); });
+      /* Sign-in-first (Option A): under REQUIRE_GOOGLE the database listeners attach
+         only once a user is signed in, and detach on sign-out — so nothing is read
+         (and nothing is shown) until authentication, and the rules can require auth. */
+      fbAuth.onAuthStateChanged(u=>{
+        authUser=u; authResolved=true; applyIdentity();
+        if(REQUIRE_GOOGLE){ if(u) attachData(); else detachData(); }
+        render();
+      });
       fbAuth.getRedirectResult().catch(()=>{});
     }
   }catch(e){ fbAuth=null; }
-  fb.ref(CTRL_PATH()).on("value",
-    snap=>{ control = snap.exists()?snap.val():null; controlLoaded=true; recompute(); render(); },
-    err=>{ console.warn("control",err); renderRulesError(); });
-  fb.ref(SUBS_PATH()).on("value",
-    snap=>{ allSubs = snap.val()||{}; recompute(); render(); },
-    err=>{ console.warn("subs",err); });
-  fb.ref(ROSTER_PATH()).on("value",
-    snap=>{ setRoster(snap.val()); render(); },
-    err=>{ console.warn("roster",err); });
+  if(REQUIRE_GOOGLE && !fbAuth) authResolved=true;   // can't sign in — show the (unavailable) sign-in screen, not a spinner
+  if(!REQUIRE_GOOGLE) attachData();                   // legacy/open mode: read immediately, name-join allowed
+  render();
+}
+/* control/subs/roster live data — attached/detached around authentication under Option A. */
+function onCtrl(snap){ control = snap.exists()?snap.val():null; controlLoaded=true; recompute(); render(); }
+function onSubs(snap){ allSubs = snap.val()||{}; recompute(); render(); }
+function onRoster(snap){ setRoster(snap.val()); render(); }
+function attachData(){
+  if(listenersOn) return; listenersOn=true;
+  fb.ref(CTRL_PATH()).on("value", onCtrl, err=>{ console.warn("control",err); renderRulesError(); });
+  fb.ref(SUBS_PATH()).on("value", onSubs, err=>{ console.warn("subs",err); });
+  fb.ref(ROSTER_PATH()).on("value", onRoster, err=>{ console.warn("roster",err); });
+}
+function detachData(){
+  if(!listenersOn) return; listenersOn=false;
+  try{ fb.ref(CTRL_PATH()).off(); fb.ref(SUBS_PATH()).off(); fb.ref(ROSTER_PATH()).off(); }catch(e){}
+  control=null; controlLoaded=false; allSubs={}; roster={}; rosterList=[]; recompute();
 }
 document.addEventListener("DOMContentLoaded", boot);
 
@@ -466,12 +483,30 @@ function render(){
   applyIdentity();
   syncPhasePill();
   const app = $("#app");
+  if(REQUIRE_GOOGLE && !authUser){
+    app.replaceChildren(authResolved ? signInLanding() : connectingScreen());
+    return;
+  }
   if(!control || !control.activeGame){
     app.replaceChildren(isTeacher() ? teacherConsole() : studentWaiting());
     return;
   }
   if(isTeacher()){ app.replaceChildren(teacherConsole()); return; }
   app.replaceChildren(studentView());
+}
+function connectingScreen(){
+  const c=el("div","card stage center"); c.style.padding="60px";
+  c.append(Object.assign(el("div","mut"),{textContent:"Connecting…"}));
+  return c;
+}
+function signInLanding(){
+  const c=el("div","card stage center"); c.style.padding="clamp(30px,6vw,60px)";
+  c.append(el("div","eyebrow gold","Live classroom"));
+  const h=el("h2"); h.style.fontSize="1.6rem"; h.style.margin="8px 0 6px"; h.textContent="Sign in to join";
+  c.append(h, Object.assign(el("p","lead"),{textContent:"Use your Google account to join the session and see results. Your instructor signs in the same way.",style:"margin:0 auto 20px"}));
+  const w=el("div"); w.style.maxWidth="360px"; w.style.margin="0 auto"; w.append(joinPanel());
+  c.append(w);
+  return c;
 }
 function syncPhasePill(){
   const p=$("#phasePill"), t=$("#phaseTxt");
@@ -549,7 +584,7 @@ function joinPanel(){
 function studentView(){
   const g=control.activeGame;
   if(control.phase==="revealed"){
-    if(!haveIdentity()) return analysisView(false);
+    if(!haveIdentity()){ const c=el("div","card stage"); c.append(el("div","eyebrow gold",GAMES[g].name)); const w=el("div"); w.style.marginTop="8px"; w.append(joinPanel()); c.append(w); return c; }
     const wrap=el("div","stack"); wrap.append(identityBar(), analysisView(false)); return wrap;
   }
   const c=el("div","card stage");
