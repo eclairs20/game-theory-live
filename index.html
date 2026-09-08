@@ -205,6 +205,14 @@ textarea.input{resize:vertical; min-height:96px; line-height:1.45; width:100%}
 .pick.sel .ttl,.pick.sel .desc,.pick.sel .tag{color:#fff; opacity:1}
 .footer{text-align:center; color:var(--faint); font-size:.78rem; line-height:1.5; padding:30px 12px 0}
 .footer b{color:var(--muted); font-weight:600}
+.submail{font-size:.72rem; color:var(--muted); font-family:"IBM Plex Mono",monospace; margin-top:2px; word-break:break-all; font-weight:400}
+.whowrap{display:flex; flex-wrap:wrap; gap:8px}
+.who{border:1px solid var(--line); background:var(--surface-2); border-radius:10px; padding:7px 11px 8px; min-width:0}
+.who-name{font-weight:600; font-size:.85rem; color:var(--ink-2)}
+.who-mail{font-size:.72rem; color:var(--muted); font-family:"IBM Plex Mono",monospace; margin-top:1px; word-break:break-all}
+.who.done{border-color:color-mix(in srgb,var(--good) 40%,var(--line)); background:var(--good-wash)} .who.done .who-name{color:var(--good)}
+.who.todo .who-name{color:var(--muted)}
+.who.guest{border-color:color-mix(in srgb,var(--gold) 45%,var(--line)); background:var(--gold-wash)} .who.guest .who-name{color:var(--gold)}
 </style>
 </head>
 <body>
@@ -684,6 +692,8 @@ function levelLegend(){
   return l;
 }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
+/* The Google email on a submission (the studentId is the email under Google sign-in). */
+function subEmail(s){ return s.email || (String(s&&s.studentId||"").includes("@") ? String(s.studentId) : ""); }
 /* Deterministic PRNG (xorshift) seeded from a string — same pairing on every device. */
 function seededRand(seedStr){
   let s=5381; for(let i=0;i<seedStr.length;i++) s=((s<<5)+s+seedStr.charCodeAt(i))>>>0;
@@ -749,14 +759,15 @@ function pairingsTable(cf,pairs,earn){
   card.append(el("h3","Who played whom"),
     Object.assign(el("div","sm mut"),{textContent:"Pairs are matched at random each round. Choices and $ earnings below.",style:"margin:2px 0 12px"}));
   const chip=ch=> ch==="keep"?"<span style='color:var(--bad);font-weight:700'>Keep</span>":"<span style='color:var(--good);font-weight:700'>Give</span>";
+  const nameCell=s=>{ const em=subEmail(s); return "<div style='text-align:left'>"+esc(s.name)+(em?"<div class='submail'>"+esc(em)+"</div>":"")+"</div>"; };
   let rows="<tr><th>#</th><th>Player</th><th>Choice</th><th>$</th><th>Player</th><th>Choice</th><th>$</th></tr>";
   pairs.forEach(([a,b],i)=>{
     if(a&&b){
       rows+="<tr><td>"+(i+1)+"</td>"+
-        "<td>"+esc(a.name)+"</td><td>"+chip(a.choice)+"</td><td class='cell'>$"+earn[a.studentId]+"</td>"+
-        "<td>"+esc(b.name)+"</td><td>"+chip(b.choice)+"</td><td class='cell'>$"+earn[b.studentId]+"</td></tr>";
+        "<td>"+nameCell(a)+"</td><td>"+chip(a.choice)+"</td><td class='cell'>$"+earn[a.studentId]+"</td>"+
+        "<td>"+nameCell(b)+"</td><td>"+chip(b.choice)+"</td><td class='cell'>$"+earn[b.studentId]+"</td></tr>";
     } else if(a){
-      rows+="<tr><td>"+(i+1)+"</td><td>"+esc(a.name)+"</td><td>"+chip(a.choice)+"</td><td class='cell'>—</td>"+
+      rows+="<tr><td>"+(i+1)+"</td><td>"+nameCell(a)+"</td><td>"+chip(a.choice)+"</td><td class='cell'>—</td>"+
         "<td colspan='3' class='mut' style='text-align:left'>No partner (odd number of players)</td></tr>";
     }
   });
@@ -1087,9 +1098,12 @@ function attendanceCard(){
     if(!arr.length) return null;
     const blk=el("div"); blk.style.marginTop="12px";
     blk.append(Object.assign(el("div","tinylabel"),{textContent:label+" ("+arr.length+")",style:"margin-bottom:6px"}));
-    const chips=el("div","chips");
-    arr.forEach(x=>{ const ch=el("span","chip "+cls); ch.textContent = x.name||x; chips.append(ch); });
-    blk.append(chips); return blk;
+    const wrap=el("div","whowrap");
+    arr.forEach(x=>{ const it=el("div","who "+cls);
+      it.append(Object.assign(el("div","who-name"),{textContent:x.name||x}));
+      if(x.email) it.append(Object.assign(el("div","who-mail"),{textContent:x.email}));
+      wrap.append(it); });
+    blk.append(wrap); return blk;
   };
   if(haveRoster()){
     card.append(el("div","eyebrow","Attendance"),
@@ -1097,12 +1111,12 @@ function attendanceCard(){
     if(guests.length) card.append(Object.assign(el("div","sm mut"),{textContent:guests.length+" guest"+(guests.length===1?"":"s")+" not on the class list also submitted.",style:"margin-bottom:2px"}));
     const d=mkChips("Submitted",done,"done"); if(d) card.append(d);
     const t=mkChips("Not yet",todo,"todo"); if(t) card.append(t);
-    const g=mkChips("Guests",guests.map(s=>({name:s.name})),"guest"); if(g) card.append(g);
+    const g=mkChips("Guests",guests.map(s=>({name:s.name,email:subEmail(s)})),"guest"); if(g) card.append(g);
   } else {
     card.append(el("div","eyebrow","Who's here"),
       Object.assign(el("h3"),{textContent:subs.length+" submitted this round",style:"margin:4px 0 2px"}),
       Object.assign(el("div","sm mut"),{textContent:"No class roster loaded yet — everyone joins as a guest. Load the roster (left) to track enrolled attendance.",style:"margin-bottom:2px"}));
-    const g=mkChips("Submitted",subs.slice().sort((a,b)=>a.ts-b.ts).map(s=>({name:s.name})),"guest"); if(g) card.append(g);
+    const g=mkChips("Submitted",subs.slice().sort((a,b)=>a.ts-b.ts).map(s=>({name:s.name,email:subEmail(s)})),"guest"); if(g) card.append(g);
   }
   return card;
 }
