@@ -25,10 +25,11 @@ Do **all** of these, in order, or people get locked out:
    Authentication → Settings → Authorized domains → add `eclairs20.github.io`.
    Confirm you can actually sign in on the live site.
 2. **Load the class roster** in the instructor console.
-3. **Add every instructor's Google email** to two places so they aren't locked out:
+3. **Every instructor's Google email must be in two places** so they aren't locked out
+   (currently `ankit.khandelwal@gmail.com` and `sonia@iiml.ac.in`):
    - `INSTRUCTOR_EMAILS` in `index.html`, and
-   - the two `REPLACE_WITH_PROF_SONIA_GOOGLE_EMAIL` spots in
-     `firebase-rules.lockdown.json`.
+   - the `control` and `roster` `.write` rules in `firebase-rules.lockdown.json`.
+   Add any additional instructor to both spots before publishing.
 4. **Set `REQUIRE_GOOGLE = true`** in `index.html`, commit, and push (Pages redeploys).
    This makes student joining Google-only and instructor access allowlist-only
    (no passcode) — matching what the rules enforce.

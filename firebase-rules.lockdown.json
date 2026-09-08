@@ -21,11 +21,11 @@
     ".write": false,
     "main": {
       "control": {
-        ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'REPLACE_WITH_PROF_SONIA_GOOGLE_EMAIL')",
+        ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'sonia@iiml.ac.in')",
         ".validate": "!newData.exists() || newData.hasChildren(['phase'])"
       },
       "roster": {
-        ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'REPLACE_WITH_PROF_SONIA_GOOGLE_EMAIL')"
+        ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'sonia@iiml.ac.in')"
       },
       "subs": {
         "$sub": {
