@@ -675,7 +675,7 @@ function analysisView(teacher){
   head.append(el("p","lead", n+" "+(n===1?"response":"responses")+" in. "+revealNarr(g)));
   c.append(head);
   if(n===0){ const e=el("div","card stage center mut"); e.textContent="No submissions to analyze yet."; c.append(e); return c; }
-  if(g==="guess23") c.append(analyzeGuess());
+  if(g==="guess23") c.append(analyzeGuess(teacher));
   else if(g==="pd") c.append(analyzeColor(teacher));
   else c.append(analyzePG());
   return c;
@@ -685,7 +685,7 @@ function revealNarr(g){
   if(g==="pd") return "Did people keep the money for themselves or give it to their partner?";
   return "How close did the group get to the socially optimal outcome?";
 }
-function analyzeGuess(){
+function analyzeGuess(teacher){
   const cf=cfg("guess23");
   const vals=subs.map(s=>Number(s.value)).filter(v=>!isNaN(v)).sort((a,b)=>a-b);
   const n=vals.length, mean=vals.reduce((a,b)=>a+b,0)/n;
@@ -693,38 +693,68 @@ function analyzeGuess(){
   const median = n%2?vals[(n-1)/2]:(vals[n/2-1]+vals[n/2])/2;
   let best=Infinity,winners=[]; subs.forEach(s=>{const d=Math.abs(Number(s.value)-target); if(d<best-1e-9){best=d;winners=[s];}else if(Math.abs(d-best)<1e-9)winners.push(s);});
   const zeros=vals.filter(v=>v===0).length;
+  const mine = !teacher ? mySub() : null;
+  const myVal = mine && mine.value!=null ? Number(mine.value) : null;
+  const iWon = myVal!=null && winners.some(w=>w.studentId===myId);
   const markers=[{x:50,l:"L0 · random (50)"},{x:cf.frac*50,l:"L1 ("+Math.round(cf.frac*50)+")"},{x:cf.frac*cf.frac*50,l:"L2 ("+Math.round(cf.frac*cf.frac*50)+")"},{x:target,l:"Target",strong:true}];
+  if(myVal!=null) markers.push({x:myVal,l:"You ("+fmt(myVal,1)+")",col:"var(--accent)",strong:true});
   const wrap=el("div","grid-analysis");
   const left=el("div","chart-card");
   left.append(Object.assign(el("h3"),{textContent:"Distribution of guesses"}),
-    Object.assign(el("div","cap"),{textContent:"Each bar counts guesses in a 5-wide bin. Markers show levels of strategic reasoning."}));
+    Object.assign(el("div","cap"),{textContent:"Each bar counts guesses in a 5-wide bin. The gold line is the winning target; markers show levels of strategic reasoning."+(myVal!=null?" The teal line is your guess.":"")}));
   left.append(histogram(vals,cf.min,cf.max,5,markers,target));
-  left.append(levelLegend());
+  left.append(levelLegend(myVal!=null));
   wrap.append(left);
   const right=el("div","stack");
   const st=el("div","stats");
-  st.append(statTile("Class average",fmt(mean,1),"of all guesses"),
+  const tiles=[statTile("Class average",fmt(mean,1),"of all guesses"),
     statTile("Target",fmt(target,1),fmt(cf.frac*100,0)+"% of the mean · closest wins",true),
-    statTile("Median",fmt(median,0)),
-    statTile("Guessed 0",zeros+" ("+pct(zeros/n)+")","fully rational"));
+    statTile("Median",fmt(median,1)),
+    statTile("Guessed 0",zeros+" ("+pct(zeros/n)+")","fully rational")];
+  st.append(...tiles);
   right.append(st);
-  const win=el("div","chart-card");
-  win.append(Object.assign(el("h3"),{textContent:winners.length>1?"Winners":"Winner"}));
-  const wl=el("div"); wl.style.marginTop="6px";
-  winners.slice(0,6).forEach(w=>{ const r=el("div","row spread"); r.style.padding="6px 0"; r.style.borderBottom="1px solid var(--line-2)";
-    r.append(el("span",null,w.name), Object.assign(el("span","mono"),{textContent:w.value})); wl.append(r); });
-  win.append(wl); win.append(Object.assign(el("div","sm mut"),{textContent:"Closest to "+fmt(target,1)+".",style:"margin-top:8px"}));
-  right.append(win);
   const nb=el("div","note-box");
   const avgLevel = mean>0 ? Math.max(0, Math.log(mean/50)/Math.log(cf.frac)) : 5;
-  nb.innerHTML="<b>Teaching point:</b> the only Nash equilibrium is everyone guessing 0. The class average of "+fmt(mean,1)+" implies roughly <b>"+fmt(avgLevel,1)+" levels</b> of iterated \"if they think, then I think…\" reasoning — real people stop a few steps short of full rationality (level-k thinking).";
+  nb.innerHTML="<b>Remark:</b> the only Nash equilibrium is everyone guessing 0. The class average of "+fmt(mean,1)+" implies roughly <b>"+fmt(avgLevel,1)+" levels</b> of iterated \"if they think, then I think…\" reasoning — real people stop a few steps short of full rationality (level-k thinking).";
   right.append(nb);
   wrap.append(right);
-  return wrap;
+  const out=el("div","stack");
+  out.append(guessWinnerCard(winners,target));
+  if(myVal!=null) out.append(myGuessCard(myVal,target,iWon));
+  out.append(wrap);
+  return out;
 }
-function levelLegend(){
+function guessWinnerCard(winners,target){
+  const card=el("div","card stage");
+  card.style.background="var(--gold-wash)"; card.style.borderColor="color-mix(in srgb,var(--gold) 45%,var(--line))";
+  card.append(el("div","eyebrow gold", (winners.length>1?"Winners":"Winner")+" · closest to the target of "+fmt(target,1)));
+  if(!winners.length){ card.append(Object.assign(el("h2"),{textContent:"No guesses yet",style:"font-size:1.4rem;margin-top:6px"})); return card; }
+  if(winners.length===1){
+    const w=winners[0];
+    const h=el("h2"); h.style.cssText="font-size:2rem;margin-top:4px";
+    h.append(document.createTextNode("🏆 "+w.name+" — "));
+    const v=el("span","mono"); v.style.color="var(--gold)"; v.textContent=fmt(Number(w.value),1); h.append(v);
+    card.append(h);
+  } else {
+    card.append(Object.assign(el("h2"),{textContent:"🏆 "+winners.length+"-way tie",style:"font-size:1.6rem;margin-top:4px"}));
+    const names=winners.slice(0,10).map(w=>esc(w.name)+" <span class='mono' style='color:var(--gold)'>"+fmt(Number(w.value),1)+"</span>").join(" · ");
+    const p=el("p","lead"); p.style.marginTop="4px"; p.innerHTML=names; card.append(p);
+  }
+  return card;
+}
+function myGuessCard(myVal,target,iWon){
+  const card=el("div","card stage"); card.style.borderLeft="4px solid var(--accent)";
+  card.append(el("div","eyebrow","Your guess"));
+  const h=el("h2"); h.style.cssText="font-size:2rem;margin-top:4px;color:var(--accent-ink)"; h.textContent=fmt(myVal,1);
+  card.append(h);
+  card.append(Object.assign(el("p","lead"),{textContent:(iWon?"You won — closest to the target! ":"")+"You were "+fmt(Math.abs(myVal-target),1)+" from the target of "+fmt(target,1)+".",style:"margin-top:2px"}));
+  return card;
+}
+function levelLegend(showYou){
   const l=el("div","legend");
-  [["L0 = naïve","var(--faint)"],["L1–L2 = strategic","var(--accent)"],["Target","var(--gold)"]].forEach(([t,col])=>{
+  const items=[["Levels (L0–L2)","var(--faint)"],["Target","var(--gold)"]];
+  if(showYou) items.push(["You","var(--accent)"]);
+  items.forEach(([t,col])=>{
     const s=el("span","legc"); const sw=el("span","swatch"); sw.style.background=col; s.append(sw,document.createTextNode(t)); l.append(s);});
   return l;
 }
@@ -934,7 +964,7 @@ function histogram(values,min,max,binW,markers,meanLine){
   (markers||[]).forEach(m=>{
     if(m.x<min||m.x>max) return;
     const x=padL+((m.x-min)/(max-min||1))*iw;
-    const col=m.strong?"var(--gold)":"var(--faint)";
+    const col=m.col||(m.strong?"var(--gold)":"var(--faint)");
     svg.append(svgEl("line",{x1:x,y1:padT-6,x2:x,y2:padT+ih,stroke:col,"stroke-width":m.strong?2:1.2,"stroke-dasharray":m.strong?"":"3 3"}));
     svg.append(svgEl("text",{x:Math.min(Math.max(x,padL+2),W-padR-2),y:padT-9,"text-anchor":"middle",fill:col,"font-size":"10","font-weight":m.strong?"700":"500","font-family":"IBM Plex Sans"},m.l));
   });
