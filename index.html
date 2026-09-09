@@ -1033,7 +1033,9 @@ function openInstructorGate(){
     // If a room already exists, only add the passcode; never reset the active game/round/phase.
     const patch = control
       ? { passHash:hash(code) }
-      : { passHash:hash(code), config:DEFAULT_CONFIG, activeGame:null, round:1, phase:"waiting" };
+      // Don't bake DEFAULT_CONFIG into the room — let cfg() fall back to the live code
+      // defaults, so changing a default (e.g. the guess fraction) takes effect for new rooms.
+      : { passHash:hash(code), config:{}, activeGame:null, round:1, phase:"waiting" };
     const ok = await writeControl(patch);
     b.disabled=false;
     if(ok){ becomeTeacher(); }
@@ -1147,35 +1149,49 @@ function rosterEditor(){
   }
   return wrap;
 }
+/* A student's submitted response, formatted for the game they played. */
+function subValue(s){
+  if(s.game==="pd") return s.choice==="keep"?"Keep":"Give";
+  if(s.game==="publicgoods") return s.contrib!=null?String(s.contrib):"—";
+  return s.value!=null?String(s.value):"—";   // guess23 and default
+}
+function submittedTable(){
+  const rows=subs.slice().sort((a,b)=>a.ts-b.ts);
+  const showStatus=haveRoster();
+  let html="<tr><th>#</th><th>Player</th><th>Response</th>"+(showStatus?"<th>Status</th>":"")+"</tr>";
+  rows.forEach((s,i)=>{
+    const em=subEmail(s), enrolled=!!roster[String(s.studentId).toLowerCase()];
+    html+="<tr><td>"+(i+1)+"</td>"+
+      "<td style='text-align:left'>"+esc(s.name)+(em?"<div class='submail'>"+esc(em)+"</div>":"")+"</td>"+
+      "<td class='cell'>"+esc(subValue(s))+"</td>"+
+      (showStatus?("<td>"+(enrolled?"<span style='color:var(--good);font-weight:600'>Enrolled</span>":"<span style='color:var(--gold);font-weight:600'>Guest</span>")+"</td>"):"")+
+      "</tr>";
+  });
+  const t=el("table","matrix"); t.style.fontSize=".86rem"; t.style.marginTop="10px"; t.innerHTML=html;
+  const scroll=el("div"); scroll.style.overflowX="auto"; scroll.append(t); return scroll;
+}
 function attendanceCard(){
   const card=el("div","card stage");
   const subByEmail={}; subs.forEach(s=>{ subByEmail[String(s.studentId).toLowerCase()]=s; });
   const done=[], todo=[];
   rosterList.forEach(e=>{ (subByEmail[e.email]?done:todo).push(e); });
   const guests=subs.filter(s=>!roster[String(s.studentId).toLowerCase()]);
-  const mkChips=(label,arr,cls)=>{
-    if(!arr.length) return null;
-    const blk=el("div"); blk.style.marginTop="12px";
-    blk.append(Object.assign(el("div","tinylabel"),{textContent:label+" ("+arr.length+")",style:"margin-bottom:6px"}));
-    const wrap=el("div","whowrap");
-    arr.forEach(x=>{ const it=el("div","who "+cls);
-      it.append(Object.assign(el("div","who-name"),{textContent:x.name||x}));
-      if(x.email) it.append(Object.assign(el("div","who-mail"),{textContent:x.email}));
-      wrap.append(it); });
-    blk.append(wrap); return blk;
-  };
   if(haveRoster()){
     card.append(el("div","eyebrow","Attendance"),
       Object.assign(el("h3"),{textContent:done.length+" of "+rosterList.length+" enrolled have submitted this round",style:"margin:4px 0 2px"}));
     if(guests.length) card.append(Object.assign(el("div","sm mut"),{textContent:guests.length+" guest"+(guests.length===1?"":"s")+" not on the class list also submitted.",style:"margin-bottom:2px"}));
-    const d=mkChips("Submitted",done,"done"); if(d) card.append(d);
-    const t=mkChips("Not yet",todo,"todo"); if(t) card.append(t);
-    const g=mkChips("Guests",guests.map(s=>({name:s.name,email:subEmail(s)})),"guest"); if(g) card.append(g);
   } else {
     card.append(el("div","eyebrow","Who's here"),
       Object.assign(el("h3"),{textContent:subs.length+" submitted this round",style:"margin:4px 0 2px"}),
       Object.assign(el("div","sm mut"),{textContent:"No class roster loaded yet — everyone joins as a guest. Load the roster (left) to track enrolled attendance.",style:"margin-bottom:2px"}));
-    const g=mkChips("Submitted",subs.slice().sort((a,b)=>a.ts-b.ts).map(s=>({name:s.name,email:subEmail(s)})),"guest"); if(g) card.append(g);
+  }
+  if(subs.length) card.append(submittedTable());
+  if(haveRoster() && todo.length){
+    const blk=el("div"); blk.style.marginTop="14px";
+    blk.append(Object.assign(el("div","tinylabel"),{textContent:"Not yet ("+todo.length+")",style:"margin-bottom:6px"}));
+    const wrap=el("div","whowrap");
+    todo.forEach(e=>{ const it=el("div","who todo"); it.append(Object.assign(el("div","who-name"),{textContent:e.name})); if(e.email) it.append(Object.assign(el("div","who-mail"),{textContent:e.email})); wrap.append(it); });
+    blk.append(wrap); card.append(blk);
   }
   return card;
 }
