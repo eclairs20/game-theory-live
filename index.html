@@ -287,7 +287,7 @@ const GAMES = {
     blurb:"Contribute to a shared fund that pays everyone." }
 };
 const DEFAULT_CONFIG = {
-  guess23:{ frac:1/2, min:0, max:100 },
+  guess23:{ frac:1/2, min:0, max:100, step:0.5 },
   pd:{ keep:2, give:3 },
   publicgoods:{ E:20, mpcr:0.5 }
 };
@@ -613,14 +613,15 @@ function liveCount(){
   return r;
 }
 function studentGuess(c){
-  const cf=cfg("guess23"); const cur=mySub();
-  const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="6px 0 4px"; h.textContent="Pick a whole number from "+cf.min+" to "+cf.max;
-  c.append(h, el("p","lead","The winner is whoever is closest to "+fmt(cf.frac*100,0)+"% of the average of everyone's guesses."));
+  const cf=cfg("guess23"); const step=cf.step>0?cf.step:1; const cur=mySub();
+  const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="6px 0 4px"; h.textContent="Pick a number from "+cf.min+" to "+cf.max;
+  c.append(h, el("p","lead","The winner is whoever is closest to "+fmt(cf.frac*100,0)+"% of the average of everyone's guesses."+(step<1?" Halves are allowed (e.g. 12.5).":"")));
   const f=el("div","field"); f.style.maxWidth="260px"; f.style.marginTop="18px";
-  const inp=el("input","input mono"); inp.type="number"; inp.min=cf.min; inp.max=cf.max; inp.placeholder="0–100"; inp.style.fontSize="1.4rem"; inp.style.textAlign="center";
+  const inp=el("input","input mono"); inp.type="number"; inp.min=cf.min; inp.max=cf.max; inp.step=step; inp.placeholder=cf.min+"–"+cf.max; inp.style.fontSize="1.4rem"; inp.style.textAlign="center";
   if(cur) inp.value=cur.value;
   const b=el("button","btn big wide","Submit guess"); b.style.marginTop="12px"; b.style.maxWidth="260px";
-  const go=async()=>{ let v=Math.round(Number(inp.value)); if(isNaN(v)||v<cf.min||v>cf.max){toast("Enter "+cf.min+"–"+cf.max);inp.focus();return;}
+  const go=async()=>{ let v=Number(inp.value); if(inp.value==="" || isNaN(v) || v<cf.min || v>cf.max){toast("Enter "+cf.min+"–"+cf.max);inp.focus();return;}
+    v=Math.round(v/step)*step; v=Math.round(v*1000)/1000;   // snap to the nearest allowed step
     await submit({value:v}); toast(cur?"Guess updated":"Guess submitted"); };
   b.onclick=go; inp.onkeydown=e=>{if(e.key==="Enter")go();};
   f.append(inp); c.append(f,b);
@@ -1204,7 +1205,8 @@ function paramEditor(){
       const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
     f.append(i); return f; };
   if(g==="guess23"){ const grid=el("div","paramgrid");
-    grid.append(mk("Fraction of average","frac",cf.frac,"0.01"),mk("Max value","max",cf.max)); wrap.append(grid); }
+    grid.append(mk("Fraction of average","frac",cf.frac,"0.01"),mk("Max value","max",cf.max),mk("Rounding step","step",cf.step,"0.5")); wrap.append(grid);
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Step 0.5 accepts halves; set 1 for whole numbers only."})); }
   else if(g==="pd"){ const grid=el("div","paramgrid");
     grid.append(mk("Keep: $ to self","keep",cf.keep),mk("Give: $ to partner","give",cf.give));
     wrap.append(grid); wrap.append(Object.assign(el("div","sm mut"),{textContent:"Set Give > Keep so giving is socially better, and Keep > 0 so keeping stays individually tempting."})); }
