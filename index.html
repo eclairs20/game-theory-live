@@ -696,12 +696,12 @@ function analyzeGuess(teacher){
   const mine = !teacher ? mySub() : null;
   const myVal = mine && mine.value!=null ? Number(mine.value) : null;
   const iWon = myVal!=null && winners.some(w=>w.studentId===myId);
-  const markers=[{x:50,l:"L0 · random (50)"},{x:cf.frac*50,l:"L1 ("+Math.round(cf.frac*50)+")"},{x:cf.frac*cf.frac*50,l:"L2 ("+Math.round(cf.frac*cf.frac*50)+")"},{x:target,l:"Target",strong:true}];
-  if(myVal!=null) markers.push({x:myVal,l:"You ("+fmt(myVal,1)+")",col:"var(--accent)",strong:true});
+  const markers=[{x:target,l:"Target",strong:true}];
+  if(myVal!=null) markers.push({x:myVal,l:"You ("+fmt(myVal,1)+")",col:"#3b6fe0",strong:true});
   const wrap=el("div","grid-analysis");
   const left=el("div","chart-card");
   left.append(Object.assign(el("h3"),{textContent:"Distribution of guesses"}),
-    Object.assign(el("div","cap"),{textContent:"Each bar counts guesses in a 5-wide bin. The gold line is the winning target; markers show levels of strategic reasoning."+(myVal!=null?" The teal line is your guess.":"")}));
+    Object.assign(el("div","cap"),{textContent:"Each bar counts guesses in a 5-wide bin. The gold line marks the winning target"+(myVal!=null?"; the blue line is your guess.":".")}));
   left.append(histogram(vals,cf.min,cf.max,5,markers,target));
   left.append(levelLegend(myVal!=null));
   wrap.append(left);
@@ -752,8 +752,8 @@ function myGuessCard(myVal,target,iWon){
 }
 function levelLegend(showYou){
   const l=el("div","legend");
-  const items=[["Levels (L0–L2)","var(--faint)"],["Target","var(--gold)"]];
-  if(showYou) items.push(["You","var(--accent)"]);
+  const items=[["Target","var(--gold)"]];
+  if(showYou) items.push(["You","#3b6fe0"]);
   items.forEach(([t,col])=>{
     const s=el("span","legc"); const sw=el("span","swatch"); sw.style.background=col; s.append(sw,document.createTextNode(t)); l.append(s);});
   return l;
@@ -956,9 +956,12 @@ function histogram(values,min,max,binW,markers,meanLine){
     svg.append(svgEl("rect",{x:x+1.5,y,width:Math.max(0,bw-3),height:h,rx:3,fill:"var(--accent)","fill-opacity":c?0.82:0}));
     if(c) svg.append(svgEl("text",{x:x+bw/2,y:y-4,"text-anchor":"middle",fill:"var(--muted)","font-size":"10","font-family":"IBM Plex Mono"},c));
   });
-  for(let v=min; v<=max; v+=Math.max(binW, Math.round((max-min)/5))){
-    const x=padL+((v-min)/(max-min||1))*iw;
-    svg.append(svgEl("text",{x,y:H-padB+16,"text-anchor":"middle",fill:"var(--muted)","font-size":"11","font-family":"IBM Plex Mono"},Math.round(v)));
+  const rng=(max-min)||1, rough=rng/6, mag=Math.pow(10,Math.floor(Math.log10(rough)));
+  const tickStep=[1,2,2.5,5,10].map(m=>m*mag).find(s=>s>=rough)||10*mag;
+  for(let v=Math.ceil(min/tickStep)*tickStep; v<=max+1e-9; v+=tickStep){
+    const x=padL+((v-min)/rng)*iw;
+    svg.append(svgEl("line",{x1:x,y1:padT+ih,x2:x,y2:padT+ih+4,stroke:"var(--line)","stroke-width":1}));
+    svg.append(svgEl("text",{x,y:H-padB+16,"text-anchor":"middle",fill:"var(--muted)","font-size":"11","font-family":"IBM Plex Mono"},(Math.round(v*10)/10)));
   }
   svg.append(svgEl("line",{x1:padL,y1:padT+ih,x2:W-padR,y2:padT+ih,stroke:"var(--line)","stroke-width":1.5}));
   (markers||[]).forEach(m=>{
