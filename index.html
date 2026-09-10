@@ -339,7 +339,8 @@ let unlocked = ls("gtl_role")==="teacher";
 /* A record's key is scoped by session so replaying a game in a later session never
    overwrites an earlier one: "S3-pd-1__email". Everything under one room is retained. */
 const curSession = ()=> (control&&control.session)||1;
-const roundKey = (g,r)=> "S"+curSession()+"-"+g+"-"+r;
+const curMSection = ()=> ((control&&control.section)||"").toUpperCase();   // section currently running ("" = none)
+const roundKey = (g,r)=> "S"+curSession()+curMSection()+"-"+g+"-"+r;         // e.g. "S1A-pd-1" or "S1-pd-1"
 const CTRL_PATH = ()=> ROOM+"/control";
 const SUBS_PATH = ()=> ROOM+"/subs";
 const ROSTER_PATH = ()=> ROOM+"/roster";
@@ -358,9 +359,15 @@ function setRoster(val){
 function rosterSections(){ const s={}; rosterList.forEach(e=>{ if(e.section) s[e.section]=1; }); return Object.keys(s).sort(); }
 /* A submission's home section: denormalized on the doc, else looked up from the roster. */
 function secOf(s){ return (s.section || (roster[String(s.studentId||"").toLowerCase()]||{}).section || "").toUpperCase(); }
-/* Instructor-only live section filter over the current session's submissions. */
-let sectionFocus="ALL";
-function subsView(){ return sectionFocus==="ALL" ? subs : subs.filter(s=>secOf(s)===sectionFocus); }
+/* Instructor analysis scope by MEETING section. null = follow the running section;
+   "A"/"B" = that section's meeting; "BOTH" = combine both for this session+game+round. */
+let sectionScope=null;
+function effScope(){ return sectionScope!=null ? sectionScope : curMSection(); }
+function analysisSubs(){
+  const sc=effScope(), s=curSession(), g=control&&control.activeGame, r=control&&control.round;
+  return Object.values(allSubs).filter(x=> x && x.session===s && x.game===g && x.round===r
+    && (sc==="BOTH" || String(x.msection||"").toUpperCase()===sc));
+}
 /* Resolve the effective identity from Google auth (if signed in) or the manual name. */
 function applyIdentity(){
   if(authUser){
@@ -441,7 +448,8 @@ async function submit(payload){
   const doc={ roundKey:key, session:curSession(), game:control.activeGame, round:control.round, studentId:myId, name:myName||"Anon", ts:Date.now() };
   if(meGuest) doc.guest=true;
   if(authUser&&authUser.email) doc.email=authUser.email.toLowerCase();
-  const rn=roster[String(myId).toLowerCase()];   // stamp roster fields for later analysis/export
+  if(curMSection()) doc.msection=curMSection();   // the section this meeting is running
+  const rn=roster[String(myId).toLowerCase()];    // stamp roster fields for later analysis/export
   if(rn){ if(rn.sid)doc.sid=rn.sid; if(rn.area)doc.area=rn.area; if(rn.section)doc.section=rn.section; }
   Object.assign(doc,payload);
   try{ await fb.ref(SUB_DOC(key,myId)).set(doc); }
@@ -710,15 +718,18 @@ function studentPG(c){
 /* ═══════════════════════ ANALYSIS ═══════════════════════ */
 function analysisView(teacher){
   const g=control.activeGame;
-  const list = teacher ? subsView() : subs;   // section filter is instructor-only
+  const list = teacher ? analysisSubs() : subs;   // meeting-scope is instructor-only
+  const sc = teacher ? effScope() : "";
+  const scLbl = sc==="BOTH" ? " · both sections" : sc ? " · Section "+sc : "";
+  const meetLbl = "Session S"+curSession()+(sc&&sc!=="BOTH"?"."+sc:"");
   const c=el("div","stack");
   const head=el("div","card stage");
-  head.append(el("div","eyebrow gold","Results · Session S"+curSession()+" · Round "+control.round),
+  head.append(el("div","eyebrow gold","Results · "+meetLbl+" · Round "+control.round),
     Object.assign(el("h2"),{textContent:GAMES[g].name,style:"font-size:1.7rem;margin-top:4px"}));
   const n=list.length;
-  head.append(el("p","lead", n+" "+(n===1?"response":"responses")+" in"+(sectionFocus!=="ALL"?" · Section "+sectionFocus+" only":"")+". "+revealNarr(g)));
+  head.append(el("p","lead", n+" "+(n===1?"response":"responses")+" in"+scLbl+". "+revealNarr(g)));
   c.append(head);
-  if(n===0){ const e=el("div","card stage center mut"); e.textContent = sectionFocus!=="ALL"?("No Section "+sectionFocus+" submissions in this round."):"No submissions to analyze yet."; c.append(e); return c; }
+  if(n===0){ const e=el("div","card stage center mut"); e.textContent = sc==="BOTH"?"No submissions in either section for this round.":sc?("No Section "+sc+" submissions in this round."):"No submissions to analyze yet."; c.append(e); return c; }
   if(g==="guess23") c.append(analyzeGuess(teacher,list));
   else if(g==="pd") c.append(analyzeColor(teacher,list));
   else c.append(analyzePG(list));
@@ -1142,6 +1153,19 @@ function teacherConsole(){
   const splus=el("button","ghost-btn","+"); splus.onclick=()=>writeControl({session:curSession()+1, round:1, phase:"waiting"});
   sc.append(sminus,snum,splus); sr.append(sc); sSess.append(sr);
   sSess.append(Object.assign(el("div","sm mut"),{textContent:"Each session's data is kept separately. Bump this at the start of a new class."}));
+  const rsecs=rosterSections();
+  if(rsecs.length){
+    const secRow=el("div","row"); secRow.style.gap="6px"; secRow.style.flexWrap="wrap"; secRow.style.marginTop="10px"; secRow.style.alignItems="center";
+    secRow.append(el("span","tinylabel","Section in class"));
+    const cur=curMSection();
+    const mkSec=(val,label)=>{ const b=el("button","ghost-btn"); b.textContent=label; b.style.padding="4px 10px";
+      if(cur===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
+      b.onclick=()=>{ if(cur!==val) writeControl({section:val, phase:"waiting"}); }; return b; };
+    secRow.append(mkSec("","None"));
+    rsecs.forEach(s=> secRow.append(mkSec(s, s)));
+    sSess.append(secRow);
+    sSess.append(Object.assign(el("div","sm mut"),{textContent:"Which section is meeting now. Submissions are tagged S"+curSession()+(cur?"."+cur:"")+" so A and B stay separate; analyze either or both after the reveal.",style:"margin-top:4px"}));
+  }
   rail.append(sSess);
 
   const s1=el("div","rail-sec");
@@ -1206,17 +1230,18 @@ function teacherConsole(){
   c.append(rail);
 
   const main=el("div","stack");
-  if(control&&control.activeGame && rosterSections().length>1) main.append(sectionFilterBar());
+  if(control&&control.activeGame && rosterSections().length>1) main.append(sectionScopeBar());
   if(!control||!control.activeGame){
     const w=el("div","card stage center"); w.style.padding="60px 30px";
     w.append(el("div","eyebrow","Ready"),Object.assign(el("h2"),{textContent:"Pick an exercise to begin",style:"font-size:1.6rem;margin:8px 0"}),
       el("p","lead","Choose a game from the left, open submissions, and share the link. Live responses and the full analysis appear here."));
     main.append(w);
-  } else if(subs.length){
+  } else if(analysisSubs().length){
     // Instructor always sees live results — before, during, or after reveal.
+    const nsc=analysisSubs().length;
     if(control.phase!=="revealed"){
       const banner=el("div","note-box teal");
-      banner.innerHTML="<b>Instructor preview.</b> "+subs.length+" response"+(subs.length===1?"":"s")+" in"+(control.phase==="open"?" and counting":"")+" — students still see only their own screen until you press <b>Reveal results</b>.";
+      banner.innerHTML="<b>Instructor preview.</b> "+nsc+" response"+(nsc===1?"":"s")+" in"+(control.phase==="open"?" and counting":"")+" — students still see only their own screen until you press <b>Reveal results</b>.";
       main.append(banner);
     }
     main.append(analysisView(true));
@@ -1227,7 +1252,7 @@ function teacherConsole(){
     mon.append(Object.assign(el("p","lead"),{textContent: control.phase==="open"?"Share the link and watch responses arrive. Results appear here live — for your eyes only — until you reveal.":"Click “Open submissions” when the class is ready.",style:"margin-top:8px"}));
     main.append(mon);
   }
-  if(control&&control.activeGame&&(haveRoster()||subs.length)) main.append(attendanceCard());
+  if(control&&control.activeGame&&(haveRoster()||analysisSubs().length)) main.append(attendanceCard());
   c.append(main);
   return c;
 }
@@ -1277,17 +1302,22 @@ function subValue(s){
   if(s.game==="publicgoods") return s.contrib!=null?String(s.contrib):"—";
   return s.value!=null?String(s.value):"—";   // guess23 and default
 }
-function sectionFilterBar(){
+/* Meeting-scope toggle: which section's meeting to analyze (A / B / … / Both).
+   Sets sectionScope, which effScope()/analysisSubs() read. null follows the running
+   section (curMSection); the buttons let the instructor override it after the fact. */
+function sectionScopeBar(){
+  const secs=rosterSections(); const eff=effScope();
   const card=el("div","card"); card.style.padding="12px 14px";
-  const row=el("div","row"); row.style.gap="8px"; row.style.alignItems="center";
-  row.append(el("span","tinylabel","Show"));
+  const row=el("div","row"); row.style.gap="8px"; row.style.alignItems="center"; row.style.flexWrap="wrap";
+  row.append(el("span","tinylabel","Analyze"));
   const mk=(val,label)=>{ const b=el("button","ghost-btn"); b.textContent=label;
-    if(sectionFocus===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
-    b.onclick=()=>{ sectionFocus=val; render(); }; return b; };
-  row.append(mk("ALL","All sections"));
-  rosterSections().forEach(s=> row.append(mk(s,"Section "+s)));
+    if(eff===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
+    b.onclick=()=>{ sectionScope=val; render(); }; return b; };
+  secs.forEach(s=> row.append(mk(s,"Session S"+curSession()+"."+s)));
+  row.append(mk("BOTH","Both sections"));
   card.append(row);
-  card.append(Object.assign(el("div","sm mut"),{textContent:"Filters this session's live results/attendance. For combined analysis across sessions, use Export.",style:"margin-top:6px"}));
+  const running=curMSection();
+  card.append(Object.assign(el("div","sm mut"),{textContent:"Each submission is tagged with the section running when it came in"+(running?(" (now S"+curSession()+"."+running+")"):"")+". Switch scope to review one section's meeting or combine both.",style:"margin-top:6px"}));
   return card;
 }
 function submittedTable(list){
@@ -1308,16 +1338,17 @@ function submittedTable(list){
 }
 function attendanceCard(){
   const card=el("div","card stage");
-  const sv=subsView();
-  const rl = sectionFocus==="ALL" ? rosterList : rosterList.filter(e=>e.section===sectionFocus);
+  const sc=effScope();
+  const sv=analysisSubs();
+  const rl = (sc==="BOTH"||!sc) ? rosterList : rosterList.filter(e=>e.section===sc);
   const subByEmail={}; sv.forEach(s=>{ subByEmail[String(s.studentId).toLowerCase()]=s; });
   const done=[], todo=[];
   rl.forEach(e=>{ (subByEmail[e.email]?done:todo).push(e); });
   const guests=sv.filter(s=>!roster[String(s.studentId).toLowerCase()]);
-  const secLbl = sectionFocus==="ALL"?"":" · Section "+sectionFocus;
+  const secLbl = (sc==="BOTH"||!sc)?"":" · Section "+sc;
   if(haveRoster()){
     card.append(el("div","eyebrow","Attendance"+secLbl),
-      Object.assign(el("h3"),{textContent:done.length+" of "+rl.length+" "+(sectionFocus==="ALL"?"enrolled":"in Section "+sectionFocus)+" have submitted this round",style:"margin:4px 0 2px"}));
+      Object.assign(el("h3"),{textContent:done.length+" of "+rl.length+" "+((sc==="BOTH"||!sc)?"enrolled":"in Section "+sc)+" have submitted this round",style:"margin:4px 0 2px"}));
     if(guests.length) card.append(Object.assign(el("div","sm mut"),{textContent:guests.length+" guest"+(guests.length===1?"":"s")+" not on the class list also submitted.",style:"margin-bottom:2px"}));
   } else {
     card.append(el("div","eyebrow","Who's here"),
