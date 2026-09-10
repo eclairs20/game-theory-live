@@ -1267,11 +1267,12 @@ function teacherConsole(){
     const cur=curMSection();
     const mkSec=(val,label)=>{ const b=el("button","ghost-btn"); b.textContent=label; b.style.padding="4px 10px";
       if(cur===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
-      b.onclick=()=>{ if(cur!==val) writeControl({section:val, phase:"waiting"}); }; return b; };
+      // Switching section starts that section's meeting fresh: reset the round to 1.
+      b.onclick=()=>{ if(cur!==val) writeControl({section:val, round:1, phase:"waiting"}); }; return b; };
     secRow.append(mkSec("","None"));
     rsecs.forEach(s=> secRow.append(mkSec(s, s)));
     sSess.append(secRow);
-    sSess.append(Object.assign(el("div","sm mut"),{textContent:"Which section is meeting now. Submissions are tagged S"+curSession()+(cur?"."+cur:"")+" so A and B stay separate; analyze either or both after the reveal.",style:"margin-top:4px"}));
+    sSess.append(Object.assign(el("div","sm mut"),{textContent:"Which section is meeting now. Switching starts that section at Round 1; submissions are tagged S"+curSession()+(cur?"."+cur:"")+" so A and B stay separate — analyze either or both after the reveal.",style:"margin-top:4px"}));
   }
   rail.append(sSess);
 
