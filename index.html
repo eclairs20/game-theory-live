@@ -71,6 +71,8 @@ code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding
   var(--surface); border:1px solid var(--line); box-shadow:var(--shadow); flex:none}
 .brand h1{font-size:1.32rem}
 .brand .sub{font-size:.72rem; letter-spacing:.13em; text-transform:uppercase; color:var(--muted); font-weight:600}
+.brand-course{white-space:nowrap}
+@media (max-width:480px){ .brand-course{display:block} }
 .pill{display:inline-flex; align-items:center; gap:7px; padding:6px 12px; border-radius:999px; font-size:.78rem; font-weight:600; border:1px solid var(--line); background:var(--surface); color:var(--ink-2); white-space:nowrap}
 .pill .dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
 .pill.live{color:var(--good); border-color:color-mix(in srgb,var(--good) 40%,var(--line))}
@@ -576,11 +578,14 @@ function isTeacher(){
 }
 /* The course label shown in the header: the registered course name, else the room
    id, else the lab tagline for the default room. */
-function courseLabel(){
-  const nm=(courses[ROOM]&&courses[ROOM].name)||(ROOM&&ROOM!=="main"?ROOM:"");
-  return "Strategic Interaction Lab"+(nm?" ("+nm+")":"");
+function courseName(){ return (courses[ROOM]&&courses[ROOM].name)||(ROOM&&ROOM!=="main"?ROOM:""); }
+function syncBrand(){
+  const s=$("#brandSub"); if(!s) return;
+  const nm=courseName();
+  // Tagline always shows; the course sits in a span that wraps to its own line on
+  // narrow phones (see .brand-course) and stays inline on wider screens.
+  s.innerHTML="Strategic Interaction Lab"+(nm?" <span class=\"brand-course\">("+esc(nm)+")</span>":"");
 }
-function syncBrand(){ const s=$("#brandSub"); if(s) s.textContent=courseLabel(); }
 function render(){
   applyIdentity();
   syncPhasePill();
