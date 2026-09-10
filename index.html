@@ -1226,11 +1226,6 @@ function teacherConsole(){
   const c=el("div","console");
   const rail=el("div","rail");
   rail.append(courseCard());
-  const sRtop=el("div","rail-sec");
-  sRtop.append(Object.assign(el("h3"),{textContent:"Course roster"}));
-  sRtop.append(Object.assign(el("div","sm mut"),{textContent:"Set once for the whole course — shared across every session and section.",style:"margin:-4px 0 8px"}));
-  sRtop.append(rosterEditor());
-  rail.append(sRtop);
 
   const sSess=el("div","rail-sec");
   sSess.append(Object.assign(el("h3"),{textContent:"Session"}));
@@ -1311,6 +1306,13 @@ function teacherConsole(){
   sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
   const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
   sD.append(expB); rail.append(sD);
+
+  // Course roster lives at the bottom — set once when the course is created, rarely touched after.
+  const sRost=el("div","rail-sec");
+  sRost.append(Object.assign(el("h3"),{textContent:"Course roster"}));
+  sRost.append(Object.assign(el("div","sm mut"),{textContent:"Set once for the whole course — shared across every session and section.",style:"margin:-4px 0 8px"}));
+  sRost.append(rosterEditor());
+  rail.append(sRost);
   c.append(rail);
 
   const main=el("div","stack");
