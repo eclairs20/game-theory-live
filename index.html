@@ -703,8 +703,19 @@ function studentView(){
   if(!haveIdentity()){ const w=el("div"); w.style.marginTop="8px"; w.append(joinPanel()); c.append(w); return c; }
   c.append(identityBar());
   if(control.phase!=="open"){
-    const h=el("h2"); h.style.fontSize="1.5rem"; h.style.marginTop="6px"; h.textContent="Round "+control.round+" is set up";
-    c.append(h, el("p","lead","Waiting for your instructor to open submissions…"));
+    const cur=mySub();
+    const h=el("h2"); h.style.fontSize="1.5rem"; h.style.marginTop="6px";
+    if(cur){
+      // They already answered this meeting — show it, so a pause/section switch never
+      // looks like their submission was lost. It's kept until the instructor reveals.
+      h.textContent="Your answer is saved";
+      const box=el("div","note-box teal"); box.style.marginTop="14px";
+      box.innerHTML="<b>You submitted:</b> "+esc(subValue(cur))+". Submissions are paused right now — results will appear here when your instructor reveals them.";
+      c.append(h, box);
+    } else {
+      h.textContent="Round "+control.round+" is set up";
+      c.append(h, el("p","lead","Waiting for your instructor to open submissions…"));
+    }
     return c;
   }
   if(g==="guess23") studentGuess(c);
