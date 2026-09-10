@@ -262,10 +262,14 @@ const FIREBASE_CONFIG = {
    URL parameter, so different cohorts run from different share links with no code
    change. Defaults to "main" (the original room) when no ?class is given, so old
    links keep working. All of a class's sessions, roster and data live under it. */
-const ROOM = (function(){
+/* The class/course id from ?class=<id>. A bare link (no param) falls back to "main"
+   and, for signed-in students, triggers enrollment-based auto-routing to their course. */
+const CLASS_PARAM = (function(){
   try{ const p=new URLSearchParams(location.search).get("class"); if(p){ const c=p.replace(/[^A-Za-z0-9_-]/g,"").slice(0,60); if(c) return c; } }catch(e){}
-  return "main";
+  return null;
 })();
+const ROOM = CLASS_PARAM || "main";
+const HAS_CLASS_PARAM = CLASS_PARAM != null;
 
 /* Instructor allowlist. Any Google account whose email is listed here gets the
    console straight away on sign-in — no passcode. Add EVERY instructor's Google
@@ -332,6 +336,7 @@ function encodeKey(s){ return String(s).replace(/[.#$\[\]\/]/g, c=>"%"+c.charCod
 /* ═══════════════════════ state + data layer (Firebase) ═══════════════════════ */
 let fb=null, fbAuth=null, authUser=null, control=null, controlLoaded=false, allSubs={}, subs=[], curKey=null;
 let roster={}, rosterList=[];
+let courses={}, enroll={}, routed=false;   // global course registry + per-email enrollment index
 let authResolved=false, listenersOn=false;
 let role = ls("gtl_role")==="teacher" ? "teacher" : "student";
 let unlocked = ls("gtl_role")==="teacher";
@@ -345,6 +350,8 @@ const CTRL_PATH = ()=> ROOM+"/control";
 const SUBS_PATH = ()=> ROOM+"/subs";
 const ROSTER_PATH = ()=> ROOM+"/roster";
 const SUB_DOC = (key,sid)=> SUBS_PATH()+"/"+key+"__"+encodeKey(sid);
+const COURSES_PATH = "courses";                              // global: courses/<id> = {name, createdAt}
+const ENROLL_DOC = email => "enroll/"+encodeKey(String(email).toLowerCase());   // enroll/<email> = {<courseId>:true}
 const haveRoster = ()=> rosterList.length>0;
 function setRoster(val){
   rosterList=[]; roster={};
@@ -419,16 +426,32 @@ function boot(){
 function onCtrl(snap){ control = snap.exists()?snap.val():null; controlLoaded=true; recompute(); render(); }
 function onSubs(snap){ allSubs = snap.val()||{}; recompute(); render(); }
 function onRoster(snap){ setRoster(snap.val()); render(); }
+function onCourses(snap){ courses = snap.val()||{}; render(); }
+function onEnroll(snap){ enroll = snap.val()||{}; maybeAutoRoute(); render(); }
 function attachData(){
   if(listenersOn) return; listenersOn=true;
   fb.ref(CTRL_PATH()).on("value", onCtrl, err=>{ console.warn("control",err); renderRulesError(); });
   fb.ref(SUBS_PATH()).on("value", onSubs, err=>{ console.warn("subs",err); });
   fb.ref(ROSTER_PATH()).on("value", onRoster, err=>{ console.warn("roster",err); });
+  fb.ref(COURSES_PATH).on("value", onCourses, err=>{ console.warn("courses",err); });
+  if(authUser&&authUser.email) fb.ref(ENROLL_DOC(authUser.email)).on("value", onEnroll, err=>{ console.warn("enroll",err); });
 }
 function detachData(){
   if(!listenersOn) return; listenersOn=false;
-  try{ fb.ref(CTRL_PATH()).off(); fb.ref(SUBS_PATH()).off(); fb.ref(ROSTER_PATH()).off(); }catch(e){}
-  control=null; controlLoaded=false; allSubs={}; roster={}; rosterList=[]; recompute();
+  try{ fb.ref(CTRL_PATH()).off(); fb.ref(SUBS_PATH()).off(); fb.ref(ROSTER_PATH()).off(); fb.ref(COURSES_PATH).off(); }catch(e){}
+  control=null; controlLoaded=false; allSubs={}; roster={}; rosterList=[]; courses={}; enroll={}; recompute();
+}
+/* My enrolled course ids, from the enrollment index (signed-in students only). */
+function myCourses(){ return enroll && typeof enroll==="object" ? Object.keys(enroll).filter(k=>enroll[k]) : []; }
+/* On a bare link (no ?class=), send a signed-in student to their course:
+   exactly one enrolment → redirect; several → a picker (rendered in render()); none → stay as guest. */
+function maybeAutoRoute(){
+  if(routed || HAS_CLASS_PARAM || isTeacher() || !authUser) return;
+  const mine=myCourses();
+  if(mine.length===1 && mine[0] && mine[0]!=="main"){
+    routed=true;
+    try{ location.search="?class="+encodeURIComponent(mine[0]); }catch(e){}
+  }
 }
 document.addEventListener("DOMContentLoaded", boot);
 
@@ -465,7 +488,22 @@ async function clearRound(){
 }
 
 /* ─── roster (instructor) ─── */
-async function writeRoster(list){ try{ await fb.ref(ROSTER_PATH()).set(list); return true; }catch(e){ toast("Couldn't save roster"); return false; } }
+async function writeRoster(list){
+  try{
+    await fb.ref(ROSTER_PATH()).set(list);
+    // Register this course in the global picker and index each email→course for auto-routing.
+    try{ if(!courses[ROOM]) await fb.ref(COURSES_PATH+"/"+ROOM).update({name:(courses[ROOM]&&courses[ROOM].name)||ROOM, createdAt:Date.now()}); }catch(e){}
+    try{ const up={}; list.forEach(e=>{ if(e.email) up[encodeKey(String(e.email).toLowerCase())+"/"+ROOM]=true; }); if(Object.keys(up).length) await fb.ref("enroll").update(up); }catch(e){}
+    return true;
+  }catch(e){ toast("Couldn't save roster"); return false; }
+}
+/* Create/register a course in the global registry, then open it. */
+async function createCourse(id,name){
+  id=String(id||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,60); if(!id) return false;
+  try{ await fb.ref(COURSES_PATH+"/"+id).update({name:name||id, createdAt:Date.now()}); }catch(e){ toast("Couldn't create course"); return false; }
+  try{ location.search="?class="+encodeURIComponent(id); }catch(e){}
+  return true;
+}
 async function removeRoster(){ try{ await fb.ref(ROSTER_PATH()).remove(); toast("Roster cleared"); }catch(e){} }
 /* Accepts a plain "email, name" list OR a spreadsheet paste with a header row
    (ID / Name / Email / Area / Section in any column order). Tabs, commas, semicolons
@@ -539,6 +577,11 @@ function render(){
     app.replaceChildren(authResolved ? signInLanding() : connectingScreen());
     return;
   }
+  // Signed-in student on the bare link, enrolled in more than one course → let them choose.
+  if(!HAS_CLASS_PARAM && !isTeacher() && authUser && !routed && myCourses().length>1){
+    app.replaceChildren(coursePicker());
+    return;
+  }
   if(!control || !control.activeGame){
     app.replaceChildren(isTeacher() ? teacherConsole() : studentWaiting());
     return;
@@ -557,6 +600,22 @@ function signInLanding(){
   const h=el("h2"); h.style.fontSize="1.6rem"; h.style.margin="8px 0 6px"; h.textContent="Sign in to join";
   c.append(h, Object.assign(el("p","lead"),{textContent:"Use your Google account to join the session and see results. Your instructor signs in the same way.",style:"margin:0 auto 20px"}));
   const w=el("div"); w.style.maxWidth="360px"; w.style.margin="0 auto"; w.append(joinPanel());
+  c.append(w);
+  return c;
+}
+/* Student is enrolled in several courses — let them pick which class to join. */
+function coursePicker(){
+  const c=el("div","card stage center"); c.style.padding="clamp(30px,6vw,60px)";
+  c.append(el("div","eyebrow gold","Choose your class"));
+  const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="8px 0 6px"; h.textContent="You're enrolled in more than one class";
+  c.append(h, Object.assign(el("p","lead"),{textContent:"Pick the class you're attending now.",style:"margin:0 auto 18px"}));
+  const w=el("div","stack"); w.style.maxWidth="360px"; w.style.margin="0 auto";
+  myCourses().forEach(id=>{
+    const nm=(courses[id]&&courses[id].name)||id;
+    const b=el("button","btn wide"); b.textContent=nm;
+    b.onclick=()=>{ routed=true; try{location.search="?class="+encodeURIComponent(id);}catch(e){} };
+    w.append(b);
+  });
   c.append(w);
   return c;
 }
@@ -892,7 +951,7 @@ function analyzeColor(teacher,list){
 }
 function pairingsTable(cf,pairs,earn){
   const card=el("div","card stage");
-  card.append(el("h3","Who played whom"),
+  card.append(Object.assign(el("h3"),{textContent:"Who played whom"}),
     Object.assign(el("div","sm mut"),{textContent:"Pairs are matched at random each round. Choices and $ earnings below.",style:"margin:2px 0 12px"}));
   const chip=ch=> ch==="keep"?"<span style='color:var(--bad);font-weight:700'>Keep</span>":"<span style='color:var(--good);font-weight:700'>Give</span>";
   const nameCell=s=>{ const em=subEmail(s); return "<div style='text-align:left'>"+esc(s.name)+(em?"<div class='submail'>"+esc(em)+"</div>":"")+"</div>"; };
@@ -1138,13 +1197,43 @@ function openInstructorGate(){
 }
 function becomeTeacher(){ role="teacher"; unlocked=true; ls("gtl_role","teacher"); refreshRoleBtn(); render(); }
 
+/* Course picker (top of the console): switch between courses or start a new one.
+   Each course is its own room (?class=<id>); the roster is set once per course. */
+function courseCard(){
+  const wrap=el("div","rail-sec");
+  wrap.append(Object.assign(el("h3"),{textContent:"Course"}));
+  const ids=Object.keys(courses).sort();
+  const curName=(courses[ROOM]&&courses[ROOM].name)||ROOM;
+  wrap.append(Object.assign(el("div","sm mut"),{textContent:"Now showing: "+curName+(curName!==ROOM?" ("+ROOM+")":"")}));
+  if(ids.length){
+    const sel=el("select","input"); sel.style.marginTop="8px"; sel.style.width="100%";
+    if(!courses[ROOM]){ const o=document.createElement("option"); o.value=ROOM; o.textContent=ROOM+" (current)"; o.selected=true; sel.append(o); }
+    ids.forEach(id=>{ const o=document.createElement("option"); o.value=id; o.textContent=(courses[id].name||id)+" · "+id; if(id===ROOM)o.selected=true; sel.append(o); });
+    sel.onchange=()=>{ if(sel.value&&sel.value!==ROOM){ try{location.search="?class="+encodeURIComponent(sel.value);}catch(e){} } };
+    wrap.append(sel);
+  }
+  const nc=el("button","ghost-btn","New course"); nc.style.marginTop="8px";
+  nc.onclick=()=>{ const name=prompt("Course name (e.g. PGP Game Theory 2026)"); if(!name)return;
+    const suggest=name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"").slice(0,40);
+    const id=prompt("Short id for the class link (letters, numbers, dashes):", suggest); if(!id)return;
+    createCourse(id,name); };
+  wrap.append(nc);
+  return wrap;
+}
+
 function teacherConsole(){
   refreshRoleBtn();
   const c=el("div","console");
   const rail=el("div","rail");
+  rail.append(courseCard());
+  const sRtop=el("div","rail-sec");
+  sRtop.append(Object.assign(el("h3"),{textContent:"Course roster"}));
+  sRtop.append(Object.assign(el("div","sm mut"),{textContent:"Set once for the whole course — shared across every session and section.",style:"margin:-4px 0 8px"}));
+  sRtop.append(rosterEditor());
+  rail.append(sRtop);
 
   const sSess=el("div","rail-sec");
-  sSess.append(el("h3","Session"));
+  sSess.append(Object.assign(el("h3"),{textContent:"Session"}));
   const sr=el("div","row spread");
   sr.append(el("span","tinylabel","Class session"));
   const sc=el("div","seg");
@@ -1169,7 +1258,7 @@ function teacherConsole(){
   rail.append(sSess);
 
   const s1=el("div","rail-sec");
-  s1.append(el("h3","Choose exercise"));
+  s1.append(Object.assign(el("h3"),{textContent:"Choose exercise"}));
   const gp=el("div","game-pick");
   Object.keys(GAMES).forEach(k=>{
     const b=el("button","gp"+(control&&control.activeGame===k?" on":""));
@@ -1182,7 +1271,7 @@ function teacherConsole(){
 
   if(control&&control.activeGame){
     const s2=el("div","rail-sec");
-    s2.append(el("h3","Round control"));
+    s2.append(Object.assign(el("h3"),{textContent:"Round control"}));
     const rr=el("div","row spread"); rr.style.marginBottom="12px";
     rr.append(el("span","tinylabel","Round"));
     const rc=el("div","seg");
@@ -1204,15 +1293,10 @@ function teacherConsole(){
     s2b.append(nextR,clr); s2.append(s2b);
     rail.append(s2);
     const s3=el("div","rail-sec");
-    s3.append(el("h3","Parameters"));
+    s3.append(Object.assign(el("h3"),{textContent:"Parameters"}));
     s3.append(paramEditor());
     rail.append(s3);
   }
-  const sR=el("div","rail-sec");
-  sR.append(el("h3","Class roster"));
-  sR.append(rosterEditor());
-  rail.append(sR);
-
   const s4=el("div","rail-sec");
   const shareRow=el("div","stack");
   shareRow.append(el("div","tinylabel","Share with students"));
@@ -1223,7 +1307,7 @@ function teacherConsole(){
   s4.append(shareRow); rail.append(s4);
 
   const sD=el("div","rail-sec");
-  sD.append(el("h3","Data"));
+  sD.append(Object.assign(el("h3"),{textContent:"Data"}));
   sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
   const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
   sD.append(expB); rail.append(sD);
