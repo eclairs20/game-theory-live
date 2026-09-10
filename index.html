@@ -577,10 +577,8 @@ function isTeacher(){
 /* The course label shown in the header: the registered course name, else the room
    id, else the lab tagline for the default room. */
 function courseLabel(){
-  const nm=(courses[ROOM]&&courses[ROOM].name)||"";
-  if(nm) return nm;
-  if(ROOM && ROOM!=="main") return ROOM;
-  return "Strategic Interaction Lab";
+  const nm=(courses[ROOM]&&courses[ROOM].name)||(ROOM&&ROOM!=="main"?ROOM:"");
+  return "Strategic Interaction Lab"+(nm?" ("+nm+")":"");
 }
 function syncBrand(){ const s=$("#brandSub"); if(s) s.textContent=courseLabel(); }
 function render(){
