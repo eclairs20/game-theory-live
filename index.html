@@ -233,7 +233,7 @@ textarea.input{resize:vertical; min-height:96px; line-height:1.45; width:100%}
       <div class="glyph" aria-hidden="true"></div>
       <div>
         <h1>Game Theory Live</h1>
-        <div class="sub">Strategic Interaction Lab</div>
+        <div class="sub" id="brandSub">Strategic Interaction Lab</div>
       </div>
     </div>
     <span id="phasePill" class="pill"><span class="dot"></span><span id="phaseTxt">Connecting…</span></span>
@@ -574,9 +574,19 @@ function isTeacher(){
   if(REQUIRE_GOOGLE) return !!(authUser && isInstructorEmail(authUser.email));
   return true;
 }
+/* The course label shown in the header: the registered course name, else the room
+   id, else the lab tagline for the default room. */
+function courseLabel(){
+  const nm=(courses[ROOM]&&courses[ROOM].name)||"";
+  if(nm) return nm;
+  if(ROOM && ROOM!=="main") return ROOM;
+  return "Strategic Interaction Lab";
+}
+function syncBrand(){ const s=$("#brandSub"); if(s) s.textContent=courseLabel(); }
 function render(){
   applyIdentity();
   syncPhasePill();
+  syncBrand();
   const app = $("#app");
   if(REQUIRE_GOOGLE && !authUser){
     app.replaceChildren(authResolved ? signInLanding() : connectingScreen());
