@@ -23,16 +23,29 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   (e.g. `…/?class=pgp-2026`). Sections are NOT separate rooms — a section is a field on each
   roster entry, so a student attending another section is still enrolled and combined/cross
   analysis works. Firebase rules are room-generic (`$room`, not `main`).
-- **Session** — `control.session` (S1, S2…), bumped by the instructor per class meeting. It is
-  folded into the record key so replays never collide: `roundKey = "S‹session›-‹game›-‹round›"`.
-  Every meeting's data is retained separately. `curSession()`/`roundKey()` handle this.
+- **Session + section (a "meeting")** — `control.session` (S1, S2…) is bumped per class
+  meeting; `control.section` (`"" | "A" | "B" | …`) marks which section is meeting *now*. Both
+  fold into the record key so a section's meeting and a replay never collide:
+  `roundKey = "S‹session›‹section›-‹game›-‹round›"` (e.g. `S1A-pd-1`, or `S1-pd-1` when no
+  section is set). `curSession()`/`curMSection()`/`roundKey()` handle this. On results/attendance
+  the instructor picks a **scope** (`sectionScope`/`effScope()`): Section A's meeting, B's, or
+  **Both** combined — `analysisSubs()` filters `allSubs` to `session+game+round` within that scope.
+  Every meeting's data is retained separately.
+- **Courses** — one deployment serves many courses/years. `courses/<id> → {name, createdAt}` is a
+  global registry (outside any room) powering the console's **Course picker**; each course is its
+  own room (`?class=<id>`). Saving a roster registers its course and writes an enrollment index
+  `enroll/<encodeKey(email)> → {<courseId>:true}`. A student on the bare link (no `?class=`) is
+  auto-routed after Google sign-in: one enrolled course redirects in, several show a chooser, none
+  falls back to guest on `main` (`maybeAutoRoute()`/`coursePicker()`).
 - `main/control` — a single object: `{ activeGame, round, phase, passHash, config, createdAt }`
   - `activeGame`: `"guess23" | "pd" | "publicgoods" | null`
   - `phase`: `"waiting" | "open" | "revealed"`
   - `passHash`: djb2 hash of the instructor passcode (front-end gate only, not real security)
   - `config`: per-game parameter overrides on top of `DEFAULT_CONFIG`
 - `‹room›/subs/<roundKey>__<encodeKey(studentId)>` — one per student per round:
-  `{ roundKey, session, game, round, studentId, name, ts, guest?, sid?, area?, section?, value|choice|contrib }`.
+  `{ roundKey, session, game, round, studentId, name, ts, guest?, sid?, area?, section?, msection?, value|choice|contrib }`.
+  `msection` is the meeting section running at submit time (drives the A/B/Both analysis scope);
+  `section` is the student's enrolled section from the roster.
   `studentId` is the Google email (for signed-in students) or a random `s_…` id (for name-join).
   The path segment is `encodeKey()`d (Firebase keys can't contain `. # $ [ ] /`); the doc keeps
   the raw `studentId`. `guest:true` marks a non-roster submission; `sid/area/section` are stamped

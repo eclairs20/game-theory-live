@@ -10,6 +10,14 @@ are not deployed from this repo automatically.
 > so both rule files apply to **every** room via the `$room` wildcard (not just `main`).
 > If you already published the `main`-only rules, re-publish the updated file once so the
 > new class rooms are covered.
+>
+> **Global `courses` / `enroll` nodes:** the course picker and student auto-routing add two
+> top-level nodes outside any room — `courses/<id>` (the course registry) and
+> `enroll/<email>` (which courses each student is enrolled in). Both rule files now include
+> them: open read/write under the stopgap; under lockdown they are readable to any signed-in
+> user and writable only by the allowlisted instructor emails (same list as `control`/`roster`).
+> **Re-publish whichever tier you're on** after this change, or creating a course / saving a
+> roster will be denied.
 
 ## Two tiers
 

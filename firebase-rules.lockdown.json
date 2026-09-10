@@ -22,6 +22,12 @@
   "rules": {
     ".read": "auth != null",
     ".write": false,
+    "courses": {
+      ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'sonia@iiml.ac.in')"
+    },
+    "enroll": {
+      ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'sonia@iiml.ac.in')"
+    },
     "$room": {
       "control": {
         ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'sonia@iiml.ac.in')",

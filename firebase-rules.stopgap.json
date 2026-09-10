@@ -10,6 +10,14 @@
   "rules": {
     ".read": true,
     ".write": false,
+    "courses": {
+      ".read": true,
+      ".write": true
+    },
+    "enroll": {
+      ".read": true,
+      ".write": true
+    },
     "$room": {
       "control": {
         ".read": true,
