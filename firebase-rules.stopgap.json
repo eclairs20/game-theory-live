@@ -10,7 +10,7 @@
   "rules": {
     ".read": true,
     ".write": false,
-    "main": {
+    "$room": {
       "control": {
         ".read": true,
         ".write": true,

@@ -18,19 +18,29 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   Everything else is inline — keep it that way.
 
 ## Data model (Firebase Realtime DB)
-- `ROOM` const (default `"main"`) namespaces all data. Change it for a fresh room/term.
+- `ROOM` = one class (course + year), from the `?class=<id>` URL param (default `"main"`).
+  All of a class's roster, sessions and data live under `‹room›/…`. Share a per-class link
+  (e.g. `…/?class=pgp-2026`). Sections are NOT separate rooms — a section is a field on each
+  roster entry, so a student attending another section is still enrolled and combined/cross
+  analysis works. Firebase rules are room-generic (`$room`, not `main`).
+- **Session** — `control.session` (S1, S2…), bumped by the instructor per class meeting. It is
+  folded into the record key so replays never collide: `roundKey = "S‹session›-‹game›-‹round›"`.
+  Every meeting's data is retained separately. `curSession()`/`roundKey()` handle this.
 - `main/control` — a single object: `{ activeGame, round, phase, passHash, config, createdAt }`
   - `activeGame`: `"guess23" | "pd" | "publicgoods" | null`
   - `phase`: `"waiting" | "open" | "revealed"`
   - `passHash`: djb2 hash of the instructor passcode (front-end gate only, not real security)
   - `config`: per-game parameter overrides on top of `DEFAULT_CONFIG`
-- `main/subs/<roundKey>__<encodeKey(studentId)>` — one per student per round:
-  `{ roundKey, game, round, studentId, name, ts, guest?, value|choice|contrib }`
-  where `roundKey = game + "-" + round`. `studentId` is the Google email (for signed-in
-  students) or a random `s_…` id (for name-join). The path segment is `encodeKey()`d because
-  Firebase keys can't contain `. # $ [ ] /`; the doc keeps the raw `studentId`. `guest:true`
-  marks a submission whose id isn't on the roster.
-- `main/roster` — array of `{ email, name }` for the enrolled class (optional). When present,
+- `‹room›/subs/<roundKey>__<encodeKey(studentId)>` — one per student per round:
+  `{ roundKey, session, game, round, studentId, name, ts, guest?, sid?, area?, section?, value|choice|contrib }`.
+  `studentId` is the Google email (for signed-in students) or a random `s_…` id (for name-join).
+  The path segment is `encodeKey()`d (Firebase keys can't contain `. # $ [ ] /`); the doc keeps
+  the raw `studentId`. `guest:true` marks a non-roster submission; `sid/area/section` are stamped
+  from the roster at submit time (denormalized for export/analysis). Instructor **CSV export**
+  (`exportCSV`) dumps every sub in the room across all sessions.
+- `‹room›/roster` — array of `{ email, name, sid, area, section }` for the enrolled class
+  (optional). Parser (`parseRoster`) is header-aware (ID/Name/Email/Area/Section in any order,
+  tab/comma/2-space separated) and also accepts a plain `email, name` list. When present,
   the student join screen prefers Google sign-in; a Google email matching the roster joins
   under that name, a non-matching email joins as a flagged `guest`. Name-join is the fallback.
 - The data layer is a thin adapter over the Firebase compat SDK; the app only uses

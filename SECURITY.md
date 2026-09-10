@@ -6,6 +6,11 @@ anything. This is the plan to lock it down. Rules live in the **Firebase console
 (Realtime Database → Rules) and must be pasted there by the project owner — they
 are not deployed from this repo automatically.
 
+> **Rooms:** the app now namespaces data per class via `?class=<id>` (e.g. `pgp-2026`),
+> so both rule files apply to **every** room via the `$room` wildcard (not just `main`).
+> If you already published the `main`-only rules, re-publish the updated file once so the
+> new class rooms are covered.
+
 ## Two tiers
 
 | File | When to publish | What it does |

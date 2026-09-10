@@ -22,7 +22,7 @@
   "rules": {
     ".read": "auth != null",
     ".write": false,
-    "main": {
+    "$room": {
       "control": {
         ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'sonia@iiml.ac.in')",
         ".validate": "!newData.exists() || newData.hasChildren(['phase'])"

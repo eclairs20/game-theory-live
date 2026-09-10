@@ -258,8 +258,14 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "447949075164",
   appId:             "1:447949075164:web:c947337267ad975ef4fa19"
 };
-/* Optional: change this per class or term to start with a fresh, empty room. */
-const ROOM = "main";
+/* One room per class (course + year), e.g. "pgp-2026". It comes from the ?class=
+   URL parameter, so different cohorts run from different share links with no code
+   change. Defaults to "main" (the original room) when no ?class is given, so old
+   links keep working. All of a class's sessions, roster and data live under it. */
+const ROOM = (function(){
+  try{ const p=new URLSearchParams(location.search).get("class"); if(p){ const c=p.replace(/[^A-Za-z0-9_-]/g,"").slice(0,60); if(c) return c; } }catch(e){}
+  return "main";
+})();
 
 /* Instructor allowlist. Any Google account whose email is listed here gets the
    console straight away on sign-in — no passcode. Add EVERY instructor's Google
@@ -330,7 +336,10 @@ let authResolved=false, listenersOn=false;
 let role = ls("gtl_role")==="teacher" ? "teacher" : "student";
 let unlocked = ls("gtl_role")==="teacher";
 
-const roundKey = (g,r)=> g+"-"+r;
+/* A record's key is scoped by session so replaying a game in a later session never
+   overwrites an earlier one: "S3-pd-1__email". Everything under one room is retained. */
+const curSession = ()=> (control&&control.session)||1;
+const roundKey = (g,r)=> "S"+curSession()+"-"+g+"-"+r;
 const CTRL_PATH = ()=> ROOM+"/control";
 const SUBS_PATH = ()=> ROOM+"/subs";
 const ROSTER_PATH = ()=> ROOM+"/roster";
@@ -340,15 +349,24 @@ function setRoster(val){
   rosterList=[]; roster={};
   if(val){ (Array.isArray(val)?val:Object.values(val)).forEach(e=>{
     if(!e||!e.email) return; const em=String(e.email).toLowerCase().trim(); if(!em) return;
-    const nm=(e.name&&String(e.name).trim())||em; roster[em]=nm; rosterList.push({email:em,name:nm});
+    const entry={ email:em, name:(e.name&&String(e.name).trim())||em,
+      sid:(e.sid&&String(e.sid).trim())||"", area:(e.area&&String(e.area).trim())||"",
+      section:(e.section?String(e.section).trim().toUpperCase():"") };
+    roster[em]=entry; rosterList.push(entry);
   }); }
 }
+function rosterSections(){ const s={}; rosterList.forEach(e=>{ if(e.section) s[e.section]=1; }); return Object.keys(s).sort(); }
+/* A submission's home section: denormalized on the doc, else looked up from the roster. */
+function secOf(s){ return (s.section || (roster[String(s.studentId||"").toLowerCase()]||{}).section || "").toUpperCase(); }
+/* Instructor-only live section filter over the current session's submissions. */
+let sectionFocus="ALL";
+function subsView(){ return sectionFocus==="ALL" ? subs : subs.filter(s=>secOf(s)===sectionFocus); }
 /* Resolve the effective identity from Google auth (if signed in) or the manual name. */
 function applyIdentity(){
   if(authUser){
     const email=(authUser.email||"").toLowerCase();
     const rn=roster[email];
-    myId=email; myName=rn||authUser.displayName||email;
+    myId=email; myName=(rn&&rn.name)||authUser.displayName||email;
     meGuest = !rn;                       // enrolled only if the email is on the roster
   } else {
     myId=manualId; myName=ls("gtl_name")||""; meGuest = !!myName;  // a typed name is always a guest
@@ -420,9 +438,11 @@ function cfg(game){ return Object.assign({}, DEFAULT_CONFIG[game], (control&&con
 
 async function submit(payload){
   const key=roundKey(control.activeGame,control.round);
-  const doc={ roundKey:key, game:control.activeGame, round:control.round, studentId:myId, name:myName||"Anon", ts:Date.now() };
+  const doc={ roundKey:key, session:curSession(), game:control.activeGame, round:control.round, studentId:myId, name:myName||"Anon", ts:Date.now() };
   if(meGuest) doc.guest=true;
   if(authUser&&authUser.email) doc.email=authUser.email.toLowerCase();
+  const rn=roster[String(myId).toLowerCase()];   // stamp roster fields for later analysis/export
+  if(rn){ if(rn.sid)doc.sid=rn.sid; if(rn.area)doc.area=rn.area; if(rn.section)doc.section=rn.section; }
   Object.assign(doc,payload);
   try{ await fb.ref(SUB_DOC(key,myId)).set(doc); }
   catch(e){ toast("Submit failed — check connection"); }
@@ -439,15 +459,38 @@ async function clearRound(){
 /* ─── roster (instructor) ─── */
 async function writeRoster(list){ try{ await fb.ref(ROSTER_PATH()).set(list); return true; }catch(e){ toast("Couldn't save roster"); return false; } }
 async function removeRoster(){ try{ await fb.ref(ROSTER_PATH()).remove(); toast("Roster cleared"); }catch(e){} }
+/* Accepts a plain "email, name" list OR a spreadsheet paste with a header row
+   (ID / Name / Email / Area / Section in any column order). Tabs, commas, semicolons
+   or 2+ spaces separate columns, so single-spaced names stay intact. */
 function parseRoster(text){
+  const lines=String(text||"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length) return [];
+  const split=l=> l.split(/\t|,|;|\s{2,}/).map(x=>x.trim());
+  let cols=null, start=0;
+  if(!lines[0].includes("@") && /email|name|section|\bid\b|area/i.test(lines[0])){
+    cols={}; split(lines[0]).forEach((h,i)=>{ const k=h.toLowerCase();
+      if(/e-?mail/.test(k)) cols.email=i; else if(/name/.test(k)) cols.name=i;
+      else if(/section/.test(k)) cols.section=i; else if(/area/.test(k)) cols.area=i;
+      else if(/id/.test(k)) cols.sid=i; });
+    start=1;
+  }
   const out=[], seen={};
-  String(text||"").split(/\r?\n/).forEach(line=>{
-    line=line.trim(); if(!line) return;
-    const parts=line.split(/[,\t;]/);
-    const email=(parts[0]||"").trim().toLowerCase(); if(!email) return;
-    const name=parts.slice(1).join(" ").trim()||email;
-    if(seen[email]) return; seen[email]=1; out.push({email,name});
-  });
+  for(let li=start; li<lines.length; li++){
+    const p=split(lines[li]); if(!p.length) continue;
+    let email="", name="", sid="", area="", section="";
+    if(cols && cols.email!=null){
+      email=(p[cols.email]||""); name=cols.name!=null?p[cols.name]:"";
+      sid=cols.sid!=null?p[cols.sid]:""; area=cols.area!=null?p[cols.area]:""; section=cols.section!=null?p[cols.section]:"";
+    } else {
+      const ei=p.findIndex(x=>x.includes("@")); if(ei<0) continue;
+      email=p[ei];
+      if(p.length>=5){ sid=p[0]; name=p[1]; area=p[3]||""; section=p[4]||""; }
+      else { name=p.filter((x,i)=>i!==ei).join(" "); }
+    }
+    email=(email||"").trim().toLowerCase(); if(!email.includes("@")) continue;
+    if(seen[email]) continue; seen[email]=1;
+    out.push({ email, name:(name||"").trim()||email, sid:(sid||"").trim(), area:(area||"").trim(), section:(section||"").trim().toUpperCase() });
+  }
   return out;
 }
 
@@ -667,17 +710,18 @@ function studentPG(c){
 /* ═══════════════════════ ANALYSIS ═══════════════════════ */
 function analysisView(teacher){
   const g=control.activeGame;
+  const list = teacher ? subsView() : subs;   // section filter is instructor-only
   const c=el("div","stack");
   const head=el("div","card stage");
-  head.append(el("div","eyebrow gold","Results · Round "+control.round),
+  head.append(el("div","eyebrow gold","Results · Session S"+curSession()+" · Round "+control.round),
     Object.assign(el("h2"),{textContent:GAMES[g].name,style:"font-size:1.7rem;margin-top:4px"}));
-  const n=subs.length;
-  head.append(el("p","lead", n+" "+(n===1?"response":"responses")+" in. "+revealNarr(g)));
+  const n=list.length;
+  head.append(el("p","lead", n+" "+(n===1?"response":"responses")+" in"+(sectionFocus!=="ALL"?" · Section "+sectionFocus+" only":"")+". "+revealNarr(g)));
   c.append(head);
-  if(n===0){ const e=el("div","card stage center mut"); e.textContent="No submissions to analyze yet."; c.append(e); return c; }
-  if(g==="guess23") c.append(analyzeGuess(teacher));
-  else if(g==="pd") c.append(analyzeColor(teacher));
-  else c.append(analyzePG());
+  if(n===0){ const e=el("div","card stage center mut"); e.textContent = sectionFocus!=="ALL"?("No Section "+sectionFocus+" submissions in this round."):"No submissions to analyze yet."; c.append(e); return c; }
+  if(g==="guess23") c.append(analyzeGuess(teacher,list));
+  else if(g==="pd") c.append(analyzeColor(teacher,list));
+  else c.append(analyzePG(list));
   return c;
 }
 function revealNarr(g){
@@ -685,13 +729,14 @@ function revealNarr(g){
   if(g==="pd") return "Did people keep the money for themselves or give it to their partner?";
   return "How close did the group get to the socially optimal outcome?";
 }
-function analyzeGuess(teacher){
+function analyzeGuess(teacher,list){
+  list=list||subs;
   const cf=cfg("guess23");
-  const vals=subs.map(s=>Number(s.value)).filter(v=>!isNaN(v)).sort((a,b)=>a-b);
+  const vals=list.map(s=>Number(s.value)).filter(v=>!isNaN(v)).sort((a,b)=>a-b);
   const n=vals.length, mean=vals.reduce((a,b)=>a+b,0)/n;
   const target=cf.frac*mean;
   const median = n%2?vals[(n-1)/2]:(vals[n/2-1]+vals[n/2])/2;
-  let best=Infinity,winners=[]; subs.forEach(s=>{const d=Math.abs(Number(s.value)-target); if(d<best-1e-9){best=d;winners=[s];}else if(Math.abs(d-best)<1e-9)winners.push(s);});
+  let best=Infinity,winners=[]; list.forEach(s=>{const d=Math.abs(Number(s.value)-target); if(d<best-1e-9){best=d;winners=[s];}else if(Math.abs(d-best)<1e-9)winners.push(s);});
   const zeros=vals.filter(v=>v===0).length;
   const mine = !teacher ? mySub() : null;
   const myVal = mine && mine.value!=null ? Number(mine.value) : null;
@@ -779,11 +824,12 @@ function pairSubs(list){
 /* Payoff to a player who chose `mine` against a partner who chose `partner`. */
 function colorPay(cf,mine,partner){ return (mine==="keep"?cf.keep:0)+(partner==="give"?cf.give:0); }
 
-function analyzeColor(teacher){
+function analyzeColor(teacher,list){
+  list=list||subs;
   const cf=cfg("pd");
-  const nKeep=subs.filter(s=>s.choice==="keep").length, nGive=subs.filter(s=>s.choice==="give").length, n=nKeep+nGive;
+  const nKeep=list.filter(s=>s.choice==="keep").length, nGive=list.filter(s=>s.choice==="give").length, n=nKeep+nGive;
   const pGive=n?nGive/n:0;
-  const pairs=pairSubs(subs);
+  const pairs=pairSubs(list);
   const earn={}; let paired=0, totalEarn=0;
   pairs.forEach(([a,b])=>{ if(a&&b){ const ea=colorPay(cf,a.choice,b.choice), eb=colorPay(cf,b.choice,a.choice);
     earn[a.studentId]=ea; earn[b.studentId]=eb; paired+=2; totalEarn+=ea+eb; } });
@@ -876,9 +922,10 @@ function myMatchCard(cf,pairs){
   card.append(st);
   return card;
 }
-function analyzePG(){
+function analyzePG(list){
+  list=list||subs;
   const cf=cfg("publicgoods");
-  const contribs=subs.map(s=>Number(s.contrib)).filter(v=>!isNaN(v));
+  const contribs=list.map(s=>Number(s.contrib)).filter(v=>!isNaN(v));
   const n=contribs.length, total=contribs.reduce((a,b)=>a+b,0), avg=total/n;
   const perHead=cf.mpcr*total;
   const freeRiders=contribs.filter(v=>v===0).length, fullCoop=contribs.filter(v=>v===cf.E).length;
@@ -1084,6 +1131,19 @@ function teacherConsole(){
   refreshRoleBtn();
   const c=el("div","console");
   const rail=el("div","rail");
+
+  const sSess=el("div","rail-sec");
+  sSess.append(el("h3","Session"));
+  const sr=el("div","row spread");
+  sr.append(el("span","tinylabel","Class session"));
+  const sc=el("div","seg");
+  const sminus=el("button","ghost-btn","–"); sminus.onclick=()=>{ const nv=curSession(); if(nv>1) writeControl({session:nv-1, round:1, phase:"waiting"}); };
+  const snum=el("span","mono"); snum.style.fontWeight="700"; snum.style.fontSize="1.1rem"; snum.textContent="S"+curSession();
+  const splus=el("button","ghost-btn","+"); splus.onclick=()=>writeControl({session:curSession()+1, round:1, phase:"waiting"});
+  sc.append(sminus,snum,splus); sr.append(sc); sSess.append(sr);
+  sSess.append(Object.assign(el("div","sm mut"),{textContent:"Each session's data is kept separately. Bump this at the start of a new class."}));
+  rail.append(sSess);
+
   const s1=el("div","rail-sec");
   s1.append(el("h3","Choose exercise"));
   const gp=el("div","game-pick");
@@ -1137,9 +1197,16 @@ function teacherConsole(){
   copyB.onclick=()=>{ try{navigator.clipboard.writeText(location.href); toast("Link copied");}catch(e){toast(location.href);} };
   shareRow.append(copyB);
   s4.append(shareRow); rail.append(s4);
+
+  const sD=el("div","rail-sec");
+  sD.append(el("h3","Data"));
+  sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
+  const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
+  sD.append(expB); rail.append(sD);
   c.append(rail);
 
   const main=el("div","stack");
+  if(control&&control.activeGame && rosterSections().length>1) main.append(sectionFilterBar());
   if(!control||!control.activeGame){
     const w=el("div","card stage center"); w.style.padding="60px 30px";
     w.append(el("div","eyebrow","Ready"),Object.assign(el("h2"),{textContent:"Pick an exercise to begin",style:"font-size:1.6rem;margin:8px 0"}),
@@ -1166,12 +1233,13 @@ function teacherConsole(){
 }
 function rosterEditor(){
   const wrap=el("div","stack");
-  const ta=el("textarea","input mono"); ta.rows=5; ta.style.fontSize=".8rem";
-  ta.placeholder="priya@iiml.ac.in, Priya M\nrahul@iiml.ac.in, Rahul K";
-  ta.value=rosterList.map(e=>e.email+", "+e.name).join("\n");
-  wrap.append(Object.assign(el("div","sm mut"),{textContent:"One student per line: email, name (name optional). Paste straight from a spreadsheet column."}));
+  const ta=el("textarea","input mono"); ta.rows=5; ta.style.fontSize=".78rem";
+  ta.placeholder="Paste the class list with a header row, e.g.\nID  Name  Email  Area  Section\nPGP41028  Pavan B S  pgp41028@iiml.ac.in  PGP  A";
+  ta.value=rosterList.length ? ("id, name, email, area, section\n"+rosterList.map(e=>[e.sid,e.name,e.email,e.area,e.section].join(", ")).join("\n")) : "";
+  wrap.append(Object.assign(el("div","sm mut"),{textContent:"Paste the roster with a header row — columns in any order (ID, Name, Email, Area, Section). A plain 'email, name' list also works."}));
   wrap.append(ta);
-  const info=el("div","sm mut"); info.textContent = haveRoster()? rosterList.length+" students enrolled" : "No roster yet — anyone can join.";
+  const secs=rosterSections();
+  const info=el("div","sm mut"); info.textContent = haveRoster()? (rosterList.length+" enrolled"+(secs.length?" · sections "+secs.join(", "):"")) : "No roster yet — anyone can join.";
   wrap.append(info);
   const save=el("button","btn wide","Save roster"); save.style.marginTop="2px";
   save.onclick=async()=>{ const list=parseRoster(ta.value);
@@ -1183,20 +1251,54 @@ function rosterEditor(){
   }
   return wrap;
 }
+function csvCell(v){ v=(v==null?"":String(v)); return /[",\n\r]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+/* Export EVERY submission in this room (all sessions/games/rounds) as CSV for offline
+   analysis and long-term retention. Reads allSubs, so it spans the whole class. */
+function exportCSV(){
+  const rows=Object.values(allSubs).filter(Boolean).sort((a,b)=>(a.ts||0)-(b.ts||0));
+  const head=["room","session","game","round","roundKey","email","name","id","area","section","enrolled","response","timestamp"];
+  const out=[head.join(",")];
+  rows.forEach(s=>{
+    const email=subEmail(s); const enrolled = email && roster[email.toLowerCase()] ? "yes" : "no";
+    const resp = s.value!=null?s.value : (s.choice!=null?(s.choice==="keep"?"Keep":s.choice==="give"?"Give":s.choice) : (s.contrib!=null?s.contrib:""));
+    out.push([ROOM, (s.session!=null?"S"+s.session:""), s.game||"", (s.round!=null?s.round:""), s.roundKey||"", email, s.name||"", s.sid||"", s.area||"", secOf(s), enrolled, resp, (s.ts?new Date(s.ts).toISOString():"")].map(csvCell).join(","));
+  });
+  try{
+    const blob=new Blob([out.join("\r\n")],{type:"text/csv;charset=utf-8"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=ROOM+"-submissions-"+new Date().toISOString().slice(0,10)+".csv";
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1500);
+    toast(rows.length+" rows exported");
+  }catch(e){ toast("Export failed"); }
+}
 /* A student's submitted response, formatted for the game they played. */
 function subValue(s){
   if(s.game==="pd") return s.choice==="keep"?"Keep":"Give";
   if(s.game==="publicgoods") return s.contrib!=null?String(s.contrib):"—";
   return s.value!=null?String(s.value):"—";   // guess23 and default
 }
-function submittedTable(){
-  const rows=subs.slice().sort((a,b)=>a.ts-b.ts);
-  const showStatus=haveRoster();
-  let html="<tr><th>#</th><th>Player</th><th>Response</th>"+(showStatus?"<th>Status</th>":"")+"</tr>";
+function sectionFilterBar(){
+  const card=el("div","card"); card.style.padding="12px 14px";
+  const row=el("div","row"); row.style.gap="8px"; row.style.alignItems="center";
+  row.append(el("span","tinylabel","Show"));
+  const mk=(val,label)=>{ const b=el("button","ghost-btn"); b.textContent=label;
+    if(sectionFocus===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
+    b.onclick=()=>{ sectionFocus=val; render(); }; return b; };
+  row.append(mk("ALL","All sections"));
+  rosterSections().forEach(s=> row.append(mk(s,"Section "+s)));
+  card.append(row);
+  card.append(Object.assign(el("div","sm mut"),{textContent:"Filters this session's live results/attendance. For combined analysis across sessions, use Export.",style:"margin-top:6px"}));
+  return card;
+}
+function submittedTable(list){
+  const rows=(list||subs).slice().sort((a,b)=>a.ts-b.ts);
+  const showStatus=haveRoster(), showSec=rosterSections().length>0;
+  let html="<tr><th>#</th><th>Player</th>"+(showSec?"<th>Sec</th>":"")+"<th>Response</th>"+(showStatus?"<th>Status</th>":"")+"</tr>";
   rows.forEach((s,i)=>{
     const em=subEmail(s), enrolled=!!roster[String(s.studentId).toLowerCase()];
     html+="<tr><td>"+(i+1)+"</td>"+
       "<td style='text-align:left'>"+esc(s.name)+(em?"<div class='submail'>"+esc(em)+"</div>":"")+"</td>"+
+      (showSec?("<td>"+esc(secOf(s)||"—")+"</td>"):"")+
       "<td class='cell'>"+esc(subValue(s))+"</td>"+
       (showStatus?("<td>"+(enrolled?"<span style='color:var(--good);font-weight:600'>Enrolled</span>":"<span style='color:var(--gold);font-weight:600'>Guest</span>")+"</td>"):"")+
       "</tr>";
@@ -1206,20 +1308,23 @@ function submittedTable(){
 }
 function attendanceCard(){
   const card=el("div","card stage");
-  const subByEmail={}; subs.forEach(s=>{ subByEmail[String(s.studentId).toLowerCase()]=s; });
+  const sv=subsView();
+  const rl = sectionFocus==="ALL" ? rosterList : rosterList.filter(e=>e.section===sectionFocus);
+  const subByEmail={}; sv.forEach(s=>{ subByEmail[String(s.studentId).toLowerCase()]=s; });
   const done=[], todo=[];
-  rosterList.forEach(e=>{ (subByEmail[e.email]?done:todo).push(e); });
-  const guests=subs.filter(s=>!roster[String(s.studentId).toLowerCase()]);
+  rl.forEach(e=>{ (subByEmail[e.email]?done:todo).push(e); });
+  const guests=sv.filter(s=>!roster[String(s.studentId).toLowerCase()]);
+  const secLbl = sectionFocus==="ALL"?"":" · Section "+sectionFocus;
   if(haveRoster()){
-    card.append(el("div","eyebrow","Attendance"),
-      Object.assign(el("h3"),{textContent:done.length+" of "+rosterList.length+" enrolled have submitted this round",style:"margin:4px 0 2px"}));
+    card.append(el("div","eyebrow","Attendance"+secLbl),
+      Object.assign(el("h3"),{textContent:done.length+" of "+rl.length+" "+(sectionFocus==="ALL"?"enrolled":"in Section "+sectionFocus)+" have submitted this round",style:"margin:4px 0 2px"}));
     if(guests.length) card.append(Object.assign(el("div","sm mut"),{textContent:guests.length+" guest"+(guests.length===1?"":"s")+" not on the class list also submitted.",style:"margin-bottom:2px"}));
   } else {
     card.append(el("div","eyebrow","Who's here"),
-      Object.assign(el("h3"),{textContent:subs.length+" submitted this round",style:"margin:4px 0 2px"}),
+      Object.assign(el("h3"),{textContent:sv.length+" submitted this round",style:"margin:4px 0 2px"}),
       Object.assign(el("div","sm mut"),{textContent:"No class roster loaded yet — everyone joins as a guest. Load the roster (left) to track enrolled attendance.",style:"margin-bottom:2px"}));
   }
-  if(subs.length) card.append(submittedTable());
+  if(sv.length) card.append(submittedTable(sv));
   if(haveRoster() && todo.length){
     const blk=el("div"); blk.style.marginTop="14px";
     blk.append(Object.assign(el("div","tinylabel"),{textContent:"Not yet ("+todo.length+")",style:"margin-bottom:6px"}));
