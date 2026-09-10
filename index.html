@@ -7,6 +7,8 @@
 <meta name="description" content="A live classroom instrument for game-theory exercises.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://securetoken.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
 :root{
@@ -337,7 +339,7 @@ function encodeKey(s){ return String(s).replace(/[.#$\[\]\/]/g, c=>"%"+c.charCod
 let fb=null, fbAuth=null, authUser=null, control=null, controlLoaded=false, allSubs={}, subs=[], curKey=null;
 let roster={}, rosterList=[];
 let courses={}, enroll={}, routed=false;   // global course registry + per-email enrollment index
-let authResolved=false, listenersOn=false;
+let authResolved=false, listenersOn=false, authSlow=false;
 let role = ls("gtl_role")==="teacher" ? "teacher" : "student";
 let unlocked = ls("gtl_role")==="teacher";
 
@@ -420,6 +422,9 @@ function boot(){
   }catch(e){ fbAuth=null; }
   if(REQUIRE_GOOGLE && !fbAuth) authResolved=true;   // can't sign in — show the (unavailable) sign-in screen, not a spinner
   if(!REQUIRE_GOOGLE) attachData();                   // legacy/open mode: read immediately, name-join allowed
+  // If auth restore stalls (slow mobile connection), stop showing a bare spinner and
+  // offer a reload after a few seconds. onAuthStateChanged still resolves it if it arrives.
+  setTimeout(()=>{ if(!authResolved){ authSlow=true; render(); } }, 7000);
   render();
 }
 /* control/subs/roster live data — attached/detached around authentication under Option A. */
@@ -590,8 +595,15 @@ function render(){
   app.replaceChildren(studentView());
 }
 function connectingScreen(){
-  const c=el("div","card stage center"); c.style.padding="60px";
-  c.append(Object.assign(el("div","mut"),{textContent:"Connecting…"}));
+  const c=el("div","card stage center"); c.style.padding="clamp(30px,6vw,60px)";
+  c.append(el("div","eyebrow gold","Live classroom"));
+  c.append(Object.assign(el("div","mut"),{textContent: authSlow?"Still connecting…":"Connecting…",style:"margin-top:8px;font-size:1.05rem"}));
+  if(authSlow){
+    // Auth restore is taking too long (usually a slow/flaky connection). It will still
+    // finish on its own when the network recovers, but give the student a way out.
+    c.append(Object.assign(el("p","sm mut"),{textContent:"This is taking longer than usual — you're probably on a slow connection. It'll continue automatically, or you can reload.",style:"margin:10px auto 16px;max-width:340px"}));
+    const b=el("button","btn","Reload"); b.onclick=()=>{ try{location.reload();}catch(e){} }; c.append(b);
+  }
   return c;
 }
 function signInLanding(){
