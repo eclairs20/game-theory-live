@@ -157,6 +157,13 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .gp .ic{width:26px;height:26px;flex:none;border-radius:7px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);font-weight:700;font-size:.8rem;color:var(--accent-ink)}
 .rowbtns{display:flex; gap:8px; flex-wrap:wrap}
 .seg{display:flex; align-items:center; gap:8px}
+.actionbar{position:sticky; top:12px; z-index:6; display:flex; flex-wrap:wrap; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; box-shadow:var(--shadow)}
+.actionbar .ab-grp{display:flex; align-items:center; gap:8px}
+.actionbar .ab-spacer{flex:1 1 12px}
+.actionbar .btn{padding:9px 16px; font-size:.9rem; box-shadow:none}
+.actionbar .rnum{font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:1.05rem; min-width:1.2em; text-align:center}
+.actionbar .ab-clear{margin-left:2px; color:var(--muted); font-size:.8rem}
+@media(max-width:520px){ .actionbar .btn,.actionbar .ghost-btn{flex:1 1 auto} }
 .count-big{font-family:"Fraunces",serif; font-size:2.4rem; font-weight:600; line-height:1}
 
 .tinylabel{font-size:.76rem; color:var(--muted); font-weight:600}
@@ -1281,6 +1288,29 @@ function courseCard(){
   return wrap;
 }
 
+/* Sticky live-round controls pinned to the top of the main panel, so the instructor
+   never has to scroll a long results table to reach them. */
+function roundActionBar(){
+  const phase=control.phase;
+  const bar=el("div","actionbar");
+  const grp=el("div","ab-grp");
+  grp.append(el("span","tinylabel","Round"));
+  const minus=el("button","ghost-btn","–"); minus.onclick=()=>{ if(control.round>1) writeControl({round:control.round-1,phase:"waiting"}); };
+  const rnum=el("span","rnum"); rnum.textContent=control.round;
+  const plus=el("button","ghost-btn","+"); plus.onclick=()=>writeControl({round:control.round+1,phase:"waiting"});
+  grp.append(minus,rnum,plus); bar.append(grp);
+  bar.append(el("div","ab-spacer"));
+  const openBtn=el("button","btn"+(phase==="open"?" neutral":""), phase==="open"?"Close submissions":"Open submissions");
+  openBtn.onclick=()=> writeControl({phase: phase==="open"?"waiting":"open"});
+  const revealBtn=el("button","btn gold","Reveal results");
+  if(phase==="revealed"){ revealBtn.textContent="Revealed ✓"; revealBtn.classList.add("neutral"); revealBtn.classList.remove("gold"); }
+  revealBtn.onclick=()=>writeControl({phase:"revealed"});
+  const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>writeControl({round:control.round+1,phase:"open"});
+  const clr=el("button","ghost-btn ab-clear","Clear"); clr.title="Clear this round's submissions";
+  clr.onclick=()=>{ if(confirm("Clear all submissions for Round "+control.round+"? This can't be undone.")) clearRound(); };
+  bar.append(openBtn,revealBtn,nextR,clr);
+  return bar;
+}
 function teacherConsole(){
   refreshRoleBtn();
   const c=el("div","console");
@@ -1326,28 +1356,9 @@ function teacherConsole(){
   s1.append(gp); rail.append(s1);
 
   if(control&&control.activeGame){
-    const s2=el("div","rail-sec");
-    s2.append(Object.assign(el("h3"),{textContent:"Round control"}));
-    const rr=el("div","row spread"); rr.style.marginBottom="12px";
-    rr.append(el("span","tinylabel","Round"));
-    const rc=el("div","seg");
-    const minus=el("button","ghost-btn","–"); minus.onclick=()=>{ if(control.round>1) writeControl({round:control.round-1,phase:"waiting"}); };
-    const rnum=el("span","mono"); rnum.style.fontWeight="700"; rnum.style.fontSize="1.1rem"; rnum.textContent=control.round;
-    const plus=el("button","ghost-btn","+"); plus.onclick=()=>writeControl({round:control.round+1,phase:"waiting"});
-    rc.append(minus,rnum,plus); rr.append(rc); s2.append(rr);
-    const phase=control.phase;
-    const openBtn=el("button","btn wide",phase==="open"?"Close submissions":"Open submissions");
-    if(phase==="open"){ openBtn.classList.add("neutral"); openBtn.onclick=()=>writeControl({phase:"waiting"}); }
-    else openBtn.onclick=()=>writeControl({phase:"open"});
-    const revealBtn=el("button","btn gold wide","Reveal results"); revealBtn.style.marginTop="8px";
-    revealBtn.onclick=()=>writeControl({phase:"revealed"});
-    if(phase==="revealed"){ revealBtn.textContent="Results revealed ✓"; revealBtn.classList.add("neutral"); revealBtn.classList.remove("gold"); }
-    s2.append(openBtn,revealBtn);
-    const s2b=el("div","row"); s2b.style.marginTop="12px"; s2b.style.gap="8px";
-    const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>writeControl({round:control.round+1,phase:"open"});
-    const clr=el("button","ghost-btn","Clear round data"); clr.onclick=clearRound;
-    s2b.append(nextR,clr); s2.append(s2b);
-    rail.append(s2);
+    // Round flow (round ±, open/close, reveal, next round, clear) now lives in a sticky
+    // action bar at the top of the main panel (see roundActionBar) so it's always in
+    // reach during a live round. The rail keeps only per-game parameters.
     const s3=el("div","rail-sec");
     s3.append(Object.assign(el("h3"),{textContent:"Parameters"}));
     s3.append(paramEditor());
@@ -1377,6 +1388,7 @@ function teacherConsole(){
   c.append(rail);
 
   const main=el("div","stack");
+  if(control&&control.activeGame) main.append(roundActionBar());
   if(control&&control.activeGame && rosterSections().length>1) main.append(sectionScopeBar());
   if(!control||!control.activeGame){
     const w=el("div","card stage center"); w.style.padding="60px 30px";
