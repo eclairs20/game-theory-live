@@ -483,7 +483,12 @@ async function submit(payload){
   if(rn){ if(rn.sid)doc.sid=rn.sid; if(rn.area)doc.area=rn.area; if(rn.section)doc.section=rn.section; }
   Object.assign(doc,payload);
   try{ await fb.ref(SUB_DOC(key,myId)).set(doc); }
-  catch(e){ toast("Submit failed — check connection"); }
+  catch(e){ toast("Submit failed — check connection"); return; }
+  // The student's OWN submission must always refresh the screen (show the confirmation),
+  // even though the re-render guard skips updates while an input is focused. Blur the
+  // field (closes the mobile keyboard) and force a re-render past the guard.
+  try{ const a=document.activeElement; if(a&&a.blur) a.blur(); }catch(_){}
+  lastViewKey=null; render();
 }
 function mySub(){ return subs.find(s=>s.studentId===myId) || null; }
 
@@ -586,26 +591,45 @@ function syncBrand(){
   // narrow phones (see .brand-course) and stays inline on wider screens.
   s.innerHTML="Strategic Interaction Lab"+(nm?" <span class=\"brand-course\">("+esc(nm)+")</span>":"");
 }
+/* A signature of everything that changes the STRUCTURE of the view (role, game,
+   phase, round, identity…) — but NOT live counts like how many have submitted.
+   Used to skip a re-render that would only refresh counts, so it can't wipe out an
+   input a student is mid-way through typing (the guess box, the contribution slider). */
+function viewKey(){
+  return [role, unlocked, isTeacher(), authUser?authUser.email:"", myName||"", routed,
+    (REQUIRE_GOOGLE&&!authUser)?"signin":"", authResolved,
+    control?control.activeGame:"", control?control.phase:"", control?control.round:"",
+    control?control.session:"", control?control.section:"", myCourses().length].join("|");
+}
+let lastViewKey=null;
 function render(){
   applyIdentity();
   syncPhasePill();
   syncBrand();
   const app = $("#app");
+  let next;
   if(REQUIRE_GOOGLE && !authUser){
-    app.replaceChildren(authResolved ? signInLanding() : connectingScreen());
-    return;
+    next = authResolved ? signInLanding() : connectingScreen();
+  } else if(!HAS_CLASS_PARAM && !isTeacher() && authUser && !routed && myCourses().length>1){
+    // Signed-in student on the bare link, enrolled in more than one course → let them choose.
+    next = coursePicker();
+  } else if(!control || !control.activeGame){
+    next = isTeacher() ? teacherConsole() : studentWaiting();
+  } else if(isTeacher()){
+    next = teacherConsole();
+  } else {
+    next = studentView();
   }
-  // Signed-in student on the bare link, enrolled in more than one course → let them choose.
-  if(!HAS_CLASS_PARAM && !isTeacher() && authUser && !routed && myCourses().length>1){
-    app.replaceChildren(coursePicker());
-    return;
-  }
-  if(!control || !control.activeGame){
-    app.replaceChildren(isTeacher() ? teacherConsole() : studentWaiting());
-    return;
-  }
-  if(isTeacher()){ app.replaceChildren(teacherConsole()); return; }
-  app.replaceChildren(studentView());
+  // If the student/instructor is actively typing in a field and the structural view
+  // hasn't changed (only a live count did), don't replace the DOM — that would blow
+  // away their in-progress entry and close the mobile keyboard. This was why the
+  // number-entry game (G2) felt like "the page disappeared" as classmates submitted.
+  const key=viewKey();
+  const ae=document.activeElement;
+  const typing = ae && app.contains(ae) && (ae.tagName==="INPUT"||ae.tagName==="TEXTAREA");
+  if(typing && key===lastViewKey) return;
+  lastViewKey=key;
+  app.replaceChildren(next);
 }
 function connectingScreen(){
   const c=el("div","card stage center"); c.style.padding="clamp(30px,6vw,60px)";
