@@ -157,7 +157,7 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .gp .ic{width:26px;height:26px;flex:none;border-radius:7px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);font-weight:700;font-size:.8rem;color:var(--accent-ink)}
 .rowbtns{display:flex; gap:8px; flex-wrap:wrap}
 .seg{display:flex; align-items:center; gap:8px}
-.actionbar{position:sticky; top:12px; z-index:6; display:flex; flex-wrap:wrap; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; box-shadow:var(--shadow)}
+.actionbar{display:flex; flex-wrap:wrap; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; box-shadow:var(--shadow)}
 .actionbar .ab-grp{display:flex; align-items:center; gap:8px}
 .actionbar .ab-spacer{flex:1 1 12px}
 .actionbar .btn{padding:9px 16px; font-size:.9rem; box-shadow:none}
@@ -1288,8 +1288,8 @@ function courseCard(){
   return wrap;
 }
 
-/* Sticky live-round controls pinned to the top of the main panel, so the instructor
-   never has to scroll a long results table to reach them. */
+/* Live-round controls at the top of the main panel (below the Session tile), so the
+   instructor runs the round from the main pane rather than hunting in the rail. */
 function roundActionBar(){
   const phase=control.phase;
   const bar=el("div","actionbar");
@@ -1311,22 +1311,19 @@ function roundActionBar(){
   bar.append(openBtn,revealBtn,nextR,clr);
   return bar;
 }
-function teacherConsole(){
-  refreshRoleBtn();
-  const c=el("div","console");
-  const rail=el("div","rail");
-  rail.append(courseCard());
-
-  const sSess=el("div","rail-sec");
-  sSess.append(Object.assign(el("h3"),{textContent:"Session"}));
+/* Session + section controls. Lives at the top of the main panel (next to the round
+   bar) rather than the rail, since it's part of running the meeting. */
+function sessionTile(){
+  const card=el("div","rail-sec");
+  card.append(Object.assign(el("h3"),{textContent:"Session"}));
   const sr=el("div","row spread");
   sr.append(el("span","tinylabel","Class session"));
   const sc=el("div","seg");
   const sminus=el("button","ghost-btn","–"); sminus.onclick=()=>{ const nv=curSession(); if(nv>1) writeControl({session:nv-1, round:1, phase:"waiting"}); };
   const snum=el("span","mono"); snum.style.fontWeight="700"; snum.style.fontSize="1.1rem"; snum.textContent="S"+curSession();
   const splus=el("button","ghost-btn","+"); splus.onclick=()=>writeControl({session:curSession()+1, round:1, phase:"waiting"});
-  sc.append(sminus,snum,splus); sr.append(sc); sSess.append(sr);
-  sSess.append(Object.assign(el("div","sm mut"),{textContent:"Each session's data is kept separately. Bump this at the start of a new class."}));
+  sc.append(sminus,snum,splus); sr.append(sc); card.append(sr);
+  card.append(Object.assign(el("div","sm mut"),{textContent:"Each session's data is kept separately. Bump this at the start of a new class."}));
   const rsecs=rosterSections();
   if(rsecs.length){
     const secRow=el("div","row"); secRow.style.gap="6px"; secRow.style.flexWrap="wrap"; secRow.style.marginTop="10px"; secRow.style.alignItems="center";
@@ -1338,10 +1335,15 @@ function teacherConsole(){
       b.onclick=()=>{ if(cur!==val) writeControl({section:val, round:1, phase:"waiting"}); }; return b; };
     secRow.append(mkSec("","None"));
     rsecs.forEach(s=> secRow.append(mkSec(s, s)));
-    sSess.append(secRow);
-    sSess.append(Object.assign(el("div","sm mut"),{textContent:"Which section is meeting now. Switching starts that section at Round 1; submissions are tagged S"+curSession()+(cur?"."+cur:"")+" so A and B stay separate — analyze either or both after the reveal.",style:"margin-top:4px"}));
+    card.append(secRow);
+    card.append(Object.assign(el("div","sm mut"),{textContent:"Which section is meeting now. Switching starts that section at Round 1; submissions are tagged S"+curSession()+(cur?"."+cur:"")+" so A and B stay separate — analyze either or both after the reveal.",style:"margin-top:4px"}));
   }
-  rail.append(sSess);
+  return card;
+}
+function teacherConsole(){
+  refreshRoleBtn();
+  const c=el("div","console");
+  const rail=el("div","rail");
 
   const s1=el("div","rail-sec");
   s1.append(Object.assign(el("h3"),{textContent:"Choose exercise"}));
@@ -1356,9 +1358,9 @@ function teacherConsole(){
   s1.append(gp); rail.append(s1);
 
   if(control&&control.activeGame){
-    // Round flow (round ±, open/close, reveal, next round, clear) now lives in a sticky
-    // action bar at the top of the main panel (see roundActionBar) so it's always in
-    // reach during a live round. The rail keeps only per-game parameters.
+    // Round flow (round ±, open/close, reveal, next round, clear) lives in the action bar
+    // at the top of the main panel (see roundActionBar). The rail keeps only per-game
+    // parameters.
     const s3=el("div","rail-sec");
     s3.append(Object.assign(el("h3"),{textContent:"Parameters"}));
     s3.append(paramEditor());
@@ -1379,7 +1381,9 @@ function teacherConsole(){
   const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
   sD.append(expB); rail.append(sD);
 
-  // Course roster lives at the bottom — set once when the course is created, rarely touched after.
+  // Course picker + roster live at the bottom — one-time setup, rarely touched once the
+  // course is running.
+  rail.append(courseCard());
   const sRost=el("div","rail-sec");
   sRost.append(Object.assign(el("h3"),{textContent:"Course roster"}));
   sRost.append(Object.assign(el("div","sm mut"),{textContent:"Set once for the whole course — shared across every session and section.",style:"margin:-4px 0 8px"}));
@@ -1388,6 +1392,7 @@ function teacherConsole(){
   c.append(rail);
 
   const main=el("div","stack");
+  main.append(sessionTile());
   if(control&&control.activeGame) main.append(roundActionBar());
   if(control&&control.activeGame && rosterSections().length>1) main.append(sectionScopeBar());
   if(!control||!control.activeGame){
