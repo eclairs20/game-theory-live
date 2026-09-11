@@ -84,8 +84,13 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   earnings vs all-Keep/all-Give benchmarks, shaded Nash/best-for-pair matrix (shading + legend
   only in results, never on the submission screen), a "who played whom" table (instructor) and
   each student's own match (on reveal).
-- `publicgoods` — Public Goods. Endowment E (20), return-per-token `mpcr` (0.5). Analysis:
-  contribution histogram, free-riders, group earnings vs Nash & social optimum, efficiency.
+- `publicgoods` — Public Goods ("Maximize your marks"). Config `{ E, mult }` (default E=8 marks,
+  mult=1.5). The **whole pot is multiplied by `mult` and split equally among the N players**, so
+  each player receives `mult·total/N` (your own share of a contributed mark is `mult/N`, which
+  shrinks as the class grows). Payoff = `(E − contribution) + mult·total/N`. Nash = keep everything
+  (`E` each); social optimum = everyone contributes (`mult·E` each); efficiency = average
+  contribution rate. NOT the fixed-MPCR model (per-head no longer scales with N). Analysis:
+  contribution histogram, free-riders, avg earnings per player vs Nash & optimum, efficiency.
 
 ## Roles & flow
 - Student: open link → sign in with Google (or enter a name) → submit → sees own submission +

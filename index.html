@@ -348,7 +348,7 @@ const GAMES = {
 const DEFAULT_CONFIG = {
   guess23:{ frac:1/2, min:0, max:100, step:0.5 },
   pd:{ keep:2, give:3 },
-  publicgoods:{ E:20, mpcr:0.5 }
+  publicgoods:{ E:8, mult:1.5 }
 };
 
 const $ = s => document.querySelector(s);
@@ -895,8 +895,8 @@ function studentColor(c){
 }
 function studentPG(c){
   const cf=cfg("publicgoods"); const cur=mySub();
-  const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="6px 0 4px"; h.textContent="You have "+cf.E+" tokens";
-  c.append(h, el("p","lead","Contribute any amount to the shared fund. The fund is boosted and split among everyone: each token you give returns "+cf.mpcr+" tokens to every member. Tokens you keep are yours."));
+  const h=el("h2"); h.style.fontSize="1.5rem"; h.style.margin="6px 0 4px"; h.textContent="You have "+cf.E+" marks";
+  c.append(h, el("p","lead","Contribute any amount to the shared pot. The whole pot is multiplied by "+cf.mult+" and split equally among everyone — no matter who put in what. Marks you keep are yours."));
   const cur0 = cur?cur.contrib:0;
   const f=el("div"); f.style.marginTop="20px"; f.style.maxWidth="440px";
   const val=el("div","count-big mono"); val.style.color="var(--accent-ink)"; val.textContent=cur0;
@@ -1134,38 +1134,41 @@ function analyzePG(list){
   const cf=cfg("publicgoods");
   const contribs=list.map(s=>Number(s.contrib)).filter(v=>!isNaN(v));
   const n=contribs.length, total=contribs.reduce((a,b)=>a+b,0), avg=total/n;
-  const perHead=cf.mpcr*total;
+  // Slide model: the whole pot is multiplied by M and split equally among the N players,
+  // so each player receives M·total/N — your own share of a contributed mark is only M/N.
+  const M=cf.mult, boosted=M*total, perHead=n?boosted/n:0;   // each player's share of the boosted pot
   const freeRiders=contribs.filter(v=>v===0).length, fullCoop=contribs.filter(v=>v===cf.E).length;
   const groupEarnings=contribs.reduce((a,c)=>a+(cf.E-c)+perHead,0);
-  const maxEarnings=n*(cf.mpcr*(n*cf.E));
-  const nashEarnings=n*cf.E;
-  const efficiency=(groupEarnings-nashEarnings)/(maxEarnings-nashEarnings);
+  const maxEarnings=n*(M*cf.E);   // everyone gives everything → each gets M·E
+  const nashEarnings=n*cf.E;      // everyone keeps → each gets E
+  const efficiency=maxEarnings>nashEarnings?(groupEarnings-nashEarnings)/(maxEarnings-nashEarnings):0;
+  const perMark=n?M/n:M;          // private return per contributed mark
   const wrap=el("div","grid-analysis");
   const left=el("div","chart-card");
   left.append(Object.assign(el("h3"),{textContent:"How much each person contributed"}),
-    Object.assign(el("div","cap"),{textContent:"Bins across the 0–"+cf.E+" token range. Left pile = free-riders, right pile = full contributors."}));
-  left.append(histogram(contribs,0,cf.E,Math.max(1,Math.round(cf.E/10)),[{x:avg,l:"Avg "+fmt(avg,1),strong:true}],avg));
+    Object.assign(el("div","cap"),{textContent:"Bins across the 0–"+cf.E+" mark range. Left pile = free-riders, right pile = full contributors."}));
+  left.append(histogram(contribs,0,cf.E,Math.max(1,Math.round(cf.E/8)),[{x:avg,l:"Avg "+fmt(avg,1),strong:true}],avg));
   const bar=el("div"); bar.style.marginTop="18px";
-  bar.append(Object.assign(el("h3"),{textContent:"Group earnings vs the two benchmarks",style:"font-size:.95rem;margin-bottom:8px"}));
+  bar.append(Object.assign(el("h3"),{textContent:"Average earnings per player vs the two benchmarks",style:"font-size:.95rem;margin-bottom:8px"}));
   bar.append(barChart([
-    {label:"Nash (all keep)",value:Math.round(nashEarnings),color:"var(--bad)"},
-    {label:"This class",value:Math.round(groupEarnings),color:"var(--accent)"},
-    {label:"Social optimum",value:Math.round(maxEarnings),color:"var(--good)"}
-  ], maxEarnings, false, " tok"));
+    {label:"Nash (all keep)",value:Math.round(nashEarnings/n*10)/10,color:"var(--bad)"},
+    {label:"This class",value:Math.round(groupEarnings/n*10)/10,color:"var(--accent)"},
+    {label:"Social optimum",value:Math.round(maxEarnings/n*10)/10,color:"var(--good)"}
+  ], maxEarnings/n, false, " mk"));
   left.append(bar);
   wrap.append(left);
   const right=el("div","stack");
   const st=el("div","stats");
-  st.append(statTile("Avg contribution",fmt(avg,1)+" / "+cf.E,pct(avg/cf.E)+" of endowment",true),
+  st.append(statTile("Avg contribution",fmt(avg,1)+" / "+cf.E,pct(avg/cf.E)+" of your marks",true),
     statTile("Group efficiency",pct(efficiency),"of gains captured","good"),
     statTile("Free-riders",freeRiders,"contributed 0","bad"),
     statTile("Full contributors",fullCoop,"gave everything","good"));
   right.append(st);
   const nb=el("div","note-box");
-  nb.innerHTML="<b>Teaching point:</b> each token you keep is worth 1 to you; each token you contribute returns only "+cf.mpcr+" to <i>you</i> — so the private incentive is to give nothing (Nash). Yet every contributed token creates "+fmt(cf.mpcr*n,1)+" tokens of total value, so the group optimum is for everyone to give everything. The class captured <b>"+pct(efficiency)+"</b> of that surplus — the gap is the cost of free-riding.";
+  nb.innerHTML="<b>Teaching point:</b> each mark you keep is worth 1 to you; each mark you contribute comes back to you as only <b>"+fmt(perMark,2)+"</b> (the pot is ×"+M+", then split among "+n+") — so the private incentive is to give nothing (Nash). Yet every contributed mark creates <b>"+fmt(M,1)+"</b> marks for the group, so the group optimum is for everyone to give everything. In a bigger class your own share shrinks (M÷N), making free-riding even more tempting. The class captured <b>"+pct(efficiency)+"</b> of the possible surplus — the gap is the cost of free-riding.";
   right.append(nb);
   const nb2=el("div","note-box teal");
-  nb2.innerHTML="Total contributed to the fund: <b>"+fmt(total,0)+"</b> tokens → boosted to <b>"+fmt(perHead*n,0)+"</b> and shared, paying each member "+fmt(perHead,1)+" back.";
+  nb2.innerHTML="Pot: <b>"+fmt(total,0)+"</b> marks → ×"+M+" = <b>"+fmt(boosted,0)+"</b>, split among "+n+" → each gets <b>"+fmt(perHead,1)+"</b> back. Everyone-gives would pay each "+fmt(M*cf.E,1)+" ("+M+"×"+cf.E+").";
   right.append(nb2);
   wrap.append(right);
   return wrap;
@@ -1682,8 +1685,8 @@ function paramEditor(){
     grid.append(mk("Keep: $ to self","keep",cf.keep),mk("Give: $ to partner","give",cf.give));
     wrap.append(grid); wrap.append(Object.assign(el("div","sm mut"),{textContent:"Set Give > Keep so giving is socially better, and Keep > 0 so keeping stays individually tempting."})); }
   else { const grid=el("div","paramgrid");
-    grid.append(mk("Endowment","E",cf.E),mk("Return / token","mpcr",cf.mpcr,"0.05")); wrap.append(grid);
-    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Return<1 keeps free-riding tempting individually."})); }
+    grid.append(mk("Endowment (marks)","E",cf.E),mk("Pot multiplier","mult",cf.mult,"0.1")); wrap.append(grid);
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"The pot is ×multiplier then split among all players. Keep multiplier > 1 (socially worth it) but < class size (so each person's share of a given mark, multiplier÷N, stays below 1 — free-riding tempting)."})); }
   return wrap;
 }
 
