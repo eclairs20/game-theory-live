@@ -74,7 +74,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   **Attendance** card (submitted vs not-yet, by name; guests flagged). Public DB rules mean
   the roster is world-readable/writable — same soft-gate trust model as `passHash`.
 
-## The three games
+## The games
 - `guess23` — Guess ½ of the average (the `frac` default is now 1/2; key kept as `guess23`).
   Analysis: histogram + level-k markers, target, winner, implied reasoning level.
 - `pd` — "Give or Keep" giving game (a Prisoner's Dilemma; the PD term is instructor-only,
@@ -84,7 +84,14 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   earnings vs all-Keep/all-Give benchmarks, shaded Nash/best-for-pair matrix (shading + legend
   only in results, never on the submission screen), a "who played whom" table (instructor) and
   each student's own match (on reveal).
-- `publicgoods` — Public Goods ("Maximize your marks"). Config `{ E, mult }` (default E=8 marks,
+- `coord` — **Coordination** (G3) — teaches **focal points (Schelling)**. Four sub-rounds run
+  via the Round stepper (`COORD_ROUNDS`, `coordRound(round)` clamps to the last): 1) Heads/Tails,
+  2) arrange A,B,C, 3) pick a square (2×2 with one odd-coloured focal square), 4) split $100
+  (claim a number; focal = half). The four "coordinate without talking" rules stay visible
+  (`coordRules`). Submissions store `choice` (rounds 1–3) or `value` (round 4). `analyzeCoord`
+  tallies the modal answer, the % who hit the **focal** point, and (round 4) a claims histogram
+  with a marker at 50 — same teaching note across rounds (`coordFocalNote`). No pairing; whole-class.
+- `publicgoods` — Public Goods ("Maximize your marks") — now **G4**. Config `{ E, mult }` (default E=8 marks,
   mult=1.5). The **whole pot is multiplied by `mult` and split equally among the N players**, so
   each player receives `mult·total/N` (your own share of a contributed mark is `mult/N`, which
   shrinks as the class grows). Payoff = `(E − contribution) + mult·total/N`. Nash = keep everything

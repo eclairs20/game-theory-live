@@ -179,6 +179,24 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .actionbar .ab-clear{margin-left:2px; color:var(--muted); font-size:.8rem}
 .tablescroll{max-height:clamp(240px,52vh,460px); overflow:auto}
 .tablescroll .matrix th{position:sticky; top:0; z-index:1}
+/* Coordination game (focal points). */
+.coord-rules{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 14px; margin-top:16px}
+.coord-rule{font-size:.86rem; color:var(--ink-2); padding:2px 0 2px 16px; position:relative}
+.coord-rule::before{content:"›"; position:absolute; left:2px; color:var(--accent); font-weight:700}
+.coord-opts{display:grid; grid-template-columns:1fr 1fr; gap:12px; max-width:420px}
+.coord-opts.seq{grid-template-columns:1fr 1fr 1fr}
+.coord-opt{padding:18px 12px; border-radius:var(--radius-sm); border:2px solid var(--line); background:var(--surface-2); font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:1.15rem; letter-spacing:.06em; transition:.14s}
+.coord-opt:hover{border-color:var(--accent)}
+.coord-opt.sel{border-color:var(--accent); background:var(--accent-wash); color:var(--accent-ink)}
+.coord-sq{display:grid; grid-template-columns:1fr 1fr; gap:6px; width:min(70vw,220px); aspect-ratio:1}
+.coord-sq .sqcell{border:2px solid var(--line); border-radius:8px; background:#6f9e93; cursor:pointer; transition:.14s; display:grid; place-items:center; min-height:0}
+.coord-sq .sqcell.odd{background:#d97b3f}
+.coord-sq .sqcell:hover{outline:3px solid var(--accent); outline-offset:-3px}
+.coord-sq .sqcell.sel{outline:4px solid var(--ink); outline-offset:-4px}
+.coord-sq.res .sqcell{background:color-mix(in srgb,var(--accent) calc(var(--fill,0.1)*100%), var(--surface-2)); cursor:default}
+.coord-sq.res .sqcell.odd{background:color-mix(in srgb,var(--gold) calc(var(--fill,0.1)*100%), var(--surface-2))}
+.coord-sq .sqn{font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:1.3rem; color:var(--ink)}
+@media(max-width:520px){ .coord-opts.seq{grid-template-columns:1fr 1fr} }
 /* Full-screen "collection" view projected to the class while submissions are open —
    participation only, never results, so it can't leak the answer. */
 .present{position:fixed; inset:0; z-index:60; background:var(--bg); color:var(--ink);
@@ -387,14 +405,31 @@ const GAMES = {
     blurb:"Keep money for yourself, or give more to your partner." },
   guess23: { name:"Guess ½ of the Average", short:"G2", icon:"G2",
     blurb:"Pick a number; target is a fraction of the class mean." },
-  publicgoods: { name:"Public Goods", short:"G3", icon:"G3",
+  coord: { name:"Coordination", short:"G3", icon:"G3",
+    blurb:"Match the class without talking — 4 focal-point rounds." },
+  publicgoods: { name:"Public Goods", short:"G4", icon:"G4",
     blurb:"Contribute to a shared fund that pays everyone." }
 };
 const DEFAULT_CONFIG = {
   guess23:{ frac:1/2, min:0, max:100, step:0.5 },
   pd:{ keep:2, give:3 },
+  coord:{ pot:100 },
   publicgoods:{ E:8, mult:1.5 }
 };
+/* The four coordination sub-rounds, in order. Round N uses COORD_ROUNDS[N-1]
+   (clamped to the last). Each teaches focal points — the salient answer people
+   converge on without talking. */
+const COORD_ROUNDS = [
+  { key:"coin", title:"Heads or Tails?", prompt:"Pick Heads or Tails so you match everyone else.",
+    options:[{v:"heads",l:"Heads"},{v:"tails",l:"Tails"}], focal:"heads" },
+  { key:"seq", title:"Arrange A, B, C", prompt:"Put A, B and C in some order — the same order everyone else will pick.",
+    options:[{v:"ABC",l:"A B C"},{v:"ACB",l:"A C B"},{v:"BAC",l:"B A C"},{v:"BCA",l:"B C A"},{v:"CAB",l:"C A B"},{v:"CBA",l:"C B A"}], focal:"ABC" },
+  { key:"square", title:"Pick a square", prompt:"Tap the one square everyone else will tap.",
+    squares:["a","b","c","d"], odd:"d", focal:"d" },   // d = the odd-coloured square (bottom-right)
+  { key:"split", title:"Split $100", prompt:"Write your claim of a $100 pot. If two claims add to $100 or less, both are paid; if they exceed $100, both get nothing.",
+    focal:50 }
+];
+const coordRound = r => COORD_ROUNDS[Math.min(Math.max(r,1),COORD_ROUNDS.length)-1];
 
 const $ = s => document.querySelector(s);
 const el = (t,c,txt)=>{const e=document.createElement(t); if(c)e.className=c; if(txt!=null)e.textContent=txt; return e;};
@@ -894,6 +929,7 @@ function studentView(){
   }
   if(g==="guess23") studentGuess(c);
   else if(g==="pd") studentColor(c);
+  else if(g==="coord") studentCoord(c);
   else studentPG(c);
   return c;
 }
@@ -958,6 +994,55 @@ function studentPG(c){
   if(cur) c.append(submittedBadge("You contributed <span class='myval'>"+cur.contrib+"</span> of "+cf.E+"."));
   c.append(liveCount());
 }
+/* The four "coordinate without talking" rules, always visible during the game. */
+function coordRules(){
+  const box=el("div","coord-rules");
+  box.append(Object.assign(el("div","tinylabel"),{textContent:"The rules"}));
+  ["Think of everyone else in the class.",
+   "Answer so that — without talking to anyone — you match what others pick.",
+   "If everyone's choices are well coordinated, you all win.",
+   "Otherwise, you all lose."].forEach(t=> box.append(Object.assign(el("div","coord-rule"),{textContent:t})));
+  return box;
+}
+function coordVal(s){ // display a coord submission
+  if(s.value!=null) return "$"+s.value;
+  if(s.choice==null) return "—";
+  if(/^[abcd]$/.test(s.choice)) return "Square "+s.choice.toUpperCase();
+  if(s.choice==="heads"||s.choice==="tails") return s.choice.charAt(0).toUpperCase()+s.choice.slice(1);
+  return s.choice.split("").join(" ");   // sequence e.g. A B C
+}
+function studentCoord(c){
+  const rd=coordRound(control.round), cur=mySub(), cf=cfg("coord");
+  c.append(Object.assign(el("h2"),{textContent:rd.title,style:"font-size:1.5rem;margin:6px 0 4px"}));
+  c.append(el("p","lead",rd.prompt));
+  c.append(coordRules());
+  const wrap=el("div"); wrap.style.marginTop="18px";
+  const submitChoice=async(v,lbl)=>{ await submit({choice:v}); toast("You chose "+lbl); };
+  if(rd.key==="coin" || rd.key==="seq"){
+    const grid=el("div","coord-opts"); if(rd.key==="seq") grid.classList.add("seq");
+    rd.options.forEach(o=>{ const bt=el("button","coord-opt"+(cur&&cur.choice===o.v?" sel":"")); bt.textContent=o.l;
+      bt.onclick=()=>submitChoice(o.v,o.l); grid.append(bt); });
+    wrap.append(grid);
+  } else if(rd.key==="square"){
+    const g=el("div","coord-sq");
+    rd.squares.forEach(sq=>{ const bt=el("button","sqcell"+(sq===rd.odd?" odd":"")+(cur&&cur.choice===sq?" sel":""));
+      bt.setAttribute("aria-label","square "+sq.toUpperCase());
+      bt.onclick=()=>submitChoice(sq,"Square "+sq.toUpperCase()); g.append(bt); });
+    wrap.append(g);
+  } else { // split $100 — number claim
+    const pot=cf.pot||100;
+    const f=el("div","field"); f.style.maxWidth="240px";
+    const inp=el("input","input mono"); inp.type="number"; inp.min=0; inp.max=pot; inp.step=1; inp.placeholder="0–"+pot; inp.style.fontSize="1.4rem"; inp.style.textAlign="center";
+    if(cur&&cur.value!=null) inp.value=cur.value;
+    const b=el("button","btn big wide","Submit claim"); b.style.marginTop="12px"; b.style.maxWidth="240px";
+    const go=async()=>{ let v=Math.round(Number(inp.value)); if(inp.value===""||isNaN(v)||v<0||v>pot){toast("Enter 0–"+pot);inp.focus();return;} await submit({value:v}); toast("Claim submitted"); };
+    b.onclick=go; inp.onkeydown=e=>{if(e.key==="Enter")go();};
+    f.append(Object.assign(el("label"),{textContent:"Your claim ($)"}),inp); wrap.append(f,b);
+  }
+  c.append(wrap);
+  if(cur) c.append(submittedBadge("Your answer: <span class='myval'>"+esc(coordVal(cur))+"</span>."));
+  c.append(liveCount());
+}
 
 /* ═══════════════════════ ANALYSIS ═══════════════════════ */
 function analysisView(teacher){
@@ -976,12 +1061,14 @@ function analysisView(teacher){
   if(n===0){ const e=el("div","card stage center mut"); e.textContent = sc==="BOTH"?"No submissions in either section for this round.":sc?("No Section "+sc+" submissions in this round."):"No submissions to analyze yet."; c.append(e); return c; }
   if(g==="guess23") c.append(analyzeGuess(teacher,list));
   else if(g==="pd") c.append(analyzeColor(teacher,list));
+  else if(g==="coord") c.append(analyzeCoord(teacher,list));
   else c.append(analyzePG(list));
   return c;
 }
 function revealNarr(g){
   if(g==="guess23") return "Where did the class land relative to pure rationality?";
   if(g==="pd") return "Did people keep the money for themselves or give it to their partner?";
+  if(g==="coord") return "Without a word exchanged, did the class converge on the same answer?";
   return "How close did the group get to the socially optimal outcome?";
 }
 function analyzeGuess(teacher,list){
@@ -1176,6 +1263,73 @@ function myMatchCard(cf,pairs){
   st.append(statTile("You earned","$"+myPay,"this round",true), statTile(partner.name+" earned","$"+thPay,"this round"));
   card.append(st);
   return card;
+}
+/* Coordination game — did the class converge (focal point)? Analysis depends on the
+   sub-round (coin / sequence / square / split). */
+function analyzeCoord(teacher,list){
+  list=list||subs; const rd=coordRound(control.round), cf=cfg("coord"); const n=list.length;
+  const wrap=el("div","stack");
+  if(rd.key==="split"){
+    const vals=list.map(s=>Number(s.value)).filter(v=>!isNaN(v)).sort((a,b)=>a-b);
+    const m=vals.length, pot=cf.pot||100, avg=m?vals.reduce((a,b)=>a+b,0)/m:0;
+    const atFocal=vals.filter(v=>v===rd.focal).length;
+    const left=el("div","chart-card");
+    left.append(Object.assign(el("h3"),{textContent:"Everyone's claim"}),
+      Object.assign(el("div","cap"),{textContent:"The focal split is "+rd.focal+" — half each. Two random players both get paid only if their claims sum to "+pot+" or less."}));
+    left.append(histogram(vals,0,pot,Math.max(1,Math.round(pot/20)),[{x:rd.focal,l:"Focal "+rd.focal,strong:true}],rd.focal));
+    wrap.append(left);
+    const right=el("div","stack"); const stt=el("div","stats");
+    stt.append(statTile("Claimed exactly "+rd.focal,pct(m?atFocal/m:0),atFocal+" of "+m+" players","good"),
+      statTile("Average claim,","$"+fmt(avg,1),(avg>rd.focal?"above":avg<rd.focal?"below":"at")+" the focal split",true),
+      statTile("Would overshoot","$"+fmt(2*avg,0),"two average claims vs the $"+pot+" pot", 2*avg>pot?"bad":"good"));
+    right.append(stt);
+    right.append(coordFocalNote("$"+rd.focal+" (an even split)"));
+    wrap.append(right);
+    return wrap;
+  }
+  // categorical rounds: tally choices
+  const tally={}; list.forEach(s=>{ const k=s.choice; if(k!=null) tally[k]=(tally[k]||0)+1; });
+  let modal=null, modalN=0; Object.keys(tally).forEach(k=>{ if(tally[k]>modalN){modalN=tally[k];modal=k;} });
+  const modalLbl = coordLabel(rd,modal), focalLbl=coordLabel(rd,rd.focal);
+  const onFocal = tally[rd.focal]||0;
+  const left=el("div","chart-card");
+  left.append(Object.assign(el("h3"),{textContent:"What the class picked"}));
+  if(rd.key==="square"){
+    left.append(coordSquareChart(tally,rd));
+  } else {
+    const order = rd.options.map(o=>o.v);
+    left.append(barChart(order.map(v=>({label:coordLabel(rd,v),value:tally[v]||0,color:v===rd.focal?"var(--gold)":"var(--accent)"})), Math.max(1,modalN), false, ""));
+  }
+  wrap.append(left);
+  const right=el("div","stack"); const stt=el("div","stats");
+  stt.append(statTile("Most popular",modalLbl||"—",modalN+" of "+n+" agreed",true),
+    statTile("Coordination",pct(n?modalN/n:0),"landed on the top answer", n&&modalN/n>=0.6?"good":"gold"),
+    statTile("On the focal point",pct(n?onFocal/n:0),focalLbl+" — the “obvious” pick", n&&onFocal===modalN&&onFocal>0?"good":""));
+  right.append(stt);
+  right.append(coordFocalNote(focalLbl));
+  wrap.append(right);
+  return wrap;
+}
+function coordLabel(rd,v){
+  if(v==null) return "—";
+  if(rd.key==="coin") return v.charAt(0).toUpperCase()+v.slice(1);
+  if(rd.key==="seq") return v.split("").join(" ");
+  if(rd.key==="square") return "Square "+v.toUpperCase();
+  return String(v);
+}
+function coordFocalNote(focalLbl){
+  const nb=el("div","note-box");
+  nb.innerHTML="<b>Teaching point — focal points.</b> With no way to talk, players still gravitate to the <i>salient</i> answer — here, <b>"+esc(focalLbl)+"</b>. That shared sense of the “obvious” choice is a <b>focal (Schelling) point</b>: it isn't the only equilibrium, but its prominence lets strangers coordinate. The tighter the class clustered on one answer, the stronger the focal pull.";
+  return nb;
+}
+/* 2×2 square heatmap coloured by how many picked each; the odd square is ringed. */
+function coordSquareChart(tally,rd){
+  const max=Math.max(1,...rd.squares.map(s=>tally[s]||0));
+  const g=el("div","coord-sq res");
+  rd.squares.forEach(sq=>{ const cnt=tally[sq]||0; const cell=el("div","sqcell"+(sq===rd.odd?" odd":""));
+    cell.style.setProperty("--fill", (0.12+0.88*(cnt/max)).toFixed(2));
+    cell.append(Object.assign(el("span","sqn"),{textContent:cnt})); g.append(cell); });
+  return g;
 }
 function analyzePG(list){
   list=list||subs;
@@ -1829,6 +1983,7 @@ function exportCSV(){
 function subValue(s){
   if(s.game==="pd") return s.choice==="keep"?"Keep":"Give";
   if(s.game==="publicgoods") return s.contrib!=null?String(s.contrib):"—";
+  if(s.game==="coord") return coordVal(s);
   return s.value!=null?String(s.value):"—";   // guess23 and default
 }
 /* Meeting-scope toggle: which section's meeting to analyze (A / B / … / Both).
@@ -1908,6 +2063,14 @@ function paramEditor(){
   else if(g==="pd"){ const grid=el("div","paramgrid");
     grid.append(mk("Keep: $ to self","keep",cf.keep),mk("Give: $ to partner","give",cf.give));
     wrap.append(grid); wrap.append(Object.assign(el("div","sm mut"),{textContent:"Set Give > Keep so giving is socially better, and Keep > 0 so keeping stays individually tempting."})); }
+  else if(g==="coord"){
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Four focal-point rounds, advanced with the Round stepper:"}));
+    const list=el("div"); list.style.margin="6px 0 4px";
+    COORD_ROUNDS.forEach((r,i)=>{ const cur=coordRound(control.round).key===r.key;
+      list.append(Object.assign(el("div","sm"+(cur?"":" mut")),{textContent:(i+1)+". "+r.title+(cur?"  ← now":""),style:"font-weight:"+(cur?"700":"400")})); });
+    wrap.append(list);
+    const grid=el("div","paramgrid"); grid.append(mk("Split pot ($)","pot",cf.pot)); wrap.append(grid);
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Round 4 splits this pot; the focal answer is half of it."})); }
   else { const grid=el("div","paramgrid");
     grid.append(mk("Endowment (marks)","E",cf.E),mk("Pot multiplier","mult",cf.mult,"0.1")); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"The pot is ×multiplier then split among all players. Keep multiplier > 1 (socially worth it) but < class size (so each person's share of a given mark, multiplier÷N, stays below 1 — free-riding tempting)."})); }
