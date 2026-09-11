@@ -64,6 +64,8 @@ code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding
 
 .shell{max-width:1120px; margin:0 auto; padding:20px clamp(14px,3vw,30px) 72px}
 .topbar{display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:14px 4px 20px}
+.course-sel{font:inherit; font-size:.85rem; font-weight:600; color:var(--ink-2); background:var(--surface-2);
+  border:1px solid var(--line); border-radius:var(--radius-sm); padding:7px 10px; max-width:min(46vw,220px)}
 .brand{display:flex; align-items:center; gap:12px; margin-right:auto}
 .brand .glyph{width:38px;height:38px;border-radius:10px;background:
   radial-gradient(circle at 30% 28%,var(--accent) 0 42%,transparent 44%),
@@ -281,6 +283,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       </div>
     </div>
     <span id="phasePill" class="pill"><span class="dot"></span><span id="phaseTxt">Connecting…</span></span>
+    <select id="courseSel" class="course-sel" title="Switch course" hidden></select>
     <button id="roleBtn" class="ghost-btn">Instructor</button>
     <button id="themeBtn" class="ghost-btn" title="Toggle theme">◐</button>
   </div>
@@ -641,6 +644,24 @@ function syncBrand(){
   // narrow phones (see .brand-course) and stays inline on wider screens.
   s.innerHTML="Strategic Interaction Lab"+(nm?" <span class=\"brand-course\">("+esc(nm)+")</span>":"");
 }
+/* Instructor-only course switcher in the top bar. Rebuilt only when the course set
+   changes, so it doesn't reset (or close) while live counts tick during a round. */
+let _courseSelSig=null;
+function syncCourseSel(){
+  const sel=$("#courseSel"); if(!sel) return;
+  const ids=Object.keys(courses).sort();
+  const show = isTeacher() && ids.length>0;
+  sel.hidden=!show;
+  if(!show){ _courseSelSig=null; return; }
+  const sig=ids.map(id=>id+":"+((courses[id]&&courses[id].name)||"")).join("|")+"||"+ROOM;
+  if(sig===_courseSelSig) return;
+  _courseSelSig=sig;
+  sel.innerHTML="";
+  if(!courses[ROOM]){ const o=document.createElement("option"); o.value=ROOM; o.textContent=ROOM+" (current)"; sel.append(o); }
+  ids.forEach(id=>{ const o=document.createElement("option"); o.value=id; o.textContent=(courses[id].name||id); sel.append(o); });
+  sel.value=ROOM;
+  sel.onchange=()=>{ if(sel.value && sel.value!==ROOM){ try{location.search="?class="+encodeURIComponent(sel.value);}catch(e){} } };
+}
 /* A signature of everything that changes the STRUCTURE of the view (role, game,
    phase, round, identity…) — but NOT live counts like how many have submitted.
    Used to skip a re-render that would only refresh counts, so it can't wipe out an
@@ -656,6 +677,7 @@ function render(){
   applyIdentity();
   syncPhasePill();
   syncBrand();
+  syncCourseSel();
   const app = $("#app");
   // Instructor "collection" view — full-screen, projected to the class. Shows
   // participation only (never results), so it can't leak the answer. Available in any
@@ -1319,14 +1341,7 @@ function courseCard(){
   wrap.append(Object.assign(el("h3"),{textContent:"Course"}));
   const ids=Object.keys(courses).sort();
   const curName=(courses[ROOM]&&courses[ROOM].name)||ROOM;
-  wrap.append(Object.assign(el("div","sm mut"),{textContent:"Now showing: "+curName+(curName!==ROOM?" ("+ROOM+")":"")}));
-  if(ids.length){
-    const sel=el("select","input"); sel.style.marginTop="8px"; sel.style.width="100%";
-    if(!courses[ROOM]){ const o=document.createElement("option"); o.value=ROOM; o.textContent=ROOM+" (current)"; o.selected=true; sel.append(o); }
-    ids.forEach(id=>{ const o=document.createElement("option"); o.value=id; o.textContent=(courses[id].name||id)+" · "+id; if(id===ROOM)o.selected=true; sel.append(o); });
-    sel.onchange=()=>{ if(sel.value&&sel.value!==ROOM){ try{location.search="?class="+encodeURIComponent(sel.value);}catch(e){} } };
-    wrap.append(sel);
-  }
+  wrap.append(Object.assign(el("div","sm mut"),{textContent:"Now showing: "+curName+(curName!==ROOM?" ("+ROOM+")":"")+(ids.length?" · switch courses from the dropdown in the top bar.":"")}));
   const nc=el("button","ghost-btn","New course"); nc.style.marginTop="8px";
   nc.onclick=()=>{ const name=prompt("Course name (e.g. PGP Game Theory 2026)"); if(!name)return;
     const suggest=name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"").slice(0,40);
