@@ -84,13 +84,17 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   earnings vs all-Keep/all-Give benchmarks, shaded Nash/best-for-pair matrix (shading + legend
   only in results, never on the submission screen), a "who played whom" table (instructor) and
   each student's own match (on reveal).
-- `coord` — **Coordination** (G3) — teaches **focal points (Schelling)**. Four sub-rounds run
-  via the Round stepper (`COORD_ROUNDS`, `coordRound(round)` clamps to the last): 1) Heads/Tails,
-  2) arrange A,B,C, 3) pick a square (2×2 with one odd-coloured focal square), 4) split $100
-  (claim a number; focal = half). The four "coordinate without talking" rules stay visible
-  (`coordRules`). Submissions store `choice` (rounds 1–3) or `value` (round 4). `analyzeCoord`
-  tallies the modal answer, the % who hit the **focal** point, and (round 4) a claims histogram
-  with a marker at 50 — same teaching note across rounds (`coordFocalNote`). No pairing; whole-class.
+- `coord` — **Coordination** (G3) — teaches **focal points (Schelling)**. Four questions
+  (`COORD_QS`) are answered **back-to-back in ONE submission** (NOT via rounds): Heads/Tails →
+  arrange A,B,C → pick a square (2×2 with one odd-coloured focal square) → split $100 (claim a
+  number; focal = half). Each answer **locks the instant it's chosen** and the next question
+  appears (`studentCoord` shows the first unanswered question; `coordAnswer` merges the new field
+  into the single sub doc and re-submits — students can't change earlier answers). Answers live in
+  fields `c1..c4` on one doc; a 4-dot progress bar (`coordProgress`) and the four "coordinate
+  without talking" rules (`coordRules`) stay visible; when all four are in, a locked summary shows.
+  On reveal, `analyzeCoord` shows all four results together — one compact card per question
+  (`coordQResult`) with the modal answer and % on the **focal** point (`coordFocalNote`). Just
+  Open → students play all four → Reveal. No pairing; whole-class.
 - `publicgoods` — Public Goods ("Maximize your marks") — now **G4**. Config `{ E, mult }` (default E=8 marks,
   mult=1.5). The **whole pot is multiplied by `mult` and split equally among the N players**, so
   each player receives `mult·total/N` (your own share of a contributed mark is `mult/N`, which

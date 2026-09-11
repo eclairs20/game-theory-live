@@ -196,6 +196,13 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .coord-sq.res .sqcell{background:color-mix(in srgb,var(--accent) calc(var(--fill,0.1)*100%), var(--surface-2)); cursor:default}
 .coord-sq.res .sqcell.odd{background:color-mix(in srgb,var(--gold) calc(var(--fill,0.1)*100%), var(--surface-2))}
 .coord-sq .sqn{font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:1.3rem; color:var(--ink)}
+.coord-prog{display:flex; align-items:center; gap:6px; margin-top:8px}
+.cdot{width:10px; height:10px; border-radius:50%; background:var(--line); transition:.2s}
+.cdot.on{background:var(--accent)}
+.coord-summary{margin-top:14px; display:flex; flex-direction:column; gap:6px; max-width:440px}
+.coord-srow{display:flex; justify-content:space-between; align-items:center; gap:12px; padding:9px 13px; background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm)}
+.coord-srow .cq{color:var(--muted); font-size:.85rem}
+.coord-srow .ca{font-weight:700; font-family:"IBM Plex Mono",monospace; color:var(--accent-ink)}
 @media(max-width:520px){ .coord-opts.seq{grid-template-columns:1fr 1fr} }
 /* Full-screen "collection" view projected to the class while submissions are open —
    participation only, never results, so it can't leak the answer. */
@@ -406,7 +413,7 @@ const GAMES = {
   guess23: { name:"Guess ½ of the Average", short:"G2", icon:"G2",
     blurb:"Pick a number; target is a fraction of the class mean." },
   coord: { name:"Coordination", short:"G3", icon:"G3",
-    blurb:"Match the class without talking — 4 focal-point rounds." },
+    blurb:"Match the class without talking — 4 quick focal-point questions." },
   publicgoods: { name:"Public Goods", short:"G4", icon:"G4",
     blurb:"Contribute to a shared fund that pays everyone." }
 };
@@ -416,20 +423,20 @@ const DEFAULT_CONFIG = {
   coord:{ pot:100 },
   publicgoods:{ E:8, mult:1.5 }
 };
-/* The four coordination sub-rounds, in order. Round N uses COORD_ROUNDS[N-1]
-   (clamped to the last). Each teaches focal points — the salient answer people
-   converge on without talking. */
-const COORD_ROUNDS = [
-  { key:"coin", title:"Heads or Tails?", prompt:"Pick Heads or Tails so you match everyone else.",
+/* The four coordination questions, answered back-to-back in ONE submission (no rounds).
+   Each answer locks the instant it's chosen and the next question appears — focal-point
+   play is meant to be instant, so students can't go back and change earlier answers.
+   Each question stores into its own field (c1..c4) on the single sub doc. */
+const COORD_QS = [
+  { field:"c1", key:"coin", title:"Heads or Tails?", prompt:"Pick Heads or Tails so you match everyone else.",
     options:[{v:"heads",l:"Heads"},{v:"tails",l:"Tails"}], focal:"heads" },
-  { key:"seq", title:"Arrange A, B, C", prompt:"Put A, B and C in some order — the same order everyone else will pick.",
+  { field:"c2", key:"seq", title:"Arrange A, B, C", prompt:"Put A, B and C in some order — the same order everyone else will pick.",
     options:[{v:"ABC",l:"A B C"},{v:"ACB",l:"A C B"},{v:"BAC",l:"B A C"},{v:"BCA",l:"B C A"},{v:"CAB",l:"C A B"},{v:"CBA",l:"C B A"}], focal:"ABC" },
-  { key:"square", title:"Pick a square", prompt:"Tap the one square everyone else will tap.",
+  { field:"c3", key:"square", title:"Pick a square", prompt:"Tap the one square everyone else will tap.",
     squares:["a","b","c","d"], odd:"d", focal:"d" },   // d = the odd-coloured square (bottom-right)
-  { key:"split", title:"Split $100", prompt:"Write your claim of a $100 pot. If two claims add to $100 or less, both are paid; if they exceed $100, both get nothing.",
-    focal:50 }
+  { field:"c4", key:"split", title:"Split $100", prompt:"Write your claim of a $100 pot. If two claims add to $100 or less, both are paid; if they exceed $100, both get nothing.",
+    focal:50, num:true }
 ];
-const coordRound = r => COORD_ROUNDS[Math.min(Math.max(r,1),COORD_ROUNDS.length)-1];
 
 const $ = s => document.querySelector(s);
 const el = (t,c,txt)=>{const e=document.createElement(t); if(c)e.className=c; if(txt!=null)e.textContent=txt; return e;};
@@ -1004,43 +1011,81 @@ function coordRules(){
    "Otherwise, you all lose."].forEach(t=> box.append(Object.assign(el("div","coord-rule"),{textContent:t})));
   return box;
 }
-function coordVal(s){ // display a coord submission
-  if(s.value!=null) return "$"+s.value;
-  if(s.choice==null) return "—";
-  if(/^[abcd]$/.test(s.choice)) return "Square "+s.choice.toUpperCase();
-  if(s.choice==="heads"||s.choice==="tails") return s.choice.charAt(0).toUpperCase()+s.choice.slice(1);
-  return s.choice.split("").join(" ");   // sequence e.g. A B C
+/* One-line summary of a completed/partial coord submission (for the attendance table). */
+function coordVal(s){
+  const p=[];
+  if(s.c1) p.push(s.c1==="heads"?"H":"T");
+  if(s.c2) p.push(s.c2);
+  if(s.c3) p.push(String(s.c3).toUpperCase());
+  if(s.c4!=null) p.push("$"+s.c4);
+  return p.length?p.join(" · "):"—";
 }
+function coordAnswerLabel(q,v){
+  if(v==null) return "—";
+  if(q.key==="coin") return v.charAt(0).toUpperCase()+v.slice(1);
+  if(q.key==="seq") return v.split("").join(" ");
+  if(q.key==="square") return "Square "+String(v).toUpperCase();
+  return "$"+v;
+}
+/* Merge a new answer into the single sub doc (keeping earlier answers) and submit.
+   submit() overwrites the doc, so we pass every already-answered field back too. */
+async function coordAnswer(field,v){
+  const cur=mySub()||{}; const payload={};
+  COORD_QS.forEach(q=>{ if(cur[q.field]!=null) payload[q.field]=cur[q.field]; });
+  payload[field]=v;
+  await submit(payload);
+}
+/* Small 4-dot progress indicator. */
+function coordProgress(doneCount){
+  const row=el("div","coord-prog");
+  COORD_QS.forEach((q,i)=> row.append(el("span","cdot"+(i<doneCount?" on":""))) );
+  row.append(Object.assign(el("span","sm mut"),{textContent:"Question "+Math.min(doneCount+1,COORD_QS.length)+" of "+COORD_QS.length,style:"margin-left:8px"}));
+  return row;
+}
+/* Sequential focal-point questions: show the first unanswered one; each locks on
+   choice and the next appears. When all four are in, show the locked summary. */
 function studentCoord(c){
-  const rd=coordRound(control.round), cur=mySub(), cf=cfg("coord");
-  c.append(Object.assign(el("h2"),{textContent:rd.title,style:"font-size:1.5rem;margin:6px 0 4px"}));
-  c.append(el("p","lead",rd.prompt));
+  const cur=mySub()||{}, cf=cfg("coord");
+  const done=COORD_QS.filter(q=>cur[q.field]!=null).length;
+  const idx=COORD_QS.findIndex(q=>cur[q.field]==null);
   c.append(coordRules());
-  const wrap=el("div"); wrap.style.marginTop="18px";
-  const submitChoice=async(v,lbl)=>{ await submit({choice:v}); toast("You chose "+lbl); };
-  if(rd.key==="coin" || rd.key==="seq"){
-    const grid=el("div","coord-opts"); if(rd.key==="seq") grid.classList.add("seq");
-    rd.options.forEach(o=>{ const bt=el("button","coord-opt"+(cur&&cur.choice===o.v?" sel":"")); bt.textContent=o.l;
-      bt.onclick=()=>submitChoice(o.v,o.l); grid.append(bt); });
+  if(idx===-1){
+    // all four answered — locked
+    c.append(Object.assign(el("h2"),{textContent:"All four in — nicely done",style:"font-size:1.5rem;margin:14px 0 4px"}));
+    c.append(el("p","lead","Your answers are locked. Wait for the reveal to see how the class coordinated."));
+    const list=el("div","coord-summary");
+    COORD_QS.forEach(q=>{ const r=el("div","coord-srow");
+      r.append(Object.assign(el("span","cq"),{textContent:q.title}), Object.assign(el("span","ca"),{textContent:coordAnswerLabel(q,cur[q.field])})); list.append(r); });
+    c.append(list);
+    c.append(liveCount());
+    return c;
+  }
+  const q=COORD_QS[idx];
+  c.append(coordProgress(done));
+  c.append(Object.assign(el("h2"),{textContent:q.title,style:"font-size:1.5rem;margin:10px 0 4px"}));
+  c.append(el("p","lead",q.prompt));
+  c.append(Object.assign(el("div","sm mut"),{textContent:"Choose once — it locks immediately and the next question appears.",style:"margin-top:2px"}));
+  const wrap=el("div"); wrap.style.marginTop="16px";
+  if(q.key==="coin" || q.key==="seq"){
+    const grid=el("div","coord-opts"); if(q.key==="seq") grid.classList.add("seq");
+    q.options.forEach(o=>{ const bt=el("button","coord-opt"); bt.textContent=o.l;
+      bt.onclick=()=>coordAnswer(q.field,o.v); grid.append(bt); });
     wrap.append(grid);
-  } else if(rd.key==="square"){
+  } else if(q.key==="square"){
     const g=el("div","coord-sq");
-    rd.squares.forEach(sq=>{ const bt=el("button","sqcell"+(sq===rd.odd?" odd":"")+(cur&&cur.choice===sq?" sel":""));
-      bt.setAttribute("aria-label","square "+sq.toUpperCase());
-      bt.onclick=()=>submitChoice(sq,"Square "+sq.toUpperCase()); g.append(bt); });
+    q.squares.forEach(sq=>{ const bt=el("button","sqcell"+(sq===q.odd?" odd":"")); bt.setAttribute("aria-label","square "+sq.toUpperCase());
+      bt.onclick=()=>coordAnswer(q.field,sq); g.append(bt); });
     wrap.append(g);
-  } else { // split $100 — number claim
+  } else { // split $100
     const pot=cf.pot||100;
     const f=el("div","field"); f.style.maxWidth="240px";
     const inp=el("input","input mono"); inp.type="number"; inp.min=0; inp.max=pot; inp.step=1; inp.placeholder="0–"+pot; inp.style.fontSize="1.4rem"; inp.style.textAlign="center";
-    if(cur&&cur.value!=null) inp.value=cur.value;
-    const b=el("button","btn big wide","Submit claim"); b.style.marginTop="12px"; b.style.maxWidth="240px";
-    const go=async()=>{ let v=Math.round(Number(inp.value)); if(inp.value===""||isNaN(v)||v<0||v>pot){toast("Enter 0–"+pot);inp.focus();return;} await submit({value:v}); toast("Claim submitted"); };
+    const b=el("button","btn big wide","Lock in claim"); b.style.marginTop="12px"; b.style.maxWidth="240px";
+    const go=async()=>{ let v=Math.round(Number(inp.value)); if(inp.value===""||isNaN(v)||v<0||v>pot){toast("Enter 0–"+pot);inp.focus();return;} await coordAnswer(q.field,v); };
     b.onclick=go; inp.onkeydown=e=>{if(e.key==="Enter")go();};
     f.append(Object.assign(el("label"),{textContent:"Your claim ($)"}),inp); wrap.append(f,b);
   }
   c.append(wrap);
-  if(cur) c.append(submittedBadge("Your answer: <span class='myval'>"+esc(coordVal(cur))+"</span>."));
   c.append(liveCount());
 }
 
@@ -1264,51 +1309,37 @@ function myMatchCard(cf,pairs){
   card.append(st);
   return card;
 }
-/* Coordination game — did the class converge (focal point)? Analysis depends on the
-   sub-round (coin / sequence / square / split). */
+/* Coordination game — all four questions were answered in one go (fields c1..c4).
+   Show a compact result card per question: how the class split and how many hit the
+   focal point. One shared teaching note at the end. */
 function analyzeCoord(teacher,list){
-  list=list||subs; const rd=coordRound(control.round), cf=cfg("coord"); const n=list.length;
+  list=list||subs; const cf=cfg("coord");
   const wrap=el("div","stack");
-  if(rd.key==="split"){
-    const vals=list.map(s=>Number(s.value)).filter(v=>!isNaN(v)).sort((a,b)=>a-b);
-    const m=vals.length, pot=cf.pot||100, avg=m?vals.reduce((a,b)=>a+b,0)/m:0;
-    const atFocal=vals.filter(v=>v===rd.focal).length;
-    const left=el("div","chart-card");
-    left.append(Object.assign(el("h3"),{textContent:"Everyone's claim"}),
-      Object.assign(el("div","cap"),{textContent:"The focal split is "+rd.focal+" — half each. Two random players both get paid only if their claims sum to "+pot+" or less."}));
-    left.append(histogram(vals,0,pot,Math.max(1,Math.round(pot/20)),[{x:rd.focal,l:"Focal "+rd.focal,strong:true}],rd.focal));
-    wrap.append(left);
-    const right=el("div","stack"); const stt=el("div","stats");
-    stt.append(statTile("Claimed exactly "+rd.focal,pct(m?atFocal/m:0),atFocal+" of "+m+" players","good"),
-      statTile("Average claim,","$"+fmt(avg,1),(avg>rd.focal?"above":avg<rd.focal?"below":"at")+" the focal split",true),
-      statTile("Would overshoot","$"+fmt(2*avg,0),"two average claims vs the $"+pot+" pot", 2*avg>pot?"bad":"good"));
-    right.append(stt);
-    right.append(coordFocalNote("$"+rd.focal+" (an even split)"));
-    wrap.append(right);
-    return wrap;
-  }
-  // categorical rounds: tally choices
-  const tally={}; list.forEach(s=>{ const k=s.choice; if(k!=null) tally[k]=(tally[k]||0)+1; });
-  let modal=null, modalN=0; Object.keys(tally).forEach(k=>{ if(tally[k]>modalN){modalN=tally[k];modal=k;} });
-  const modalLbl = coordLabel(rd,modal), focalLbl=coordLabel(rd,rd.focal);
-  const onFocal = tally[rd.focal]||0;
-  const left=el("div","chart-card");
-  left.append(Object.assign(el("h3"),{textContent:"What the class picked"}));
-  if(rd.key==="square"){
-    left.append(coordSquareChart(tally,rd));
-  } else {
-    const order = rd.options.map(o=>o.v);
-    left.append(barChart(order.map(v=>({label:coordLabel(rd,v),value:tally[v]||0,color:v===rd.focal?"var(--gold)":"var(--accent)"})), Math.max(1,modalN), false, ""));
-  }
-  wrap.append(left);
-  const right=el("div","stack"); const stt=el("div","stats");
-  stt.append(statTile("Most popular",modalLbl||"—",modalN+" of "+n+" agreed",true),
-    statTile("Coordination",pct(n?modalN/n:0),"landed on the top answer", n&&modalN/n>=0.6?"good":"gold"),
-    statTile("On the focal point",pct(n?onFocal/n:0),focalLbl+" — the “obvious” pick", n&&onFocal===modalN&&onFocal>0?"good":""));
-  right.append(stt);
-  right.append(coordFocalNote(focalLbl));
-  wrap.append(right);
+  const done=list.filter(s=>COORD_QS.every(q=>s[q.field]!=null)).length;
+  const intro=el("div","note-box teal");
+  intro.innerHTML="Four snap decisions, made without talking. For each, did the class converge on the <b>focal</b> (obvious) answer? "+done+" of "+list.length+" finished all four.";
+  wrap.append(intro);
+  COORD_QS.forEach(q=> wrap.append(coordQResult(q,list,cf)));
+  wrap.append(coordFocalNote("the salient choice in each question"));
   return wrap;
+}
+function coordQResult(q,list,cf){
+  const card=el("div","chart-card");
+  card.append(Object.assign(el("div","eyebrow gold"),{textContent:q.title}));
+  if(q.num){
+    const vals=list.map(s=>Number(s[q.field])).filter(v=>!isNaN(v)).sort((a,b)=>a-b);
+    const m=vals.length, pot=cf.pot||100, avg=m?vals.reduce((a,b)=>a+b,0)/m:0, atFocal=vals.filter(v=>v===q.focal).length;
+    card.append(Object.assign(el("div","cap"),{textContent:"Focal split = "+q.focal+". "+atFocal+" of "+m+" claimed exactly "+q.focal+" ("+pct(m?atFocal/m:0)+"); average $"+fmt(avg,1)+". Two average claims = $"+fmt(2*avg,0)+" vs the $"+pot+" pot."}));
+    if(m) card.append(histogram(vals,0,pot,Math.max(1,Math.round(pot/20)),[{x:q.focal,l:"Focal "+q.focal,strong:true}],q.focal));
+    return card;
+  }
+  const tally={}; let n=0; list.forEach(s=>{ const k=s[q.field]; if(k!=null){ tally[k]=(tally[k]||0)+1; n++; } });
+  let modal=null,modalN=0; Object.keys(tally).forEach(k=>{ if(tally[k]>modalN){modalN=tally[k];modal=k;} });
+  const onFocal=tally[q.focal]||0;
+  card.append(Object.assign(el("div","cap"),{textContent:"Most picked "+(coordLabel(q,modal)||"—")+" ("+modalN+" of "+n+", "+pct(n?modalN/n:0)+"). On the focal point "+coordLabel(q,q.focal)+": "+pct(n?onFocal/n:0)+"."}));
+  if(q.key==="square") card.append(coordSquareChart(tally,q));
+  else card.append(barChart(q.options.map(o=>({label:coordLabel(q,o.v),value:tally[o.v]||0,color:o.v===q.focal?"var(--gold)":"var(--accent)"})), Math.max(1,modalN), false, ""));
+  return card;
 }
 function coordLabel(rd,v){
   if(v==null) return "—";
@@ -1968,7 +1999,8 @@ function exportCSV(){
   const out=[head.join(",")];
   rows.forEach(s=>{
     const email=subEmail(s); const enrolled = email && roster[email.toLowerCase()] ? "yes" : "no";
-    const resp = s.value!=null?s.value : (s.choice!=null?(s.choice==="keep"?"Keep":s.choice==="give"?"Give":s.choice) : (s.contrib!=null?s.contrib:""));
+    const resp = s.game==="coord" ? coordVal(s)
+      : (s.value!=null?s.value : (s.choice!=null?(s.choice==="keep"?"Keep":s.choice==="give"?"Give":s.choice) : (s.contrib!=null?s.contrib:"")));
     out.push([ROOM, (s.session!=null?"S"+s.session:""), s.game||"", (s.round!=null?s.round:""), s.roundKey||"", email, s.name||"", s.sid||"", s.area||"", secOf(s), enrolled, resp, (s.ts?new Date(s.ts).toISOString():"")].map(csvCell).join(","));
   });
   try{
@@ -2064,13 +2096,12 @@ function paramEditor(){
     grid.append(mk("Keep: $ to self","keep",cf.keep),mk("Give: $ to partner","give",cf.give));
     wrap.append(grid); wrap.append(Object.assign(el("div","sm mut"),{textContent:"Set Give > Keep so giving is socially better, and Keep > 0 so keeping stays individually tempting."})); }
   else if(g==="coord"){
-    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Four focal-point rounds, advanced with the Round stepper:"}));
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Students answer four quick questions back-to-back in one submission (no rounds); each locks the instant it's picked:"}));
     const list=el("div"); list.style.margin="6px 0 4px";
-    COORD_ROUNDS.forEach((r,i)=>{ const cur=coordRound(control.round).key===r.key;
-      list.append(Object.assign(el("div","sm"+(cur?"":" mut")),{textContent:(i+1)+". "+r.title+(cur?"  ← now":""),style:"font-weight:"+(cur?"700":"400")})); });
+    COORD_QS.forEach((r,i)=> list.append(Object.assign(el("div","sm mut"),{textContent:(i+1)+". "+r.title})));
     wrap.append(list);
     const grid=el("div","paramgrid"); grid.append(mk("Split pot ($)","pot",cf.pot)); wrap.append(grid);
-    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Round 4 splits this pot; the focal answer is half of it."})); }
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Question 4 splits this pot; the focal answer is half of it. Just Open → students play all four → Reveal (all four results show together)."})); }
   else { const grid=el("div","paramgrid");
     grid.append(mk("Endowment (marks)","E",cf.E),mk("Pot multiplier","mult",cf.mult,"0.1")); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"The pot is ×multiplier then split among all players. Keep multiplier > 1 (socially worth it) but < class size (so each person's share of a given mark, multiplier÷N, stays below 1 — free-riding tempting)."})); }
