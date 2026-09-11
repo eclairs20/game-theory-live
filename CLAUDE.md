@@ -116,7 +116,23 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   `gameDraft` (keyed `‹game›-‹roundKey›`, via `draftFor()`) and each view repaints from that draft
   via a local `paint()`, so a classmate's live submission never wipes a half-filled form. Flow: Open
   → both partners tap their own cards → Reveal. Config `{ rounds }` (`paramEditor` "Rounds played";
-  default `quatro:5`, `redblack:20`).
+  default `quatro:5`, `redblack:20`). Three shared mechanics:
+  - **Incremental writes + `done` flag.** Each tap `schedulePairSave()`s the sub with `done:false`
+    (debounced ~450ms); the Submit button flips it to `done:true`. `isDone(s)` (`s.done!==false`;
+    older games have no `done`, so they read as done) gates every "submitted" count — `liveCount`,
+    `presentView`, `attendanceCard`, and the analyses all filter `isDone(s) && !s.bot`.
+  - **Live partner panel.** Each view finds the partner's live sub in `subs` and streams their tapped
+    cards (`partnerPanel`/`miniCardRow`) as they play; global `render()` repaints on every Firebase
+    change while the local draft keeps your own half-filled entry intact.
+  - **Practice bot** (`partnerPicker`'s "🤖 Practice bot"): sets `d.bot`, generates the opponent's
+    moves locally (`botRBSeq`/`botPiles`, ~Nash mix), shows them in the live panel, and on submit
+    `saveBot()` writes a synthetic opponent doc keyed `"bot:<myId>"` pointing back at you — so one
+    person completes a whole pair (solo testing, or an odd student out). Bot docs are
+    `bot:true`/`guest:true` and excluded from participation counts.
+  - **G6 colour auto-resolves.** Each still indicates their real colour, but once your partner's sub
+    carries one you are **locked to the opposite** (`oppColor`); a both-picked-same clash is broken
+    deterministically by `studentId` order, so a pair is always one Red + one Black. The bot takes
+    the opposite of your pick.
   - `quatro` (G5) — 4-card duel (1<2<3<4): stack your four cards into a pile, reveal top cards, lower
     discarded / equal → both discarded / **1 vs 4 → both discarded**; empty your pile first and you
     lose. **Non-transitive** (1 beats 4), like RPS — no dominant ordering. `studentQuatro` records

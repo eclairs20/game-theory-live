@@ -239,6 +239,14 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .jmx th{background:var(--surface-2); color:var(--ink-2); font-weight:700}
 .jmx th.cn{font-size:.66rem; color:var(--muted); font-weight:600}
 .jmx td{color:var(--ink)}
+.pair-name.bot{border-style:dashed; color:var(--ink-2)}
+.pair-live{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:10px 12px; margin-top:14px}
+.pair-live-head{display:flex; align-items:center; gap:10px; margin-bottom:8px}
+.pill-live{font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--accent-ink); background:var(--accent-wash); padding:2px 8px; border-radius:999px}
+.mini-row{display:flex; flex-wrap:wrap; gap:4px}
+.mini-slot{width:26px; height:36px; border-radius:5px; overflow:hidden; display:inline-flex}
+.mini-slot.empty{border:1px dashed var(--line); background:transparent}
+.q-oppline{display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap}
 /* Full-screen "collection" view projected to the class while submissions are open —
    participation only, never results, so it can't leak the answer. */
 .present{position:fixed; inset:0; z-index:60; background:var(--bg); color:var(--ink);
@@ -672,6 +680,38 @@ async function submit(payload){
   lastViewKey=null; render();
 }
 function mySub(){ return subs.find(s=>s.studentId===myId) || null; }
+/* A submission counts as "in" once done!==false. Older games never set done, so
+   they are always done; the pair card games write done:false while still tapping. */
+function isDone(s){ return !!s && s.done!==false; }
+function oppColor(c){ return c==="red"?"black":"red"; }
+/* Pair card games write their sub incrementally so a partner can watch it fill in
+   live. done:false = still tapping; the Submit button flips it to done:true. */
+let _pairSaveT=null;
+function pairDoc(payload, done){
+  const key=roundKey(control.activeGame,control.round);
+  const doc={ roundKey:key, session:curSession(), game:control.activeGame, round:control.round, studentId:myId, name:myName||"Anon", ts:Date.now(), done:!!done };
+  if(meGuest) doc.guest=true;
+  if(authUser&&authUser.email) doc.email=authUser.email.toLowerCase();
+  if(curMSection()) doc.msection=curMSection();
+  const rn=roster[String(myId).toLowerCase()]; if(rn){ if(rn.sid)doc.sid=rn.sid; if(rn.area)doc.area=rn.area; if(rn.section)doc.section=rn.section; }
+  return Object.assign(doc,payload);
+}
+async function savePair(payload, done){
+  const key=roundKey(control.activeGame,control.round);
+  try{ await fb.ref(SUB_DOC(key,myId)).set(pairDoc(payload,done)); return true; }catch(e){ return false; }
+}
+function schedulePairSave(payload){ if(_pairSaveT) clearTimeout(_pairSaveT); _pairSaveT=setTimeout(()=>{ _pairSaveT=null; savePair(payload,false); }, 450); }
+/* Write a synthetic "practice bot" opponent so one person can complete a pair
+   (for testing, or an odd student out). Keyed "bot:<myId>", points back at me. */
+async function saveBot(payload){
+  const key=roundKey(control.activeGame,control.round), botId="bot:"+myId;
+  const doc={ roundKey:key, session:curSession(), game:control.activeGame, round:control.round, studentId:botId, name:"Practice bot", ts:Date.now(), done:true, guest:true, bot:true, partner:myId, partnerName:myName||"You" };
+  if(curMSection()) doc.msection=curMSection();
+  Object.assign(doc,payload);
+  try{ await fb.ref(SUB_DOC(key,botId)).set(doc); return true; }catch(e){ return false; }
+}
+function botRBSeq(R){ const pool=["K","K","A","2","3"]; const out=[]; for(let i=0;i<R;i++) out.push(pool[Math.floor(Math.random()*5)]); return out; }  // ~K 40% / A·2·3 20%
+function botPiles(R){ const out=[]; for(let i=0;i<R;i++){ const a=[1,2,3,4]; for(let k=3;k>0;k--){ const j=Math.floor(Math.random()*(k+1)); const t=a[k];a[k]=a[j];a[j]=t; } out.push(a.join("")); } return out; }
 
 async function clearRound(){
   if(!control||!control.activeGame) return;
@@ -995,7 +1035,8 @@ function submittedBadge(text){
 }
 function liveCount(){
   const r=el("div","row"); r.style.marginTop="18px"; r.style.gap="8px";
-  r.append(el("span","badge",subs.length+" submitted"), el("span","sm mut","· results hidden until reveal"));
+  const n=subs.filter(s=>isDone(s)&&!s.bot).length;
+  r.append(el("span","badge",n+" submitted"), el("span","sm mut","· results hidden until reveal"));
   return r;
 }
 function studentGuess(c){
@@ -1180,10 +1221,12 @@ function partnerPicker(d, redraw){
   box.append(Object.assign(el("div","tinylabel"),{textContent:"Your partner this game"}));
   if(d.partner){
     const chip=el("div","pair-chosen");
-    chip.append(Object.assign(el("span"),{textContent:"✔ "+(d.partnerName||d.partner)}));
-    const chg=el("button","linkbtn","change"); chg.type="button"; chg.onclick=()=>{ d.partner=null; d.partnerName=null; redraw(); };
+    chip.append(Object.assign(el("span"),{textContent:(d.bot?"🤖 ":"✔ ")+(d.partnerName||d.partner)}));
+    const chg=el("button","linkbtn","change"); chg.type="button";
+    chg.onclick=()=>{ d.partner=null; d.partnerName=null; d.bot=false; d.botSeq=null; d.botPiles=null; redraw(); };
     chip.append(chg); box.append(chip); return box;
   }
+  const pickBot=()=>{ d.partner="bot:"+String(myId); d.partnerName="Practice bot"; d.bot=true; redraw(); };
   const sec=curMSection(), me=String(myId).toLowerCase();
   const cands=rosterList.filter(e=>e.email!==me && (!sec||e.section===sec));
   if(cands.length){
@@ -1200,48 +1243,84 @@ function partnerPicker(d, redraw){
     b.onclick=()=>{ const v=inp.value.trim(); if(!v){inp.focus();return;} d.partner="name:"+v.toLowerCase(); d.partnerName=v; redraw(); };
     box.append(inp,b);
   }
+  const botB=el("button","pair-name bot","🤖 Practice bot — play solo"); botB.type="button"; botB.style.marginTop="8px"; botB.onclick=pickBot;
+  box.append(botB);
   return box;
 }
-/* G6 — Red vs Black: pick partner + colour, then tap the card YOU played each
-   hand. Stores the full sequence (seq) so the class joint matrix is recoverable. */
+/* Small shared bits for the live-partner panels. */
+function tinyLabel(t){ return Object.assign(el("div","tinylabel"),{textContent:t}); }
+function hintLine(t){ return Object.assign(el("div","sm mut"),{textContent:t,style:"margin-top:10px"}); }
+function rbRawSeq(s){ return (s&&s.seq!=null)? String(s.seq).split(",").map(x=>x.trim()) : []; }
+function miniCardRow(tokens, kind){
+  const row=el("div","mini-row");
+  tokens.forEach(t=>{ const cell=el("span","mini-slot"+(t?"":" empty"));
+    if(t){ const f=cardFace(t,kind); f.setAttribute("class","cf mini"); cell.append(f); }
+    row.append(cell); });
+  return row;
+}
+function partnerPanel(name, kind, tokens, note){
+  const box=el("div","pair-live");
+  const head=el("div","pair-live-head");
+  head.append(tinyLabel(name+(kind?(kind==="red"?" · Red ♥":" · Black ♠"):"")));
+  if(note) head.append(Object.assign(el("span","pill-live"),{textContent:note}));
+  box.append(head, miniCardRow(tokens,kind));
+  return box;
+}
+/* G6 — Red vs Black: pick partner (or a practice bot), take the colour opposite
+   your partner's, then tap the card YOU played each hand. Writes incrementally so
+   your partner watches it fill in live; stores the full sequence for the joint matrix. */
 function studentRedBlack(c){
   const cf=cfg("redblack"), R=cf.rounds||20, cur=mySub();
   const dk="redblack-"+roundKey(control.activeGame,control.round), d=draftFor(dk);
   if(cur && d._loaded!==true){
-    if(cur.color) d.color=cur.color; if(cur.partner) d.partner=cur.partner; if(cur.partnerName) d.partnerName=cur.partnerName;
-    if(cur.seq) d.seq=String(cur.seq).split(",").map(x=>x.trim()).filter(Boolean);
+    if(cur.color) d.color=cur.color; if(cur.partner) d.partner=cur.partner; if(cur.partnerName) d.partnerName=cur.partnerName; if(cur.bot) d.bot=true;
+    if(cur.seq) d.seq=String(cur.seq).split(",").map(x=>{ x=x.trim(); return x===""?undefined:x; });
     d._loaded=true;
   }
   if(!Array.isArray(d.seq)) d.seq=[];
   d.seq.length=R;
+  const saveNow=()=>schedulePairSave({color:d.color,partner:d.partner,partnerName:d.partnerName,seq:d.seq.map(x=>x==null?"":x).join(",")});
   c.append(Object.assign(el("h2"),{textContent:"Red vs Black",style:"font-size:1.4rem;margin:6px 0 4px"}));
   c.append(pairRules("How it was played",[
     "Two of you, one Red and one Black (coin toss). Cards: K, A(=1), 2 and 3.",
     "Each hand you both play one card at the same time.",
     "Red wins if BOTH play K, or both play number cards with DIFFERENT numbers.",
     "Black wins if exactly ONE plays K, or both play the SAME number.",
-    "Pick your partner and colour, then just tap the card YOU played each hand — we work out who won."]));
+    "Pick your partner, take your colour, then tap the card YOU played each hand — we work out who won."]));
   const host=el("div"); host.style.marginTop="14px"; c.append(host);
   const paint=()=>{
     host.replaceChildren();
     host.append(partnerPicker(d, paint));
-    const cp=el("div","colorpick");
-    cp.append(Object.assign(el("div","tinylabel"),{textContent:"Your colour"}));
-    const cprow=el("div","row"); cprow.style.gap="8px";
-    [["red","Red ♥"],["black","Black ♠"]].forEach(([v,l])=>{
-      const b=el("button","colbtn"+(d.color===v?" sel "+v:"")); b.type="button"; b.textContent=l;
-      b.onclick=()=>{ d.color=v; paint(); }; cprow.append(b); });
-    cp.append(cprow); host.append(cp);
-    if(!d.partner || !d.color){ host.append(Object.assign(el("div","sm mut"),{textContent:"Pick your partner and colour to start tapping.",style:"margin-top:10px"})); return; }
+    if(!d.partner){ host.append(hintLine("Pick your partner (or the practice bot) to start.")); return; }
+    // live partner sub + colour lock
+    const psub = d.bot ? null : subs.find(s=> String(s.studentId)===String(d.partner));
+    const linked = !!(psub && String(psub.partner)===String(myId));
+    let locked=false;
+    if(linked && psub.color){
+      if(psub.color!==d.color){ d.color=oppColor(psub.color); locked=true; }
+      else { if(String(myId) > String(psub.studentId)) d.color=oppColor(psub.color); locked=true; }  // conflict tiebreak by id
+    }
+    const cp=el("div","colorpick"); cp.append(tinyLabel("Your colour"));
+    if(locked){ cp.append(Object.assign(el("div","note-box teal"),{innerHTML:"You're <b>"+(d.color==="red"?"Red ♥":"Black ♠")+"</b> — "+esc(psub.name)+" took "+(psub.color==="red"?"Red":"Black")+"."})); }
+    else {
+      const cprow=el("div","row"); cprow.style.gap="8px";
+      [["red","Red ♥"],["black","Black ♠"]].forEach(([v,l])=>{ const b=el("button","colbtn"+(d.color===v?" sel "+v:"")); b.type="button"; b.textContent=l;
+        b.onclick=()=>{ d.color=v; saveNow(); paint(); }; cprow.append(b); });
+      cp.append(cprow);
+      if(d.bot) cp.append(Object.assign(el("div","sm mut"),{textContent:"The bot takes the other colour.",style:"margin-top:4px"}));
+    }
+    host.append(cp);
+    if(!d.color){ host.append(hintLine("Pick your colour to start tapping.")); return; }
+    if(d.bot && (!Array.isArray(d.botSeq)||d.botSeq.length!==R)) d.botSeq=botRBSeq(R);
     if(d.active==null || d.seq[d.active]!=null){ const f=d.seq.findIndex(x=>x==null); d.active = f<0? R-1 : f; }
     const done=d.seq.filter(x=>x!=null).length;
     const prog=el("div","rtap-prog");
-    prog.append(Object.assign(el("span","tinylabel"),{textContent: done<R? ("Hand "+(d.active+1)+" of "+R+" — tap the card you played") : "All "+R+" hands recorded"}),
+    prog.append(tinyLabel(done<R? ("Hand "+(d.active+1)+" of "+R+" — tap the card you played") : "All "+R+" hands recorded"),
       Object.assign(el("span","sm mut"),{textContent: done+" / "+R}));
     host.append(prog);
     const rail=el("div","card-rail");
     RB_CARDS.forEach(rk=>{ rail.append(cardBtn(rk, d.color, ()=>{
-      d.seq[d.active]=rk; const f=d.seq.findIndex(x=>x==null); if(f>=0) d.active=f; paint();
+      d.seq[d.active]=rk; const f=d.seq.findIndex(x=>x==null); if(f>=0) d.active=f; saveNow(); paint();
     })); });
     host.append(rail);
     const strip=el("div","rtap-strip");
@@ -1252,15 +1331,22 @@ function studentRedBlack(c){
       strip.append(slot);
     }
     host.append(strip);
-    const b=el("button","btn big wide",cur?"Update my cards":"Submit my cards"); b.style.marginTop="14px"; b.style.maxWidth="360px";
+    // live partner / bot panel
+    if(d.bot){ const shown=d.botSeq.map((t,i)=> i<done? t : null); host.append(partnerPanel("Practice bot", oppColor(d.color), shown, done<R?"playing along":"done")); }
+    else if(linked){ const raw=rbRawSeq(psub); const toks=[]; for(let i=0;i<R;i++) toks.push(raw[i]||null); host.append(partnerPanel(psub.name, psub.color, toks, isDone(psub)?"submitted ✓":"playing live")); }
+    else if(psub){ host.append(hintLine(psub.name+" is here but hasn't picked you back yet.")); }
+    else { host.append(hintLine("Waiting for "+(d.partnerName||"your partner")+" to open the game…")); }
+    const b=el("button","btn big wide",(cur&&isDone(cur))?"Update my cards":"Submit my cards"); b.style.marginTop="14px"; b.style.maxWidth="360px";
     if(done<R) b.disabled=true;
     b.onclick=async()=>{
       if(d.seq.some(x=>x==null)){ toast("Tap a card for every hand"); return; }
-      await submit({color:d.color, partner:d.partner, partnerName:d.partnerName, seq:d.seq.join(",")});
-      toast("Your cards are in");
+      if(_pairSaveT){ clearTimeout(_pairSaveT); _pairSaveT=null; }
+      await savePair({color:d.color, partner:d.partner, partnerName:d.partnerName, seq:d.seq.join(",")}, true);
+      if(d.bot) await saveBot({ color:oppColor(d.color), seq:d.botSeq.join(",") });
+      lastViewKey=null; toast("Your cards are in"); render();
     };
     host.append(b);
-    if(cur) host.append(pairSubmittedNote());
+    if(cur && isDone(cur)) host.append(pairSubmittedNote());
   };
   paint();
   c.append(liveCount());
@@ -1283,28 +1369,45 @@ function studentQuatro(c){
     "Reveal top cards together: lower card is discarded, higher stays. Equal → both go. A 1 against a 4 → both go.",
     "First to empty their pile loses.",
     "Pick your partner, then for each hand tap YOUR four cards in the order you stacked them (top first). We match piles and work out who won."]));
+  const saveNow=()=>schedulePairSave({partner:d.partner,partnerName:d.partnerName,piles:JSON.stringify(d.piles.map(p=>p.join("")))});
   const host=el("div"); host.style.marginTop="14px"; c.append(host);
   const paint=()=>{
     host.replaceChildren();
     host.append(partnerPicker(d, paint));
-    if(!d.partner){ host.append(Object.assign(el("div","sm mut"),{textContent:"Pick your partner to start.",style:"margin-top:10px"})); return; }
+    if(!d.partner){ host.append(hintLine("Pick your partner (or the practice bot) to start.")); return; }
+    const psub = d.bot ? null : subs.find(s=> String(s.studentId)===String(d.partner));
+    const linked = !!(psub && String(psub.partner)===String(myId));
+    if(d.bot && (!Array.isArray(d.botPiles)||d.botPiles.length!==R)) d.botPiles=botPiles(R);
+    const doneCount=d.piles.filter(p=>p.length===4).length;
     d.piles.forEach((pile,i)=>{
       const card=el("div","q-round");
-      card.append(Object.assign(el("div","tinylabel"),{textContent:"Hand "+(i+1)+" — your pile (top → bottom)"}));
-      card.append(orderingPicker(pile, seq=>{ d.piles[i]=seq; paint(); }));
+      card.append(tinyLabel("Hand "+(i+1)+" — your pile (top → bottom)"));
+      card.append(orderingPicker(pile, seq=>{ d.piles[i]=seq; saveNow(); paint(); }));
+      // live partner pile for this hand
+      let opp=null, oppKind="black";
+      if(d.bot && i<doneCount) opp=String(d.botPiles[i]).split("").map(Number);
+      else if(linked){ try{ const pp=JSON.parse(psub.piles||"[]"); if(pp[i]) opp=String(pp[i]).split("").map(Number); }catch(e){} }
+      if(opp){ const row=el("div","q-oppline"); row.append(Object.assign(el("span","sm mut"),{textContent:(d.bot?"Bot":psub&&psub.name||"Partner")+"'s pile:"}));
+        row.append(miniCardRow(opp.map(n=>String(n)), null)); card.append(row); }
       host.append(card);
     });
+    // partner status line
+    if(d.bot) host.append(hintLine(doneCount<R?"Practice bot is playing along…":"Practice bot is ready."));
+    else if(linked) host.append(hintLine(psub.name+" — "+(isDone(psub)?"submitted ✓":"playing live")));
+    else if(psub) host.append(hintLine(psub.name+" hasn't picked you back yet."));
+    else host.append(hintLine("Waiting for "+(d.partnerName||"your partner")+" to open the game…"));
     const complete=d.piles.every(p=>p.length===4);
-    const b=el("button","btn big wide",cur?"Update my piles":"Submit my piles"); b.style.marginTop="8px"; b.style.maxWidth="360px";
+    const b=el("button","btn big wide",(cur&&isDone(cur))?"Update my piles":"Submit my piles"); b.style.marginTop="8px"; b.style.maxWidth="360px";
     if(!complete) b.disabled=true;
     b.onclick=async()=>{
       if(!d.piles.every(p=>p.length===4)){ toast("Finish all "+R+" piles (tap all four cards)"); return; }
-      const piles=JSON.stringify(d.piles.map(p=>p.join("")));
-      await submit({partner:d.partner, partnerName:d.partnerName, piles});
-      toast("Your piles are in");
+      if(_pairSaveT){ clearTimeout(_pairSaveT); _pairSaveT=null; }
+      await savePair({partner:d.partner, partnerName:d.partnerName, piles:JSON.stringify(d.piles.map(p=>p.join("")))}, true);
+      if(d.bot) await saveBot({ piles:JSON.stringify(d.botPiles) });
+      lastViewKey=null; toast("Your piles are in"); render();
     };
     host.append(b);
-    if(cur) host.append(pairSubmittedNote());
+    if(cur && isDone(cur)) host.append(pairSubmittedNote());
   };
   paint();
   c.append(liveCount());
@@ -1649,6 +1752,7 @@ function mutualPairs(list){
   return pairs;
 }
 function analyzeRedBlack(list){
+  list=list.filter(isDone);
   const idx={K:0,A:1,"2":2,"3":3};
   const reds=list.filter(s=>s.color==="red"), blacks=list.filter(s=>s.color==="black");
   const marg=arr=>{ const m={K:0,A:0,"2":0,"3":0}; let n=0; arr.forEach(s=>rbSeq(s).forEach(t=>{ if(m[t]!=null){m[t]++;n++;} })); return {m,n}; };
@@ -1709,6 +1813,7 @@ function quatroPlay(a,b){
 /* G5 — Quatro Uno: ordering popularity + win rate, from mutually-paired piles.
    Winners are computed by quatroPlay (never entered), so there is nothing to "check". */
 function analyzeQuatro(list){
+  list=list.filter(isDone);
   const qp=s=>{ try{ return JSON.parse(s.piles||"[]").map(String); }catch(e){ return []; } };
   const orders={};
   list.forEach(s=> qp(s).forEach(o=>{ if(o.length===4) orders[o]=(orders[o]||0)+1; }));
@@ -2028,7 +2133,7 @@ function presentView(){
   const statusTxt = open?"Submissions open" : revealed?"Results revealed" : "Submissions closed";
   const status=el("div","present-status"+(open?" live":"")); status.append(el("span","dot"), document.createTextNode(statusTxt));
   cnt.append(status);
-  const n=subs.length;
+  const n=subs.filter(s=>isDone(s)&&!s.bot).length;
   const rl = curMSection() ? rosterList.filter(e=>e.section===curMSection()) : rosterList;
   const num=el("div","present-num"); num.textContent=n; cnt.append(num);
   cnt.append(el("div","present-numlabel", haveRoster() ? ("of "+rl.length+" "+(curMSection()?"in Section "+curMSection():"enrolled")+" submitted") : (n===1?"response in":"responses in")));
@@ -2435,7 +2540,7 @@ function submittedTable(list){
 function attendanceCard(){
   const card=el("div","card stage");
   const sc=effScope();
-  const sv=analysisSubs();
+  const sv=analysisSubs().filter(s=>isDone(s)&&!s.bot);
   const rl = (sc==="BOTH"||!sc) ? rosterList : rosterList.filter(e=>e.section===sc);
   const subByEmail={}; sv.forEach(s=>{ subByEmail[String(s.studentId).toLowerCase()]=s; });
   const done=[], todo=[];
