@@ -204,25 +204,41 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .coord-srow .cq{color:var(--muted); font-size:.85rem}
 .coord-srow .ca{font-weight:700; font-family:"IBM Plex Mono",monospace; color:var(--accent-ink)}
 @media(max-width:520px){ .coord-opts.seq{grid-template-columns:1fr 1fr} }
-/* Pair card games (Red vs Black, Quatro Uno) */
-.rb-row{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:12px}
-.rb-who{font-weight:700; margin-bottom:8px}
-.rb-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:8px}
-.rb-cell{display:flex; flex-direction:column; gap:3px}
-.rb-cell label{font-size:.72rem; color:var(--muted); font-weight:600; text-align:center}
-.rb-cell input{width:100%; text-align:center; font-size:1.1rem; padding:8px 4px}
-.rb-totline{display:flex; justify-content:space-between; align-items:center; margin-top:8px}
-.rb-tot{font-family:"IBM Plex Mono",monospace; font-weight:700}
-.q-round{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:12px; display:flex; flex-direction:column; gap:10px}
-.q-cards{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
-.q-card{position:relative; width:44px; height:56px; border:2px solid var(--line); border-radius:8px; background:var(--surface); font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:1.3rem; transition:.12s}
-.q-card:hover{border-color:var(--accent)}
-.q-card.used{border-color:var(--accent); background:var(--accent-wash); color:var(--accent-ink); opacity:.55}
-.q-card .q-pos{position:absolute; top:2px; right:4px; font-size:.6rem; color:var(--accent-ink); font-weight:700}
-.q-reset{width:40px; height:56px; border:1px dashed var(--line); border-radius:8px; background:transparent; color:var(--muted); font-size:1.1rem}
-.q-win{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
-.q-wbtn{padding:6px 14px; border:1px solid var(--line); border-radius:999px; background:var(--surface); font-weight:600; font-size:.85rem}
-.q-wbtn.sel{border-color:var(--accent); background:var(--accent-wash); color:var(--accent-ink)}
+/* Pair card games (Red vs Black, Quatro Uno) — inline-SVG card faces, tap to record */
+.cardbtn{padding:0; border:none; background:transparent; cursor:pointer; line-height:0; border-radius:10px; transition:transform .1s}
+.cardbtn:hover{transform:translateY(-3px)}
+.cardbtn:active{transform:translateY(-1px)}
+.cardbtn .cf{filter:drop-shadow(0 2px 5px rgba(0,0,0,.2))}
+.card-rail{display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin:10px 0}
+.card-rail.small{gap:8px; margin:0}
+.cardbtn.q{position:relative}
+.cardbtn.q.used .cf{opacity:.38}
+.q-pos{position:absolute; top:-6px; right:-6px; background:var(--accent); color:#fff; font-size:.72rem; font-weight:700; width:19px; height:19px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:"IBM Plex Mono",monospace}
+.q-reset{width:44px; height:60px; border:1px dashed var(--line); border-radius:10px; background:transparent; color:var(--muted); font-size:1.2rem; cursor:pointer}
+.q-round{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:12px; display:flex; flex-direction:column; gap:8px}
+.colorpick{margin-top:14px}
+.colbtn{padding:10px 20px; border:2px solid var(--line); border-radius:10px; background:var(--surface); font-weight:700; font-size:1rem; cursor:pointer}
+.colbtn.sel.red{border-color:#d21f3c; color:#d21f3c; background:rgba(210,31,60,.09)}
+.colbtn.sel.black{border-color:var(--ink); color:var(--ink); background:var(--surface-2)}
+.rtap-prog{display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin:12px 0 2px}
+.rtap-strip{display:flex; flex-wrap:wrap; gap:5px; margin-top:12px}
+.rtap-slot{position:relative; width:34px; height:47px; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; overflow:hidden}
+.rtap-slot.active{border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-wash)}
+.rtap-slot.filled{background:transparent}
+.rtap-slot .rtap-n{position:absolute; top:1px; left:3px; font-size:.58rem; color:var(--faint); font-family:"IBM Plex Mono",monospace; z-index:1}
+.cf.mini{width:100%; height:100%}
+.pair-pick{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:6px}
+.pair-search{width:100%; margin-top:6px}
+.pair-list{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+.pair-name{padding:6px 12px; border:1px solid var(--line); border-radius:999px; background:var(--surface); font-weight:600; font-size:.85rem; cursor:pointer}
+.pair-name:hover{border-color:var(--accent); color:var(--accent-ink)}
+.pair-chosen{display:flex; align-items:center; gap:10px; margin-top:6px; font-weight:700; color:var(--good)}
+.linkbtn{background:none; border:none; color:var(--accent-ink); text-decoration:underline; cursor:pointer; font-size:.82rem; font-weight:600}
+.jmx{border-collapse:collapse; width:100%; font-family:"IBM Plex Mono",monospace; font-size:.82rem; margin-top:6px}
+.jmx th,.jmx td{border:1px solid var(--line); padding:6px 4px; text-align:center}
+.jmx th{background:var(--surface-2); color:var(--ink-2); font-weight:700}
+.jmx th.cn{font-size:.66rem; color:var(--muted); font-weight:600}
+.jmx td{color:var(--ink)}
 /* Full-screen "collection" view projected to the class while submissions are open —
    participation only, never results, so it can't leak the answer. */
 .present{position:fixed; inset:0; z-index:60; background:var(--bg); color:var(--ink);
@@ -436,9 +452,9 @@ const GAMES = {
   publicgoods: { name:"Public Goods", short:"G4", icon:"G4",
     blurb:"Contribute to a shared fund that pays everyone." },
   quatro: { name:"Simultaneous Quatro Uno", short:"G5", icon:"G5",
-    blurb:"Card duel with a neighbour — record your 4-card piles." },
+    blurb:"Card duel with your neighbour — tap your own pile each hand." },
   redblack: { name:"Red vs Black", short:"G6", icon:"G6",
-    blurb:"Card duel with a neighbour — record how often each card was played." }
+    blurb:"Card duel with your neighbour — tap the card you played each hand." }
 };
 const DEFAULT_CONFIG = {
   guess23:{ frac:1/2, min:0, max:100, step:0.5 },
@@ -1120,7 +1136,11 @@ function studentCoord(c){
   c.append(wrap);
   c.append(liveCount());
 }
-/* ─── Pair card games (played physically; one partner records the pair's data) ─── */
+/* ─── Pair card games (G5/G6): played physically with a neighbour. EACH player
+   records only their OWN moves and picks their partner from the roster, so entry
+   burden is shared and we know who played whom. Winners are always COMPUTED from
+   the cards, never typed. At reveal, two mutually-pointing submissions zip into
+   the pair — giving G6 its full joint (Red card × Black card) distribution. ─── */
 function pairRules(title, lines){
   const box=el("div","coord-rules"); box.append(Object.assign(el("div","tinylabel"),{textContent:title}));
   lines.forEach(t=> box.append(Object.assign(el("div","coord-rule"),{textContent:t})));
@@ -1128,99 +1148,182 @@ function pairRules(title, lines){
 }
 function pairSubmittedNote(){
   const box=el("div","note-box teal"); box.style.marginTop="14px";
-  box.innerHTML="<b>Submitted for your pair.</b> Thanks — you can update it until the instructor reveals. Only one partner needs to submit.";
+  box.innerHTML="<b>Your cards are saved.</b> You can keep updating until the instructor reveals. Your partner records their own side separately.";
   return box;
 }
-/* G6 — Red vs Black: enter how many of the rounds each colour played each card. */
+/* A playing-card face as inline SVG (no images, no CDN). kind "red"/"black" draws
+   a red/black suited card (G6); a hex colour draws a plain number card (G5). */
+const RB_CARDS=["K","A","2","3"];                 // "A" is the ace, worth 1
+const Q_COLORS={1:"#d21f3c",2:"#c77d0a",3:"#2e8b57",4:"#2f6fb0"};
+function cardFace(rank, kind){
+  const isRB=(kind==="red"||kind==="black");
+  const ink=kind==="red"?"#d21f3c":kind==="black"?"#161616":kind;
+  const suit=kind==="red"?"♥":kind==="black"?"♠":"";
+  const s=svgEl("svg",{viewBox:"0 0 60 84","class":"cf",width:"60",height:"84","aria-hidden":"true"});
+  s.append(svgEl("rect",{x:2,y:2,width:56,height:80,rx:8,fill:"#fbfaf5",stroke:"#ded8c8","stroke-width":"1.5"}));
+  s.append(svgEl("text",{x:8,y:20,fill:ink,"font-size":"17","font-weight":"700","font-family":"IBM Plex Mono"},String(rank)));
+  if(suit) s.append(svgEl("text",{x:9,y:33,fill:ink,"font-size":"12","font-family":"IBM Plex Mono"},suit));
+  s.append(svgEl("text",{x:30,y:50,fill:ink,"font-size":"30","font-weight":"700","text-anchor":"middle","dominant-baseline":"central","font-family":"IBM Plex Mono"}, isRB?(suit||String(rank)):String(rank)));
+  s.append(svgEl("text",{x:52,y:78,fill:ink,"font-size":"17","font-weight":"700","text-anchor":"end","font-family":"IBM Plex Mono"},String(rank)));
+  return s;
+}
+function cardBtn(rank, kind, onClick, cls){
+  const b=el("button","cardbtn"+(cls?(" "+cls):"")); b.type="button";
+  b.append(cardFace(rank,kind));
+  if(onClick) b.onclick=onClick;
+  return b;
+}
+/* Type-to-filter partner chooser from the section roster; guests type a name.
+   Mutates d.partner / d.partnerName and calls redraw() on change. */
+function partnerPicker(d, redraw){
+  const box=el("div","pair-pick");
+  box.append(Object.assign(el("div","tinylabel"),{textContent:"Your partner this game"}));
+  if(d.partner){
+    const chip=el("div","pair-chosen");
+    chip.append(Object.assign(el("span"),{textContent:"✔ "+(d.partnerName||d.partner)}));
+    const chg=el("button","linkbtn","change"); chg.type="button"; chg.onclick=()=>{ d.partner=null; d.partnerName=null; redraw(); };
+    chip.append(chg); box.append(chip); return box;
+  }
+  const sec=curMSection(), me=String(myId).toLowerCase();
+  const cands=rosterList.filter(e=>e.email!==me && (!sec||e.section===sec));
+  if(cands.length){
+    const search=el("input","input pair-search"); search.type="text"; search.placeholder="Type your partner's name…";
+    const list=el("div","pair-list");
+    const fill=()=>{ const q=search.value.trim().toLowerCase(); list.replaceChildren();
+      cands.filter(e=>!q||e.name.toLowerCase().includes(q)||e.email.includes(q)).slice(0,8).forEach(e=>{
+        const b=el("button","pair-name",e.name); b.type="button";
+        b.onclick=()=>{ d.partner=e.email; d.partnerName=e.name; redraw(); }; list.append(b); }); };
+    search.oninput=fill; fill(); box.append(search, list);
+  } else {
+    const inp=el("input","input"); inp.type="text"; inp.placeholder="Type your partner's name";
+    const b=el("button","ghost-btn","Set partner"); b.type="button"; b.style.marginTop="6px";
+    b.onclick=()=>{ const v=inp.value.trim(); if(!v){inp.focus();return;} d.partner="name:"+v.toLowerCase(); d.partnerName=v; redraw(); };
+    box.append(inp,b);
+  }
+  return box;
+}
+/* G6 — Red vs Black: pick partner + colour, then tap the card YOU played each
+   hand. Stores the full sequence (seq) so the class joint matrix is recoverable. */
 function studentRedBlack(c){
   const cf=cfg("redblack"), R=cf.rounds||20, cur=mySub();
   const dk="redblack-"+roundKey(control.activeGame,control.round), d=draftFor(dk);
-  if(cur && d._loaded!==true){ ["rk","r1","r2","r3","bk","b1","b2","b3"].forEach(k=>{ if(cur[k]!=null) d[k]=cur[k]; }); d._loaded=true; }
-  c.append(Object.assign(el("h2"),{textContent:"Red vs Black — record your "+R+" rounds",style:"font-size:1.4rem;margin:6px 0 4px"}));
+  if(cur && d._loaded!==true){
+    if(cur.color) d.color=cur.color; if(cur.partner) d.partner=cur.partner; if(cur.partnerName) d.partnerName=cur.partnerName;
+    if(cur.seq) d.seq=String(cur.seq).split(",").map(x=>x.trim()).filter(Boolean);
+    d._loaded=true;
+  }
+  if(!Array.isArray(d.seq)) d.seq=[];
+  d.seq.length=R;
+  c.append(Object.assign(el("h2"),{textContent:"Red vs Black",style:"font-size:1.4rem;margin:6px 0 4px"}));
   c.append(pairRules("How it was played",[
-    "Two of you: one Red, one Black (decided by a coin toss). Cards K, A(=1), 2, 3.",
-    "Each round you both play one card at the same time.",
+    "Two of you, one Red and one Black (coin toss). Cards: K, A(=1), 2 and 3.",
+    "Each hand you both play one card at the same time.",
     "Red wins if BOTH play K, or both play number cards with DIFFERENT numbers.",
-    "Black wins if exactly ONE plays K, or both play number cards with the SAME number.",
-    "You played "+R+" rounds. Below, enter how many times each of you chose each card."]));
-  const mk=(who,keys,color)=>{
-    const card=el("div","rb-row"); card.append(Object.assign(el("div","rb-who"),{textContent:who+" chose…",style:"color:"+color}));
-    const grid=el("div","rb-grid"); const tot=el("span","rb-tot");
-    const upd=()=>{ const s=keys.reduce((a,k)=>a+(Number(d[k])||0),0); tot.textContent=s+" / "+R; tot.style.color = s===R?"var(--good)":"var(--muted)"; };
-    [["K","K"],["1","A / 1"],["2","2"],["3","3"]].forEach(([k,lbl],i)=>{
-      const key=keys[i]; const f=el("div","rb-cell"); f.append(Object.assign(el("label"),{textContent:lbl}));
-      const inp=el("input","input mono"); inp.type="number"; inp.min=0; inp.max=R; inp.step=1; inp.value=d[key]!=null?d[key]:""; inp.placeholder="0";
-      inp.oninput=()=>{ d[key]=inp.value===""?null:Math.max(0,Math.round(Number(inp.value))); upd(); };
-      f.append(inp); grid.append(f);
-    });
-    card.append(grid);
-    const tl=el("div","rb-totline"); tl.append(el("span","sm mut","Total"), tot); card.append(tl); upd();
-    return card;
+    "Black wins if exactly ONE plays K, or both play the SAME number.",
+    "Pick your partner and colour, then just tap the card YOU played each hand — we work out who won."]));
+  const host=el("div"); host.style.marginTop="14px"; c.append(host);
+  const paint=()=>{
+    host.replaceChildren();
+    host.append(partnerPicker(d, paint));
+    const cp=el("div","colorpick");
+    cp.append(Object.assign(el("div","tinylabel"),{textContent:"Your colour"}));
+    const cprow=el("div","row"); cprow.style.gap="8px";
+    [["red","Red ♥"],["black","Black ♠"]].forEach(([v,l])=>{
+      const b=el("button","colbtn"+(d.color===v?" sel "+v:"")); b.type="button"; b.textContent=l;
+      b.onclick=()=>{ d.color=v; paint(); }; cprow.append(b); });
+    cp.append(cprow); host.append(cp);
+    if(!d.partner || !d.color){ host.append(Object.assign(el("div","sm mut"),{textContent:"Pick your partner and colour to start tapping.",style:"margin-top:10px"})); return; }
+    if(d.active==null || d.seq[d.active]!=null){ const f=d.seq.findIndex(x=>x==null); d.active = f<0? R-1 : f; }
+    const done=d.seq.filter(x=>x!=null).length;
+    const prog=el("div","rtap-prog");
+    prog.append(Object.assign(el("span","tinylabel"),{textContent: done<R? ("Hand "+(d.active+1)+" of "+R+" — tap the card you played") : "All "+R+" hands recorded"}),
+      Object.assign(el("span","sm mut"),{textContent: done+" / "+R}));
+    host.append(prog);
+    const rail=el("div","card-rail");
+    RB_CARDS.forEach(rk=>{ rail.append(cardBtn(rk, d.color, ()=>{
+      d.seq[d.active]=rk; const f=d.seq.findIndex(x=>x==null); if(f>=0) d.active=f; paint();
+    })); });
+    host.append(rail);
+    const strip=el("div","rtap-strip");
+    for(let i=0;i<R;i++){ const slot=el("button","rtap-slot"+(i===d.active?" active":"")+(d.seq[i]!=null?" filled":"")); slot.type="button";
+      slot.append(Object.assign(el("span","rtap-n"),{textContent:i+1}));
+      if(d.seq[i]!=null){ const mini=cardFace(d.seq[i], d.color); mini.setAttribute("class","cf mini"); slot.append(mini); }
+      slot.onclick=()=>{ d.active=i; paint(); };
+      strip.append(slot);
+    }
+    host.append(strip);
+    const b=el("button","btn big wide",cur?"Update my cards":"Submit my cards"); b.style.marginTop="14px"; b.style.maxWidth="360px";
+    if(done<R) b.disabled=true;
+    b.onclick=async()=>{
+      if(d.seq.some(x=>x==null)){ toast("Tap a card for every hand"); return; }
+      await submit({color:d.color, partner:d.partner, partnerName:d.partnerName, seq:d.seq.join(",")});
+      toast("Your cards are in");
+    };
+    host.append(b);
+    if(cur) host.append(pairSubmittedNote());
   };
-  const form=el("div"); form.style.marginTop="16px";
-  form.append(mk("Red","rk r1 r2 r3".split(" "),"var(--bad)"), mk("Black","bk b1 b2 b3".split(" "),"var(--ink)"));
-  c.append(form);
-  const b=el("button","btn big wide",cur?"Update submission":"Submit for our pair"); b.style.marginTop="16px"; b.style.maxWidth="360px";
-  b.onclick=async()=>{
-    const keys=["rk","r1","r2","r3","bk","b1","b2","b3"];
-    if(keys.some(k=>d[k]==null)){ toast("Fill in all eight counts"); return; }
-    const rSum=d.rk+d.r1+d.r2+d.r3, bSum=d.bk+d.b1+d.b2+d.b3;
-    if(rSum===0||bSum===0){ toast("Counts can't all be zero"); return; }
-    if(rSum!==bSum){ if(!confirm("Red's counts total "+rSum+" and Black's total "+bSum+" — they usually match (both played the same rounds). Submit anyway?")) return; }
-    const payload={}; keys.forEach(k=>payload[k]=d[k]);
-    await submit(payload); toast("Submitted for your pair");
-  };
-  c.append(b);
-  if(cur) c.append(pairSubmittedNote());
+  paint();
   c.append(liveCount());
 }
-/* G5 — Simultaneous Quatro Uno: record 5 rounds of (my pile, partner pile, winner). */
+/* G5 — Quatro Uno: pick partner, then tap YOUR pile order each hand. Winners are
+   computed by matching your pile against your partner's at reveal. */
 function studentQuatro(c){
   const cf=cfg("quatro"), R=cf.rounds||5, cur=mySub();
   const dk="quatro-"+roundKey(control.activeGame,control.round), d=draftFor(dk);
-  if(!d.rounds) d.rounds=Array.from({length:R},()=>({m:[],p:[],w:null}));
-  if(cur && cur.q && d._loaded!==true){ try{ const arr=JSON.parse(cur.q); d.rounds=arr.map(o=>({m:String(o.m).split("").map(Number),p:String(o.p).split("").map(Number),w:o.w})); }catch(e){} d._loaded=true; }
-  c.append(Object.assign(el("h2"),{textContent:"Quatro Uno — record your "+R+" rounds",style:"font-size:1.4rem;margin:6px 0 4px"}));
+  if(cur && d._loaded!==true){
+    if(cur.partner) d.partner=cur.partner; if(cur.partnerName) d.partnerName=cur.partnerName;
+    if(cur.piles){ try{ d.piles=JSON.parse(cur.piles).map(o=>String(o).split("").map(Number)); }catch(e){} }
+    d._loaded=true;
+  }
+  if(!Array.isArray(d.piles)) d.piles=Array.from({length:R},()=>[]);
+  if(d.piles.length!==R) d.piles=Array.from({length:R},(_,i)=>d.piles[i]||[]);
+  c.append(Object.assign(el("h2"),{textContent:"Quatro Uno",style:"font-size:1.4rem;margin:6px 0 4px"}));
   c.append(pairRules("How it was played",[
-    "You and a neighbour each hold cards 1, 2, 3, 4 (1<2<3<4) and stack them into a pile in any order.",
-    "Reveal top cards repeatedly: the lower card is discarded, the higher stays. Equal cards → both discarded. A 1 against a 4 → both discarded.",
-    "First player to empty their pile loses.",
-    "For each of the "+R+" rounds, enter your pile order and your partner's (top card first), and who won."]));
-  const wrap=el("div"); wrap.style.marginTop="14px";
-  d.rounds.forEach((rd,i)=>{
-    const card=el("div","q-round"); card.append(Object.assign(el("div","tinylabel"),{textContent:"Round "+(i+1)}));
-    card.append(orderingPicker("Your pile (top → bottom)", rd.m, seq=>{ rd.m=seq; }));
-    card.append(orderingPicker("Partner's pile (top → bottom)", rd.p, seq=>{ rd.p=seq; }));
-    const wr=el("div","q-win"); wr.append(Object.assign(el("span","tinylabel"),{textContent:"Winner"}));
-    [["me","You"],["them","Partner"],["tie","Tie"]].forEach(([v,l])=>{ const bt=el("button","q-wbtn"+(rd.w===v?" sel":""));
-      bt.textContent=l; bt.onclick=()=>{ rd.w=v; render(); }; wr.append(bt); });
-    card.append(wr); wrap.append(card);
-  });
-  c.append(wrap);
-  const b=el("button","btn big wide",cur?"Update submission":"Submit for our pair"); b.style.marginTop="8px"; b.style.maxWidth="360px";
-  b.onclick=async()=>{
-    for(let i=0;i<d.rounds.length;i++){ const rd=d.rounds[i];
-      if(rd.m.length!==4||rd.p.length!==4){ toast("Round "+(i+1)+": finish both piles (tap all four cards)"); return; }
-      if(!rd.w){ toast("Round "+(i+1)+": choose a winner"); return; } }
-    const q=JSON.stringify(d.rounds.map(rd=>({m:rd.m.join(""),p:rd.p.join(""),w:rd.w})));
-    await submit({q}); toast("Submitted for your pair");
+    "You and a neighbour each hold cards 1, 2, 3, 4 and secretly stack them into a pile.",
+    "Reveal top cards together: lower card is discarded, higher stays. Equal → both go. A 1 against a 4 → both go.",
+    "First to empty their pile loses.",
+    "Pick your partner, then for each hand tap YOUR four cards in the order you stacked them (top first). We match piles and work out who won."]));
+  const host=el("div"); host.style.marginTop="14px"; c.append(host);
+  const paint=()=>{
+    host.replaceChildren();
+    host.append(partnerPicker(d, paint));
+    if(!d.partner){ host.append(Object.assign(el("div","sm mut"),{textContent:"Pick your partner to start.",style:"margin-top:10px"})); return; }
+    d.piles.forEach((pile,i)=>{
+      const card=el("div","q-round");
+      card.append(Object.assign(el("div","tinylabel"),{textContent:"Hand "+(i+1)+" — your pile (top → bottom)"}));
+      card.append(orderingPicker(pile, seq=>{ d.piles[i]=seq; paint(); }));
+      host.append(card);
+    });
+    const complete=d.piles.every(p=>p.length===4);
+    const b=el("button","btn big wide",cur?"Update my piles":"Submit my piles"); b.style.marginTop="8px"; b.style.maxWidth="360px";
+    if(!complete) b.disabled=true;
+    b.onclick=async()=>{
+      if(!d.piles.every(p=>p.length===4)){ toast("Finish all "+R+" piles (tap all four cards)"); return; }
+      const piles=JSON.stringify(d.piles.map(p=>p.join("")));
+      await submit({partner:d.partner, partnerName:d.partnerName, piles});
+      toast("Your piles are in");
+    };
+    host.append(b);
+    if(cur) host.append(pairSubmittedNote());
   };
-  c.append(b);
-  if(cur) c.append(pairSubmittedNote());
+  paint();
   c.append(liveCount());
 }
-/* Tap 1..4 in order to build a pile ordering; ↺ resets. Calls onChange(arrayOfNums). */
-function orderingPicker(label, current, onChange){
-  const box=el("div","q-pick"); box.append(Object.assign(el("div","sm mut"),{textContent:label,style:"margin-bottom:4px"}));
-  const row=el("div","q-cards");
-  const redraw=()=>{ row.replaceChildren();
-    [1,2,3,4].forEach(n=>{ const used=current.indexOf(n); const bt=el("button","q-card"+(used>=0?" used":""));
-      bt.textContent=n; if(used>=0) bt.append(Object.assign(el("span","q-pos"),{textContent:used+1}));
-      bt.onclick=()=>{ if(current.indexOf(n)>=0) return; if(current.length>=4) return; current.push(n); onChange(current.slice()); redraw(); };
-      row.append(bt); });
-    const reset=el("button","q-reset"); reset.textContent="↺"; reset.title="Clear"; reset.onclick=()=>{ current.length=0; onChange([]); redraw(); }; row.append(reset);
-  };
-  redraw(); box.append(row); return box;
+/* Tap the number cards in stacking order to build a 4-permutation; ↺ resets.
+   Calls onChange(arrayOfNums) — the caller repaints from its own draft state. */
+function orderingPicker(current, onChange){
+  const box=el("div","q-pick");
+  const row=el("div","card-rail small");
+  [1,2,3,4].forEach(n=>{
+    const used=current.indexOf(n);
+    const b=cardBtn(n, Q_COLORS[n], null, "q"+(used>=0?" used":""));
+    if(used>=0) b.append(Object.assign(el("span","q-pos"),{textContent:used+1}));
+    b.onclick=()=>{ if(current.indexOf(n)>=0||current.length>=4) return; onChange(current.concat(n)); };
+    row.append(b);
+  });
+  const reset=el("button","q-reset","↺"); reset.type="button"; reset.title="Clear"; reset.onclick=()=>onChange([]);
+  row.append(reset);
+  box.append(row); return box;
 }
 
 /* ═══════════════════════ ANALYSIS ═══════════════════════ */
@@ -1502,34 +1605,92 @@ function coordSquareChart(tally,rd){
 }
 /* G6 — Red vs Black: aggregate each colour's card-choice counts across all pairs, compare
    to the mixed Nash (K 40%, each number 20%; the structure favours Black 60/40). */
+/* Parse a Red-vs-Black submission's tapped sequence into an array of card tokens. */
+function rbSeq(s){ return (s&&s.seq)? String(s.seq).split(",").map(x=>x.trim()).filter(Boolean) : []; }
+/* Deterministic winner of one Red-vs-Black hand — no ties. */
+function redBlackWinner(rc,bc){
+  if(rc==="K"&&bc==="K") return "red";
+  if((rc==="K")!==(bc==="K")) return "black";   // exactly one K
+  return rc===bc ? "black" : "red";             // both numbers: same→Black, different→Red
+}
+/* Render a 4×4 card-vs-card matrix (Red rows × Black cols) as a shaded heat table.
+   F is a normalized fraction matrix (cells sum ~1); heat is scaled to its max cell. */
+function jointMatrixCard(title, F, caption){
+  const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:title}));
+  const L=["K","A","2","3"]; let mx=0; F.forEach(r=>r.forEach(v=>{ if(v>mx)mx=v; }));
+  let html="<tr><th class='cn'>Red ↓ &nbsp; Black →</th>"+L.map(l=>"<th>"+l+"</th>").join("")+"</tr>";
+  for(let i=0;i<4;i++){ html+="<tr><th class='rh'>"+L[i]+"</th>";
+    for(let j=0;j<4;j++){ const v=F[i][j], a=mx?Math.round(v/mx*82):0;
+      html+="<td style='background:color-mix(in srgb, var(--accent) "+a+"%, transparent)'>"+(Math.round(v*1000)/10)+"%</td>"; }
+    html+="</tr>"; }
+  const t=el("table","jmx"); t.innerHTML=html;
+  const sc=el("div","tablescroll"); sc.append(t); card.append(sc);
+  if(caption) card.append(Object.assign(el("div","cap"),{textContent:caption}));
+  return card;
+}
+/* Compact "who played whom" list for the matched pairs (instructor-facing). */
+function pairingsCard(pairs, fmtPair){
+  const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Who played whom ("+pairs.length+" pairs)"}));
+  if(!pairs.length){ card.append(Object.assign(el("div","cap"),{textContent:"No complete pairs yet — both partners must submit."})); return card; }
+  let html="<tr><th>#</th><th style='text-align:left'>Pair</th></tr>";
+  pairs.forEach((p,i)=>{ html+="<tr><td>"+(i+1)+"</td><td style='text-align:left'>"+esc(fmtPair(p))+"</td></tr>"; });
+  const t=el("table","matrix"); t.style.fontSize=".84rem"; t.innerHTML=html;
+  const sc=el("div","tablescroll"); sc.style.marginTop="8px"; sc.append(t); card.append(sc); return card;
+}
+/* Group submissions into mutually-pointing pairs (each names the other as partner).
+   Returns [[a,b],…]; each sub appears in at most one pair. */
+function mutualPairs(list){
+  const byId={}; list.forEach(s=>{ byId[String(s.studentId)]=s; });
+  const seen={}, pairs=[];
+  list.forEach(a=>{ const b=byId[String(a.partner)];
+    if(b && b!==a && String(b.partner)===String(a.studentId)){
+      const key=[String(a.studentId),String(b.studentId)].sort().join("|"); if(seen[key])return; seen[key]=1;
+      pairs.push([a,b]); } });
+  return pairs;
+}
 function analyzeRedBlack(list){
-  const cf=cfg("redblack");
-  const R={K:0,1:0,2:0,3:0}, B={K:0,1:0,2:0,3:0};
-  list.forEach(s=>{ R.K+=(+s.rk||0);R[1]+=(+s.r1||0);R[2]+=(+s.r2||0);R[3]+=(+s.r3||0);
-                    B.K+=(+s.bk||0);B[1]+=(+s.b1||0);B[2]+=(+s.b2||0);B[3]+=(+s.b3||0); });
-  const rN=R.K+R[1]+R[2]+R[3], bN=B.K+B[1]+B[2]+B[3];
-  const wrap=el("div","grid-analysis");
-  const nash=[40,20,20,20];
-  const mkChart=(title,T,tot,col)=>{
-    const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:title}));
-    card.append(barChart(["K",1,2,3].map((k,i)=>({label:String(k),value:tot?Math.round(1000*T[k]/tot)/10:0,color:col})), Math.max(40,...["K",1,2,3].map(k=>tot?100*T[k]/tot:0)), false, "%"));
-    card.append(Object.assign(el("div","cap"),{textContent:"Nash mix: K 40%, and 1 / 2 / 3 at 20% each. This colour played K "+(tot?pct(T.K/tot):"—")+"."}));
-    return card;
-  };
-  wrap.append(mkChart("Red's card choices ("+rN+" plays)",R,rN,"var(--bad)"));
-  const right=el("div","stack");
-  right.append(mkChart("Black's card choices ("+bN+" plays)",B,bN,"var(--ink)"));
-  // implied win split if the two colours' choices met independently at these frequencies
-  const rk=rN?R.K/rN:0, bk=bN?B.K/bN:0;
-  const redWin = rk*bk + (rN&&bN? ((R[1]+R[2]+R[3])/rN)*((B[1]+B[2]+B[3])/bN) * (1 - (R[1]*B[1]+R[2]*B[2]+R[3]*B[3])/Math.max(1,(R[1]+R[2]+R[3])*(B[1]+B[2]+B[3]))) : 0);
-  const st=el("div","stats");
-  st.append(statTile("Nash win split","Red 40% · Black 60%","the structure favours Black","gold"),
-    statTile("Implied here","Red "+pct(redWin)+" · Black "+pct(1-redWin),"if choices met at random",true));
-  right.append(st);
+  const idx={K:0,A:1,"2":2,"3":3};
+  const reds=list.filter(s=>s.color==="red"), blacks=list.filter(s=>s.color==="black");
+  const marg=arr=>{ const m={K:0,A:0,"2":0,"3":0}; let n=0; arr.forEach(s=>rbSeq(s).forEach(t=>{ if(m[t]!=null){m[t]++;n++;} })); return {m,n}; };
+  const RM=marg(reds), BM=marg(blacks);
+  // mutual Red↔Black pairs → joint 4×4 + observed win split
+  const pairs=mutualPairs(list).map(([a,b])=> a.color==="red"?[a,b]:[b,a]).filter(([r,b])=>r.color==="red"&&b.color==="black");
+  const joint=[[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]; let jN=0, redW=0, blkW=0;
+  pairs.forEach(([r,b])=>{ const rs=rbSeq(r), bs=rbSeq(b), L=Math.min(rs.length,bs.length);
+    for(let i=0;i<L;i++){ const rc=rs[i], bc=bs[i]; if(idx[rc]==null||idx[bc]==null) continue;
+      joint[idx[rc]][idx[bc]]++; jN++; redBlackWinner(rc,bc)==="red"?redW++:blkW++; } });
+
+  const wrap=el("div","stack");
+  // marginals (both colours)
+  const mkBar=(title,T,tot,col)=>{ const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:title}));
+    card.append(barChart(RB_CARDS.map(k=>({label:k,value:tot?Math.round(1000*T[k]/tot)/10:0,color:col})), Math.max(40,...RB_CARDS.map(k=>tot?100*T[k]/tot:0)), false, "%"));
+    card.append(Object.assign(el("div","cap"),{textContent:"Nash mix: K 40%, and A / 2 / 3 at 20% each."})); return card; };
+  const mrow=el("div","grid-analysis");
+  mrow.append(mkBar("Red's card mix ("+RM.n+" plays)",RM.m,RM.n,"var(--bad)"), mkBar("Black's card mix ("+BM.n+" plays)",BM.m,BM.n,"var(--ink)"));
+  wrap.append(mrow);
+  // joint distribution vs Nash independent product
+  const nash=[0.4,0.2,0.2,0.2];
+  const jrow=el("div","grid-analysis");
+  if(jN){
+    const F=joint.map(r=>r.map(v=>v/jN));
+    jrow.append(jointMatrixCard("Class joint distribution ("+jN+" hands)", F, "How often each Red-card × Black-card pairing actually happened. Compare with the equilibrium →"));
+  } else {
+    const ph=el("div","chart-card"); ph.append(Object.assign(el("h3"),{textContent:"Class joint distribution"}),
+      Object.assign(el("div","cap"),{textContent:"Waiting for complete pairs — both partners in a pair must submit before the joint matrix can be built."})); jrow.append(ph);
+  }
+  const ideal=nash.map(pi=>nash.map(pj=>pi*pj));
+  jrow.append(jointMatrixCard("Equilibrium (independent Nash)", ideal, "If both mixed independently at K 40% / A·2·3 20%. Real play that best-responds will lump away from this."));
+  wrap.append(jrow);
+  // observed win split + teaching note
+  const st=el("div","stats"); const tot=redW+blkW;
+  st.append(statTile("Observed win split", tot? ("Red "+pct(redW/tot)+" · Black "+pct(blkW/tot)) : "—", tot? (tot+" hands scored"):"no complete pairs yet", true),
+    statTile("Nash win split","Red 40% · Black 60%","the structure favours Black","gold"),
+    statTile("Complete pairs", String(pairs.length), reds.length+blacks.length+" players recorded"));
+  wrap.append(st);
   const nb=el("div","note-box");
-  nb.innerHTML="<b>Teaching point.</b> This is a zero-sum game with a <b>mixed-strategy equilibrium</b>: each colour should play <b>K 40%</b> of the time and each number 20%. Even played perfectly, <b>Black wins ~60%</b> — so the coin toss for colour isn't a fair start. Compare the bars above to the 40/20/20/20 benchmark: where did the class over- or under-play K?";
-  right.append(nb);
-  wrap.append(right);
+  nb.innerHTML="<b>Teaching point.</b> A zero-sum game with a <b>mixed-strategy equilibrium</b>: play <b>K 40%</b> and each number 20%. Even played perfectly, <b>Black wins ~60%</b>, so the colour coin-toss isn't a fair start. The two matrices are the real lesson: marginals alone can't show it, but the <b>joint</b> distribution reveals whether the class actually mixed independently (like the equilibrium on the right) or <b>best-responded</b> and correlated their cards.";
+  wrap.append(nb);
+  if(pairs.length) wrap.append(pairingsCard(pairs, ([r,b])=> (r.name||"?")+" (Red) ↔ "+(b.name||"?")+" (Black)"));
   return wrap;
 }
 /* Quatro Uno win outcome for a pile matchup (both piles top→bottom, arrays of 1..4). */
@@ -1545,40 +1706,39 @@ function quatroPlay(a,b){
   if(!a.length&&!b.length) return "tie";
   return a.length? "me":"them";   // "me" = first pile (a) survives
 }
-/* G5 — Quatro Uno: ordering popularity + win rate; flags mismatches with the actual rules. */
+/* G5 — Quatro Uno: ordering popularity + win rate, from mutually-paired piles.
+   Winners are computed by quatroPlay (never entered), so there is nothing to "check". */
 function analyzeQuatro(list){
-  const orders={}, winByOrder={};   // order -> {games,wins}
-  let rounds=0, recordedWins={me:0,them:0,tie:0}, ruleWins={me:0,them:0,tie:0}, mismatch=0;
-  list.forEach(s=>{ let arr; try{ arr=JSON.parse(s.q||"[]"); }catch(e){ arr=[]; }
-    arr.forEach(rd=>{ if(!rd||!rd.m||!rd.p) return; rounds++;
-      [rd.m,rd.p].forEach(o=>{ orders[o]=(orders[o]||0)+1; });
-      // credit a win to each player's ordering
-      const mi=String(rd.m).split("").map(Number), pi=String(rd.p).split("").map(Number);
-      const res=quatroPlay(mi,pi);   // me = rd.m's pile
-      ruleWins[res]++; recordedWins[rd.w]=(recordedWins[rd.w]||0)+1;
-      if(rd.w!==res) mismatch++;
+  const qp=s=>{ try{ return JSON.parse(s.piles||"[]").map(String); }catch(e){ return []; } };
+  const orders={};
+  list.forEach(s=> qp(s).forEach(o=>{ if(o.length===4) orders[o]=(orders[o]||0)+1; }));
+  const pairs=mutualPairs(list);
+  const winByOrder={}; let rounds=0, ties=0;
+  pairs.forEach(([a,b])=>{ const ap=qp(a), bp=qp(b), L=Math.min(ap.length,bp.length);
+    for(let i=0;i<L;i++){ const A=ap[i], B=bp[i]; if(A.length!==4||B.length!==4) continue; rounds++;
+      const res=quatroPlay(A.split("").map(Number), B.split("").map(Number));
       const cred=(ord,won)=>{ const w=winByOrder[ord]||(winByOrder[ord]={g:0,w:0}); w.g++; if(won)w.w++; };
-      cred(rd.m, rd.w==="me"); cred(rd.p, rd.w==="them");
-    });
-  });
+      if(res==="tie"){ ties++; cred(A,false); cred(B,false); }
+      else if(res==="me"){ cred(A,true); cred(B,false); }
+      else { cred(A,false); cred(B,true); } } });
   const wrap=el("div","stack");
   const top=Object.entries(orders).sort((a,b)=>b[1]-a[1]).slice(0,8);
   const left=el("div","chart-card");
   left.append(Object.assign(el("h3"),{textContent:"Most-chosen pile orderings"}),
-    Object.assign(el("div","cap"),{textContent:"Across both players over all recorded rounds ("+rounds+" piles). Top card is leftmost digit."}));
-  left.append(barChart(top.map(([o,n])=>({label:o.split("").join(""),value:n,color:"var(--accent)"})), Math.max(1,...top.map(t=>t[1])), false, ""));
+    Object.assign(el("div","cap"),{textContent:"Across all players' piles ("+Object.values(orders).reduce((a,n)=>a+n,0)+" piles). Leftmost digit is the top card."}));
+  left.append(barChart(top.map(([o,n])=>({label:o,value:n,color:"var(--accent)"})), Math.max(1,...top.map(t=>t[1])), false, ""));
   wrap.append(left);
-  const right=el("div","stack"); const st=el("div","stats");
+  const st=el("div","stats");
   const winRows=Object.entries(winByOrder).filter(([o,w])=>w.g>=3).sort((a,b)=>(b[1].w/b[1].g)-(a[1].w/a[1].g));
-  const best=winRows[0];
-  st.append(statTile("Recorded winner","You "+pct(rounds?recordedWins.me/rounds:0),"vs Partner "+pct(rounds?recordedWins.them/rounds:0)+" · Tie "+pct(rounds?recordedWins.tie/rounds:0),true),
-    statTile("Best ordering",best?best[0]:"—",best?("won "+pct(best[1].w/best[1].g)+" of "+best[1].g):"need more data","good"),
-    statTile("Rule check",pct(rounds?1-mismatch/rounds:1)+" match",mismatch+" recorded winners differ from the rules",mismatch?"bad":"good"));
-  right.append(st);
+  const best=winRows[0], worst=winRows[winRows.length-1];
+  st.append(statTile("Best ordering",best?best[0]:"—",best?("won "+pct(best[1].w/best[1].g)+" of "+best[1].g+" hands"):"need ≥3 hands","good"),
+    statTile("Weakest ordering",worst&&worst!==best?worst[0]:"—",worst&&worst!==best?("won "+pct(worst[1].w/worst[1].g)+" of "+worst[1].g):"need more data","bad"),
+    statTile("Hands scored",String(rounds),pairs.length+" complete pairs · "+pct(rounds?ties/rounds:0)+" ties",true));
+  wrap.append(st);
   const nb=el("div","note-box");
-  nb.innerHTML="<b>Teaching point.</b> The “1 beats 4” twist makes Quatro Uno <b>non-transitive</b> — like rock-paper-scissors, no single ordering dominates, so the equilibrium is to <b>mix</b>. If everyone clustered on one “obvious” ordering, a counter-ordering beats it. The rule-check compares the winners you recorded with the outcome the rules actually give each pile matchup.";
-  right.append(nb);
-  wrap.append(right);
+  nb.innerHTML="<b>Teaching point.</b> The “1 beats 4” twist makes Quatro Uno <b>non-transitive</b> — like rock-paper-scissors, no single ordering dominates, so the equilibrium is to <b>mix</b>. If the class clustered on one “obvious” pile, a counter-ordering beats it — watch the win-rates flip as different orderings meet.";
+  wrap.append(nb);
+  if(pairs.length) wrap.append(pairingsCard(pairs, ([a,b])=> (a.name||"?")+" ↔ "+(b.name||"?")));
   return wrap;
 }
 function analyzePG(list){
@@ -2234,8 +2394,8 @@ function subValue(s){
   if(s.game==="pd") return s.choice==="keep"?"Keep":"Give";
   if(s.game==="publicgoods") return s.contrib!=null?String(s.contrib):"—";
   if(s.game==="coord") return coordVal(s);
-  if(s.game==="redblack") return "R "+[s.rk,s.r1,s.r2,s.r3].map(x=>x==null?"·":x).join("/")+" · B "+[s.bk,s.b1,s.b2,s.b3].map(x=>x==null?"·":x).join("/");
-  if(s.game==="quatro"){ try{ return JSON.parse(s.q||"[]").length+" rounds"; }catch(e){ return "—"; } }
+  if(s.game==="redblack"){ const seq=rbSeq(s); return (s.color==="red"?"Red":s.color==="black"?"Black":"?")+" ["+seq.join(" ")+"] vs "+(s.partnerName||"?"); }
+  if(s.game==="quatro"){ try{ return JSON.parse(s.piles||"[]").join(" ")+" vs "+(s.partnerName||"?"); }catch(e){ return "—"; } }
   return s.value!=null?String(s.value):"—";   // guess23 and default
 }
 /* Meeting-scope toggle: which section's meeting to analyze (A / B / … / Both).
@@ -2325,8 +2485,8 @@ function paramEditor(){
   else if(g==="quatro" || g==="redblack"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent: g==="redblack"
-      ? "How many hands each pair played with physical cards. One partner records the counts here; results aggregate across all pairs on reveal."
-      : "How many hands each pair played. One partner records both piles + the winner for each; results aggregate on reveal."})); }
+      ? "Hands each pair plays with physical cards. Each player picks their partner + colour and taps their own cards; the class joint distribution and win split aggregate on reveal."
+      : "Hands each pair plays. Each player picks their partner and taps their own pile each hand; winners are computed and results aggregate on reveal."})); }
   else { const grid=el("div","paramgrid");
     grid.append(mk("Endowment (marks)","E",cf.E),mk("Pot multiplier","mult",cf.mult,"0.1")); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"The pot is ×multiplier then split among all players. Keep multiplier > 1 (socially worth it) but < class size (so each person's share of a given mark, multiplier÷N, stays below 1 — free-riding tempting)."})); }

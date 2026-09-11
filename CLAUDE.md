@@ -103,28 +103,39 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   contribution rate. NOT the fixed-MPCR model (per-head no longer scales with N). Analysis:
   contribution histogram, free-riders, avg earnings per player vs Nash & optimum, efficiency.
 - `quatro` — **Simultaneous Quatro Uno** (**G5**) and `redblack` — **Red vs Black** (**G6**) are
-  **physical card games played face-to-face with a neighbour**; the portal only shows the rules
-  and collects/reveals data — no live play happens on screen. Each **pair records ONE submission**
-  (one partner enters it) via `pairRules`/`pairSubmittedNote`, and the multi-field forms are held in
-  module-state `gameDraft` (keyed `‹game›-‹roundKey›`, via `draftFor()`) so a classmate's live
-  submission re-render can't wipe a half-filled form. Flow is Open → pairs play physically & enter
-  results → Reveal; no `pairSubs` pairing (the pairing happened at the desk). Both take a config
-  `{ rounds }` (`paramEditor` "Rounds played"; default `quatro:5`, `redblack:20`).
-  - `quatro` (G5) — 4-card duel (1<2<3<4): stack your four cards into a pile order, reveal top cards,
-    lower card discarded / equal → both discarded / **1 vs 4 → both discarded**; empty your pile
-    first and you lose. **Non-transitive** (1 beats 4), like RPS — no dominant ordering.
-    `studentQuatro` records `cf.rounds` rounds of (my pile, partner's pile, winner me/them/tie);
-    `orderingPicker` builds a 4-permutation by tapping 1–4 in order (↺ resets). Stored as field
-    `q` = `JSON.stringify([{m:"1234",p:"4321",w:"me"},…])`. `analyzeQuatro` shows ordering
-    popularity (top orderings), win-rate by ordering, and a **rule-check** (recorded winner vs
-    `quatroPlay(a,b)` which simulates the two piles) plus the non-transitivity teaching note.
-  - `redblack` (G6) — one player Red, one Black (coin toss); cards K, A(=1), 2, 3. Red wins if both
-    play K or both play **different** numbers; Black wins if exactly one plays K or both play the
+  **physical card games played face-to-face with a neighbour**; the portal shows the rules and
+  collects/reveals data — no live play on screen. **Each player records only their OWN moves** (not
+  one recorder per pair) and **picks their partner from the section roster** (`partnerPicker`:
+  type-to-filter the roster in `curMSection()`, excluding self; guests type a name → `partner`
+  becomes `"name:…"`). So each is an ordinary **one-sub-per-student** doc carrying `partner` +
+  `partnerName`; at reveal `mutualPairs(list)` zips the two docs that name each other. **Winners are
+  never entered — always computed** (`redBlackWinner`, `quatroPlay`). A player whose partner hasn't
+  submitted still counts toward class marginals, just not the joint/win analysis. Cards are drawn as
+  **inline-SVG faces** (`cardFace(rank,kind)` — `"red"/"black"` suited for G6, a hex colour per
+  number for G5; `cardBtn` wraps them as tap targets — no images/CDN). Forms live in module-state
+  `gameDraft` (keyed `‹game›-‹roundKey›`, via `draftFor()`) and each view repaints from that draft
+  via a local `paint()`, so a classmate's live submission never wipes a half-filled form. Flow: Open
+  → both partners tap their own cards → Reveal. Config `{ rounds }` (`paramEditor` "Rounds played";
+  default `quatro:5`, `redblack:20`).
+  - `quatro` (G5) — 4-card duel (1<2<3<4): stack your four cards into a pile, reveal top cards, lower
+    discarded / equal → both discarded / **1 vs 4 → both discarded**; empty your pile first and you
+    lose. **Non-transitive** (1 beats 4), like RPS — no dominant ordering. `studentQuatro` records
+    `cf.rounds` piles (your own only) via `orderingPicker(current,onChange)` (tap the number cards in
+    stacking order; ↺ resets). Stored as field `piles` = `JSON.stringify(["1234","4321",…])`.
+    `analyzeQuatro` shows ordering popularity (all piles), best/weakest ordering by **computed**
+    win-rate over mutually-paired hands (`quatroPlay`), tie %, and the non-transitivity note. No
+    rule-check (nothing is hand-entered to check).
+  - `redblack` (G6) — one player Red, one Black (coin toss); cards **K, A(=1), 2, 3**. Red wins if
+    both play K or both play **different** numbers; Black wins if exactly one plays K or both play the
     **same** number — structurally favours Black (~60%), so "coin toss for colour isn't fair".
-    `studentRedBlack` collects **8 marginal counts** (Red K/1/2/3, Black K/1/2/3, each summing to
-    `rounds`) in fields `rk,r1,r2,r3,bk,b1,b2,b3`; validates all eight present, warns if the Red and
-    Black totals differ. `analyzeRedBlack` aggregates each colour's card mix as %, states the Nash
-    mix (K 40%, each number 20%) and the implied Red/Black win split via the independence formula.
+    `studentRedBlack` = pick partner + colour, then **tap the card you played each hand** (fast
+    auto-advancing rail + an editable strip of mini-cards). Stores the **full per-hand sequence**
+    field `seq` = `"K,A,2,3,…"` plus `color` — so the joint (Red-card × Black-card) distribution is
+    recoverable (marginals alone can't reconstruct it — this was the whole point of the original
+    Excel macro). `analyzeRedBlack` shows each colour's marginal mix, the **class joint 4×4 heatmap
+    beside the Nash independent-product matrix** (`jointMatrixCard`; K 40% / A·2·3 20% → 16/8/8/8…),
+    the **observed** Red/Black win split (from real zipped hands, not a formula), and a
+    `pairingsCard` ("who played whom"). CSV/`subValue` carry the full `seq`/`piles` + partner.
 
 ## Interactive lessons (no submissions)
 - **Pareto optimality** (`paretoLesson`, local `lessonMode="pareto"` + `PZ` state) — an
