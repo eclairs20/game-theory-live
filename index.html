@@ -162,10 +162,12 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .gp .n{font-weight:600; font-size:.9rem; color:var(--ink)}
 .gp .d{font-size:.74rem; color:var(--muted)}
 .gp .ic{width:26px;height:26px;flex:none;border-radius:7px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);font-weight:700;font-size:.8rem;color:var(--accent-ink)}
-/* Interactive-lesson tile — gold shade to set it apart from the teal game tiles. */
-.gp.lesson{background:var(--gold-wash); border-color:color-mix(in srgb,var(--gold) 42%,var(--line))}
-.gp.lesson:hover{border-color:var(--gold)}
-.gp.lesson .ic{color:var(--gold); border-color:color-mix(in srgb,var(--gold) 42%,var(--line))}
+/* Interactive-lesson tile — gold shade to set it apart from the teal game tiles.
+   NB: use `.gp.il` (not `.lesson`) — `.lesson` is the full-screen overlay class and
+   would otherwise position:fixed this tile over the whole page. */
+.gp.il{background:var(--gold-wash); border-color:color-mix(in srgb,var(--gold) 42%,var(--line))}
+.gp.il:hover{border-color:var(--gold)}
+.gp.il .ic{color:var(--gold); border-color:color-mix(in srgb,var(--gold) 42%,var(--line))}
 .gp-div{font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); font-weight:700; margin:4px 2px 0}
 .rowbtns{display:flex; gap:8px; flex-wrap:wrap}
 .seg{display:flex; align-items:center; gap:8px}
@@ -1713,7 +1715,7 @@ function teacherConsole(){
   });
   // Interactive lessons live in the same picker, gold-shaded and grouped under a divider.
   gp.append(Object.assign(el("div","gp-div"),{textContent:"Interactive lessons"}));
-  const il1=el("button","gp lesson");
+  const il1=el("button","gp il");
   il1.append(Object.assign(el("span","ic"),{textContent:"IL1"}));
   const iltx=el("div"); iltx.append(el("div","n","Pareto optimality"),el("div","d","Interactive visual — check which outcomes are Pareto optimal, step by step.")); il1.append(iltx);
   il1.onclick=()=>{ paretoInit("dilemma"); lessonMode="pareto"; render(); };
