@@ -92,6 +92,17 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   contribution rate. NOT the fixed-MPCR model (per-head no longer scales with N). Analysis:
   contribution histogram, free-riders, avg earnings per player vs Nash & optimum, efficiency.
 
+## Interactive lessons (no submissions)
+- **Pareto optimality** (`paretoLesson`, local `lessonMode="pareto"` + `PZ` state) — an
+  instructor-launched, full-screen **payoff-matrix checker** (a teaching visual, not a game;
+  touches no Firebase). Launched from the console's **Lessons** rail section. It steps through
+  the four-step test on each 2×2 cell — examine → scan for complete improvements (`pDom`: y is
+  ≥ for both and > for one) → label dominated → identify Pareto-optimal — with a **Check all**
+  that circles the whole Pareto set, **editable payoffs**, presets in `PARETO_PRESETS` (the
+  Give-or-Keep bridge where the one dominated cell IS the Nash outcome; "efficient ≠ fair"; a
+  single-winner case), and a companion payoff-space mini-map (`paretoMiniMap`). Add future
+  lessons the same way: a `lessonMode` value + a full-screen builder + a Lessons-section button.
+
 ## Roles & flow
 - Student: open link → sign in with Google (or enter a name) → submit → sees own submission +
   a count. Aggregates are hidden until the instructor reveals.

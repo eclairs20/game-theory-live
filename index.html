@@ -197,6 +197,44 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .present-qr .qrcap{font-size:clamp(.95rem,1.8vw,1.2rem); font-weight:700; color:var(--ink)}
 .present-controls{display:flex; flex-wrap:wrap; gap:12px; justify-content:center; align-items:center}
 .present-controls .btn{padding:14px 26px; font-size:1.05rem}
+/* Pareto-optimality interactive lesson (instructor-projected, no submissions). */
+.lesson{position:fixed; inset:0; z-index:60; background:var(--bg); color:var(--ink); overflow:auto;
+  display:flex; flex-direction:column; padding:clamp(16px,3vw,40px); gap:clamp(12px,2vh,22px)}
+.lesson-head{display:flex; flex-direction:column; gap:2px; text-align:center}
+.lesson-eyebrow{font-size:.8rem; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); font-weight:700}
+.lesson-title{font-family:"Fraunces",serif; font-size:clamp(1.5rem,3.4vw,2.4rem); font-weight:600}
+.lesson-body{flex:1; display:flex; gap:clamp(20px,4vw,56px); align-items:flex-start; justify-content:center; flex-wrap:wrap}
+.lesson-left{display:flex; flex-direction:column; align-items:center; gap:14px}
+.pmatrix{border-collapse:separate; border-spacing:0; font-family:"IBM Plex Mono",monospace}
+.pmatrix th{font-family:"IBM Plex Sans",sans-serif; font-weight:600; font-size:.82rem; color:var(--muted); padding:8px 10px; text-align:center}
+.pmatrix .corner{background:transparent}
+.pmatrix .rowlab{writing-mode:vertical-rl; transform:rotate(180deg); color:var(--accent-ink)}
+.pmatrix .collab{color:var(--accent-ink)}
+.pcell{position:relative; width:clamp(96px,15vw,150px); height:clamp(84px,13vw,132px); border:2px solid var(--line);
+  background:var(--surface); cursor:pointer; transition:.15s; text-align:center; vertical-align:middle; padding:6px}
+.pcell:hover{border-color:var(--accent); box-shadow:var(--shadow)}
+.pcell .pay{font-size:clamp(1.2rem,2.6vw,1.9rem); font-weight:700; line-height:1.15}
+.pcell .pa{color:var(--accent-ink)} .pcell .pb{color:var(--gold)}
+.pcell .plabel{font-family:"IBM Plex Sans",sans-serif; font-size:.66rem; color:var(--muted); margin-top:3px}
+.pcell.cand{border-color:var(--ink); box-shadow:0 0 0 3px var(--ink) inset}
+.pcell.better{border-color:var(--good); background:var(--good-wash)}
+.pcell.better::after{content:"▲ better for both / no worse"; position:absolute; left:0; right:0; bottom:-16px; font-family:"IBM Plex Sans",sans-serif; font-size:.6rem; color:var(--good); font-weight:700}
+.pcell.dominated{opacity:.85}
+.pcell.dominated .pay{text-decoration:line-through; text-decoration-color:var(--bad); text-decoration-thickness:2px}
+.pcell.optimal{border-color:var(--good); box-shadow:0 0 0 4px var(--good-wash), 0 0 0 6px var(--good)}
+.pcell .stamp{position:absolute; top:4px; right:6px; font-family:"IBM Plex Sans",sans-serif; font-size:.62rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase}
+.pcell.dominated .stamp{color:var(--bad)} .pcell.optimal .stamp{color:var(--good)}
+.pcell input{width:2.6em; font:inherit; font-size:1rem; text-align:center; border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--ink); padding:2px}
+.lesson-right{max-width:420px; min-width:min(92vw,320px); display:flex; flex-direction:column; gap:14px}
+.pstep{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow)}
+.pstep h4{margin:0 0 6px; font-size:.78rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted)}
+.pstep .pstep-txt{font-size:1rem; line-height:1.5}
+.pstep .verdict{font-weight:700; font-size:1.05rem}
+.pstep .verdict.no{color:var(--bad)} .pstep .verdict.yes{color:var(--good)}
+.pminimap{margin-top:2px}
+.lesson-ctr{display:flex; flex-wrap:wrap; gap:10px; justify-content:center; align-items:center}
+.pset-row{display:flex; flex-wrap:wrap; gap:8px; justify-content:center}
+.pset-row .ghost-btn.on{border-color:var(--accent); color:var(--accent-ink); background:var(--accent-wash)}
 @media(max-width:520px){ .actionbar .btn,.actionbar .ghost-btn{flex:1 1 auto} }
 .count-big{font-family:"Fraunces",serif; font-size:2.4rem; font-weight:600; line-height:1}
 
@@ -672,7 +710,7 @@ function viewKey(){
     control?control.activeGame:"", control?control.phase:"", control?control.round:"",
     control?control.session:"", control?control.section:"", myCourses().length].join("|");
 }
-let lastViewKey=null, presentMode=false;
+let lastViewKey=null, presentMode=false, lessonMode=null;
 function render(){
   applyIdentity();
   syncPhasePill();
@@ -684,6 +722,9 @@ function render(){
   // phase (Reveal from the console exits it); only drops if the console context is gone.
   if(presentMode && !(isTeacher() && control && control.activeGame)) presentMode=false;
   if(presentMode){ app.replaceChildren(presentView()); return; }
+  // Interactive lessons (no submissions/Firebase) — instructor-launched, projected.
+  if(lessonMode && !isTeacher()) lessonMode=null;
+  if(lessonMode==="pareto"){ app.replaceChildren(paretoLesson()); return; }
   let next;
   if(REQUIRE_GOOGLE && !authUser){
     next = authResolved ? signInLanding() : connectingScreen();
@@ -1481,6 +1522,175 @@ function sessionTile(){
   }
   return bar;
 }
+
+/* ═══════════════════════ LESSON: PARETO OPTIMALITY ═══════════════════════ */
+/* An interactive payoff-matrix checker (no submissions/Firebase). The instructor
+   projects it and steps through the four-step test on each cell. */
+const PARETO_PRESETS = {
+  dilemma: { name:"Give or Keep (a dilemma)", rows:["A: Keep","A: Give"], cols:["B: Keep","B: Give"],
+    cells:[[{a:2,b:2},{a:5,b:0}],[{a:0,b:5},{a:3,b:3}]],
+    note:"The only dominated cell is (2, 2) — the Nash outcome where both Keep. Self-interest lands on the one outcome that is NOT Pareto optimal. Note (5, 0) and (0, 5) are Pareto optimal too — efficient need not be fair." },
+  fair: { name:"Efficient ≠ fair", rows:["A: Plan X","A: Plan Y"], cols:["B: Plan X","B: Plan Y"],
+    cells:[[{a:5,b:1},{a:0,b:0}],[{a:0,b:0},{a:1,b:5}]],
+    note:"(5, 1) and (1, 5) are BOTH Pareto optimal, even though each is lopsided — Pareto optimality says nothing about fairness. Only the (0, 0) mismatches are dominated." },
+  simple: { name:"One clear winner", rows:["A: Top","A: Bottom"], cols:["B: Left","B: Right"],
+    cells:[[{a:4,b:4},{a:3,b:2}],[{a:2,b:3},{a:1,b:1}]],
+    note:"Only (4, 4) survives — it beats every other cell for both players. The rest are all dominated." }
+};
+let PZ=null;
+function paretoInit(key){
+  const p=PARETO_PRESETS[key];
+  PZ={ preset:key, rows:p.rows.slice(), cols:p.cols.slice(),
+       cells:p.cells.map(row=>row.map(c=>({a:c.a,b:c.b}))), sel:null, step:1, checkedAll:false, edit:false };
+}
+/* y dominates x: at least as good for both, strictly better for someone. */
+function pDom(x,y){ return y.a>=x.a && y.b>=x.b && (y.a>x.a || y.b>x.b); }
+function paretoStatuses(cells){
+  const flat=[]; for(let r=0;r<cells.length;r++) for(let c=0;c<cells[r].length;c++) flat.push({r,c,a:cells[r][c].a,b:cells[r][c].b});
+  return flat.map(x=>{ const doms=flat.filter(y=>!(y.r===x.r&&y.c===x.c)&&pDom(x,y)); return {r:x.r,c:x.c,a:x.a,b:x.b,dominated:doms.length>0,doms}; });
+}
+function pStatAt(stats,r,c){ return stats.find(s=>s.r===r&&s.c===c); }
+function cellName(r,c){ return "("+PZ.rows[r].replace(/^[AB]: /,"")+", "+PZ.cols[c].replace(/^[AB]: /,"")+")"; }
+function paretoLesson(){
+  if(!PZ) paretoInit("dilemma");
+  const stats=paretoStatuses(PZ.cells);
+  const wrap=el("div","lesson");
+  const head=el("div","lesson-head");
+  head.append(el("div","lesson-eyebrow","Interactive lesson"), el("div","lesson-title","Pareto optimality"),
+    Object.assign(el("div","sm mut"),{textContent:"Player A picks the row, Player B the column. Each cell shows (A's payoff, B's payoff).",style:"margin-top:2px"}));
+  wrap.append(head);
+
+  const bodyEl=el("div","lesson-body");
+  // ── matrix ──
+  const left=el("div","lesson-left");
+  const tbl=el("table","pmatrix");
+  const hr=el("tr"); hr.append(el("th","corner"));
+  PZ.cols.forEach(cl=> hr.append(Object.assign(el("th","collab"),{textContent:cl}))); tbl.append(hr);
+  PZ.cells.forEach((row,r)=>{
+    const tr=el("tr"); tr.append(Object.assign(el("th","collab"),{textContent:PZ.rows[r]}));
+    row.forEach((cell,c)=>{
+      const td=el("td","pcell"); const st=pStatAt(stats,r,c);
+      const isCand = PZ.sel && PZ.sel.r===r && PZ.sel.c===c;
+      const candStat = PZ.sel ? pStatAt(stats,PZ.sel.r,PZ.sel.c) : null;
+      const isBetter = !PZ.checkedAll && PZ.sel && PZ.step>=2 && candStat && candStat.doms.some(d=>d.r===r&&d.c===c);
+      if(isCand) td.classList.add("cand");
+      if(isBetter) td.classList.add("better");
+      // verdict styling: on Check-all for every cell, or on step 3 for the candidate only
+      const showVerdict = PZ.checkedAll || (isCand && PZ.step>=3);
+      if(showVerdict){ td.classList.add(st.dominated?"dominated":"optimal"); td.append(Object.assign(el("span","stamp"),{textContent:st.dominated?"dominated":"optimal ✓"})); }
+      if(PZ.edit){
+        const box=el("div"); box.style.display="flex"; box.style.gap="4px"; box.style.justifyContent="center"; box.style.alignItems="center";
+        const ia=el("input"); ia.type="number"; ia.value=cell.a; ia.onchange=()=>{ PZ.cells[r][c].a=Number(ia.value)||0; PZ.checkedAll=false; render(); };
+        const ib=el("input"); ib.type="number"; ib.value=cell.b; ib.onchange=()=>{ PZ.cells[r][c].b=Number(ib.value)||0; PZ.checkedAll=false; render(); };
+        box.append(ia, document.createTextNode(","), ib); td.append(box);
+      } else {
+        const pay=el("div","pay"); pay.innerHTML="<span class='pa'>"+cell.a+"</span>, <span class='pb'>"+cell.b+"</span>";
+        td.append(pay, Object.assign(el("div","plabel"),{textContent:"A, B"}));
+        td.onclick=()=>{ PZ.sel={r,c}; PZ.step=1; PZ.checkedAll=false; render(); };
+      }
+      tr.append(td);
+    });
+    tbl.append(tr);
+  });
+  left.append(tbl);
+  left.append(paretoMiniMap(stats));
+  bodyEl.append(left);
+
+  // ── step / verdict panel ──
+  const right=el("div","lesson-right");
+  const step=el("div","pstep");
+  if(PZ.edit){
+    step.append(Object.assign(el("h4"),{textContent:"Edit payoffs"}),
+      Object.assign(el("div","pstep-txt"),{textContent:"Type any numbers into the cells (A's payoff, B's payoff). Then turn editing off and test the outcomes."}));
+  } else if(PZ.checkedAll){
+    const opt=stats.filter(s=>!s.dominated).map(s=>cellName(s.r,s.c));
+    const dom=stats.filter(s=>s.dominated).map(s=>cellName(s.r,s.c));
+    step.append(Object.assign(el("h4"),{textContent:"All cells checked"}));
+    const t=el("div","pstep-txt");
+    t.innerHTML="<b>Pareto optimal (circled):</b> "+esc(opt.join("  ·  ")||"none")+".<br><b>Dominated:</b> "+esc(dom.join("  ·  ")||"none")+".";
+    step.append(t);
+    step.append(Object.assign(el("div","sm mut"),{textContent:PARETO_PRESETS[PZ.preset]?PARETO_PRESETS[PZ.preset].note:"",style:"margin-top:8px"}));
+  } else if(PZ.sel){
+    const cs=pStatAt(stats,PZ.sel.r,PZ.sel.c);
+    step.append(Object.assign(el("h4"),{textContent:"Step "+PZ.step+" of 3"}));
+    const t=el("div","pstep-txt");
+    if(PZ.step===1){
+      t.innerHTML="<b>Examine this cell.</b> You picked <b>"+esc(cellName(PZ.sel.r,PZ.sel.c))+"</b> — payoffs <b>("+cs.a+", "+cs.b+")</b>. Is it Pareto optimal? Press <b>Next</b> to scan the other cells.";
+    } else if(PZ.step===2){
+      const nb=cs.doms.length;
+      t.innerHTML="<b>Scan for complete improvements.</b> Look at every other cell: is there one where <i>both</i> payoffs are ≥ and <i>at least one</i> is strictly higher? "+(nb?("<b>"+nb+"</b> such cell"+(nb>1?"s are":" is")+" shaded green."):"<b>None</b> found.")+" Press <b>Next</b> for the verdict.";
+    } else {
+      if(cs.dominated){
+        const d=cs.doms[0];
+        t.innerHTML="<div class='verdict no'>Dominated — NOT Pareto optimal.</div>Moving to <b>"+esc(cellName(d.r,d.c))+"</b> = ("+d.a+", "+d.b+") makes "+improveWho(cs,d)+" — nobody worse off. A Pareto improvement exists, so this cell fails the test.";
+      } else {
+        t.innerHTML="<div class='verdict yes'>Pareto optimal ✓</div>No other cell beats or ties it for <i>both</i> players. You can't make one player better off without making the other worse off — so we circle it.";
+      }
+    }
+    step.append(t);
+  } else {
+    step.append(Object.assign(el("h4"),{textContent:"How to test an outcome"}),
+      Object.assign(el("div","pstep-txt"),{textContent:"Tap any cell to check it step by step, or press “Check all” to reveal every Pareto-optimal outcome at once."}));
+  }
+  right.append(step);
+
+  // step nav (when a cell is selected and not in check-all/edit)
+  if(PZ.sel && !PZ.checkedAll && !PZ.edit){
+    const nav=el("div","lesson-ctr");
+    const back=el("button","ghost-btn","‹ Back"); back.onclick=()=>{ if(PZ.step>1)PZ.step--; render(); }; if(PZ.step<=1) back.disabled=true;
+    const nx=el("button","btn","Next ›"); nx.onclick=()=>{ if(PZ.step<3)PZ.step++; render(); }; if(PZ.step>=3) nx.disabled=true;
+    nav.append(back,nx); right.append(nav);
+  }
+  bodyEl.append(right);
+  wrap.append(bodyEl);
+
+  // ── bottom controls ──
+  const ctr=el("div","lesson-ctr");
+  const checkAll=el("button","btn gold",PZ.checkedAll?"Clear marks":"Check all"); checkAll.onclick=()=>{ PZ.checkedAll=!PZ.checkedAll; PZ.sel=null; render(); };
+  const editB=el("button","ghost-btn"+(PZ.edit?" on":""),PZ.edit?"Done editing":"Edit values"); editB.onclick=()=>{ PZ.edit=!PZ.edit; PZ.sel=null; PZ.checkedAll=false; render(); };
+  const reset=el("button","ghost-btn","Reset"); reset.onclick=()=>{ paretoInit(PZ.preset); render(); };
+  const exit=el("button","ghost-btn","Exit lesson"); exit.onclick=()=>{ lessonMode=null; render(); };
+  ctr.append(checkAll,editB,reset,exit);
+  wrap.append(ctr);
+
+  // preset row
+  const pr=el("div","pset-row");
+  pr.append(Object.assign(el("span","tinylabel"),{textContent:"Examples:",style:"align-self:center"}));
+  Object.keys(PARETO_PRESETS).forEach(k=>{ const b=el("button","ghost-btn"+(PZ.preset===k&&!PZ.edit?" on":""),PARETO_PRESETS[k].name);
+    b.onclick=()=>{ paretoInit(k); render(); }; pr.append(b); });
+  wrap.append(pr);
+  return wrap;
+}
+function improveWho(cand,dom){
+  const aUp=dom.a>cand.a, bUp=dom.b>cand.b;
+  if(aUp&&bUp) return "<b>both players</b> better off";
+  if(aUp) return "<b>Player A</b> better off (B unchanged)";
+  return "<b>Player B</b> better off (A unchanged)";
+}
+/* Small payoff-space companion: each cell as a dot (x=A, y=B); circled if Pareto optimal
+   once verdicts are shown. Reinforces "the optimal cells form the frontier". */
+function paretoMiniMap(stats){
+  const W=220,H=150,pad=26; const xs=stats.map(s=>s.a),ys=stats.map(s=>s.b);
+  const xmax=Math.max(1,...xs), ymax=Math.max(1,...ys);
+  const sx=a=>pad+(W-2*pad)*(a/xmax), sy=b=>H-pad-(H-2*pad)*(b/ymax);
+  const show = PZ.checkedAll || (PZ.sel && PZ.step>=3);
+  let dots="";
+  stats.forEach(s=>{
+    const cx=sx(s.a).toFixed(1), cy=sy(s.b).toFixed(1);
+    const isCand=PZ.sel&&PZ.sel.r===s.r&&PZ.sel.c===s.c;
+    const opt = show && !s.dominated;
+    const fill = opt?"var(--good)":(show&&s.dominated?"var(--bad)":"var(--muted)");
+    if(opt) dots+='<circle cx="'+cx+'" cy="'+cy+'" r="9" fill="none" stroke="var(--good)" stroke-width="2"/>';
+    dots+='<circle cx="'+cx+'" cy="'+cy+'" r="5" fill="'+fill+'"'+(isCand?' stroke="var(--ink)" stroke-width="2"':'')+'/>';
+  });
+  const svg='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" role="img" aria-label="payoff space">'
+    +'<line x1="'+pad+'" y1="'+(H-pad)+'" x2="'+(W-pad)+'" y2="'+(H-pad)+'" stroke="var(--line)"/>'
+    +'<line x1="'+pad+'" y1="'+pad+'" x2="'+pad+'" y2="'+(H-pad)+'" stroke="var(--line)"/>'
+    +'<text x="'+(W/2)+'" y="'+(H-4)+'" text-anchor="middle" font-size="9" fill="var(--muted)">Player A payoff →</text>'
+    +'<text x="10" y="'+(H/2)+'" text-anchor="middle" font-size="9" fill="var(--muted)" transform="rotate(-90 10 '+(H/2)+')">Player B payoff →</text>'
+    +dots+'</svg>';
+  const box=el("div","pminimap"); box.innerHTML=svg; return box;
+}
 function teacherConsole(){
   refreshRoleBtn();
   const c=el("div","console");
@@ -1521,6 +1731,12 @@ function teacherConsole(){
   sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
   const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
   sD.append(expB); rail.append(sD);
+
+  const sL=el("div","rail-sec");
+  sL.append(Object.assign(el("h3"),{textContent:"Lessons"}));
+  sL.append(Object.assign(el("div","sm mut"),{textContent:"Interactive teaching visuals (no submissions) — project and step through with the class.",style:"margin-bottom:8px"}));
+  const paretoB=el("button","btn neutral wide","Pareto optimality ▸"); paretoB.onclick=()=>{ paretoInit("dilemma"); lessonMode="pareto"; render(); };
+  sL.append(paretoB); rail.append(sL);
 
   // Course picker + roster live at the bottom — one-time setup, rarely touched once the
   // course is running.
