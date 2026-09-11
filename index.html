@@ -162,6 +162,11 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .gp .n{font-weight:600; font-size:.9rem; color:var(--ink)}
 .gp .d{font-size:.74rem; color:var(--muted)}
 .gp .ic{width:26px;height:26px;flex:none;border-radius:7px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);font-weight:700;font-size:.8rem;color:var(--accent-ink)}
+/* Interactive-lesson tile — gold shade to set it apart from the teal game tiles. */
+.gp.lesson{background:var(--gold-wash); border-color:color-mix(in srgb,var(--gold) 42%,var(--line))}
+.gp.lesson:hover{border-color:var(--gold)}
+.gp.lesson .ic{color:var(--gold); border-color:color-mix(in srgb,var(--gold) 42%,var(--line))}
+.gp-div{font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); font-weight:700; margin:4px 2px 0}
 .rowbtns{display:flex; gap:8px; flex-wrap:wrap}
 .seg{display:flex; align-items:center; gap:8px}
 .actionbar{display:flex; flex-wrap:wrap; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; box-shadow:var(--shadow)}
@@ -1706,6 +1711,13 @@ function teacherConsole(){
     b.onclick=()=>writeControl({activeGame:k, round:1, phase:"waiting"});
     gp.append(b);
   });
+  // Interactive lessons live in the same picker, gold-shaded and grouped under a divider.
+  gp.append(Object.assign(el("div","gp-div"),{textContent:"Interactive lessons"}));
+  const il1=el("button","gp lesson");
+  il1.append(Object.assign(el("span","ic"),{textContent:"IL1"}));
+  const iltx=el("div"); iltx.append(el("div","n","Pareto optimality"),el("div","d","Interactive visual — check which outcomes are Pareto optimal, step by step.")); il1.append(iltx);
+  il1.onclick=()=>{ paretoInit("dilemma"); lessonMode="pareto"; render(); };
+  gp.append(il1);
   s1.append(gp); rail.append(s1);
 
   if(control&&control.activeGame){
@@ -1731,12 +1743,6 @@ function teacherConsole(){
   sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
   const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
   sD.append(expB); rail.append(sD);
-
-  const sL=el("div","rail-sec");
-  sL.append(Object.assign(el("h3"),{textContent:"Lessons"}));
-  sL.append(Object.assign(el("div","sm mut"),{textContent:"Interactive teaching visuals (no submissions) — project and step through with the class.",style:"margin-bottom:8px"}));
-  const paretoB=el("button","btn neutral wide","Pareto optimality ▸"); paretoB.onclick=()=>{ paretoInit("dilemma"); lessonMode="pareto"; render(); };
-  sL.append(paretoB); rail.append(sL);
 
   // Course picker + roster live at the bottom — one-time setup, rarely touched once the
   // course is running.

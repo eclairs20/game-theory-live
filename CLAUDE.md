@@ -95,7 +95,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 ## Interactive lessons (no submissions)
 - **Pareto optimality** (`paretoLesson`, local `lessonMode="pareto"` + `PZ` state) — an
   instructor-launched, full-screen **payoff-matrix checker** (a teaching visual, not a game;
-  touches no Firebase). Launched from the console's **Lessons** rail section. It steps through
+  touches no Firebase). Launched from a gold-shaded **IL1** tile in the console's **Choose
+  exercise** picker (under an "Interactive lessons" divider, below the G1–G3 game tiles).
+  It steps through
   the four-step test on each 2×2 cell — examine → scan for complete improvements (`pDom`: y is
   ≥ for both and > for one) → label dominated → identify Pareto-optimal — with a **Check all**
   that circles the whole Pareto set, **editable payoffs**, presets in `PARETO_PRESETS` (the
