@@ -163,6 +163,8 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .actionbar .btn{padding:9px 16px; font-size:.9rem; box-shadow:none}
 .actionbar .rnum{font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:1.05rem; min-width:1.2em; text-align:center}
 .actionbar .ab-clear{margin-left:2px; color:var(--muted); font-size:.8rem}
+.tablescroll{max-height:clamp(240px,52vh,460px); overflow:auto}
+.tablescroll .matrix th{position:sticky; top:0; z-index:1}
 @media(max-width:520px){ .actionbar .btn,.actionbar .ghost-btn{flex:1 1 auto} }
 .count-big{font-family:"Fraunces",serif; font-size:2.4rem; font-weight:600; line-height:1}
 
@@ -1034,7 +1036,7 @@ function pairingsTable(cf,pairs,earn){
     }
   });
   const t=el("table","matrix"); t.style.fontSize=".86rem"; t.innerHTML=rows;
-  const scroll=el("div"); scroll.style.overflowX="auto"; scroll.append(t); card.append(scroll);
+  const scroll=el("div","tablescroll"); scroll.append(t); card.append(scroll);
   return card;
 }
 function myMatchCard(cf,pairs){
@@ -1311,34 +1313,32 @@ function roundActionBar(){
   bar.append(openBtn,revealBtn,nextR,clr);
   return bar;
 }
-/* Session + section controls. Lives at the top of the main panel (next to the round
-   bar) rather than the rail, since it's part of running the meeting. */
+/* Session + section controls as a compact bar (mirrors the round bar), at the top of
+   the main panel. Titles carry the longer explanations the old card spelled out. */
 function sessionTile(){
-  const card=el("div","rail-sec");
-  card.append(Object.assign(el("h3"),{textContent:"Session"}));
-  const sr=el("div","row spread");
-  sr.append(el("span","tinylabel","Class session"));
-  const sc=el("div","seg");
-  const sminus=el("button","ghost-btn","–"); sminus.onclick=()=>{ const nv=curSession(); if(nv>1) writeControl({session:nv-1, round:1, phase:"waiting"}); };
-  const snum=el("span","mono"); snum.style.fontWeight="700"; snum.style.fontSize="1.1rem"; snum.textContent="S"+curSession();
-  const splus=el("button","ghost-btn","+"); splus.onclick=()=>writeControl({session:curSession()+1, round:1, phase:"waiting"});
-  sc.append(sminus,snum,splus); sr.append(sc); card.append(sr);
-  card.append(Object.assign(el("div","sm mut"),{textContent:"Each session's data is kept separately. Bump this at the start of a new class."}));
+  const bar=el("div","actionbar");
+  const g1=el("div","ab-grp");
+  g1.append(el("span","tinylabel","Session"));
+  const sminus=el("button","ghost-btn","–"); sminus.title="Previous session"; sminus.onclick=()=>{ const nv=curSession(); if(nv>1) writeControl({session:nv-1, round:1, phase:"waiting"}); };
+  const snum=el("span","rnum"); snum.textContent="S"+curSession();
+  const splus=el("button","ghost-btn","+"); splus.title="New session — each meeting's data is kept separately"; splus.onclick=()=>writeControl({session:curSession()+1, round:1, phase:"waiting"});
+  g1.append(sminus,snum,splus); bar.append(g1);
   const rsecs=rosterSections();
   if(rsecs.length){
-    const secRow=el("div","row"); secRow.style.gap="6px"; secRow.style.flexWrap="wrap"; secRow.style.marginTop="10px"; secRow.style.alignItems="center";
-    secRow.append(el("span","tinylabel","Section in class"));
+    bar.append(el("div","ab-spacer"));
+    const g2=el("div","ab-grp");
+    g2.append(el("span","tinylabel","Section"));
     const cur=curMSection();
-    const mkSec=(val,label)=>{ const b=el("button","ghost-btn"); b.textContent=label; b.style.padding="4px 10px";
+    const mkSec=(val,label)=>{ const b=el("button","ghost-btn"); b.textContent=label; b.style.padding="6px 12px";
       if(cur===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
+      b.title="Section meeting now (switching starts it at Round 1; submissions tagged S"+curSession()+(val?"."+val:"")+")";
       // Switching section starts that section's meeting fresh: reset the round to 1.
       b.onclick=()=>{ if(cur!==val) writeControl({section:val, round:1, phase:"waiting"}); }; return b; };
-    secRow.append(mkSec("","None"));
-    rsecs.forEach(s=> secRow.append(mkSec(s, s)));
-    card.append(secRow);
-    card.append(Object.assign(el("div","sm mut"),{textContent:"Which section is meeting now. Switching starts that section at Round 1; submissions are tagged S"+curSession()+(cur?"."+cur:"")+" so A and B stay separate — analyze either or both after the reveal.",style:"margin-top:4px"}));
+    g2.append(mkSec("","None"));
+    rsecs.forEach(s=> g2.append(mkSec(s, s)));
+    bar.append(g2);
   }
-  return card;
+  return bar;
 }
 function teacherConsole(){
   refreshRoleBtn();
@@ -1497,8 +1497,8 @@ function submittedTable(list){
       (showStatus?("<td>"+(enrolled?"<span style='color:var(--good);font-weight:600'>Enrolled</span>":"<span style='color:var(--gold);font-weight:600'>Guest</span>")+"</td>"):"")+
       "</tr>";
   });
-  const t=el("table","matrix"); t.style.fontSize=".86rem"; t.style.marginTop="10px"; t.innerHTML=html;
-  const scroll=el("div"); scroll.style.overflowX="auto"; scroll.append(t); return scroll;
+  const t=el("table","matrix"); t.style.fontSize=".86rem"; t.innerHTML=html;
+  const scroll=el("div","tablescroll"); scroll.style.marginTop="10px"; scroll.append(t); return scroll;
 }
 function attendanceCard(){
   const card=el("div","card stage");
