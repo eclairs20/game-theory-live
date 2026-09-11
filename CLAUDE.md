@@ -24,7 +24,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   roster entry, so a student attending another section is still enrolled and combined/cross
   analysis works. Firebase rules are room-generic (`$room`, not `main`).
 - **Session + section (a "meeting")** — `control.session` (S1, S2…) is bumped per class
-  meeting; `control.section` (`"" | "A" | "B" | …`) marks which section is meeting *now*. Both
+  meeting; `control.section` (`"" | "A" | "B" | …`) marks which section is meeting *now* —
+  when unset but the roster defines sections, `curMSection()` defaults to the first section
+  (there is no "None" option once a roster has sections). Both
   fold into the record key so a section's meeting and a replay never collide:
   `roundKey = "S‹session›‹section›-‹game›-‹round›"` (e.g. `S1A-pd-1`, or `S1-pd-1` when no
   section is set). `curSession()`/`curMSection()`/`roundKey()` handle this. On results/attendance

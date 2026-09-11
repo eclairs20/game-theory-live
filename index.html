@@ -357,7 +357,15 @@ let unlocked = ls("gtl_role")==="teacher";
 /* A record's key is scoped by session so replaying a game in a later session never
    overwrites an earlier one: "S3-pd-1__email". Everything under one room is retained. */
 const curSession = ()=> (control&&control.session)||1;
-const curMSection = ()=> ((control&&control.section)||"").toUpperCase();   // section currently running ("" = none)
+/* Section currently running. If the instructor hasn't picked one but the roster
+   defines sections, default to the first (usually "A") — a sectioned roster has no
+   meaningful "no section" state. Returns "" only when the roster has no sections. */
+const curMSection = ()=>{
+  const s=((control&&control.section)||"").toUpperCase();
+  if(s) return s;
+  const secs=rosterSections();
+  return secs.length ? secs[0] : "";
+};
 const roundKey = (g,r)=> "S"+curSession()+curMSection()+"-"+g+"-"+r;         // e.g. "S1A-pd-1" or "S1-pd-1"
 const CTRL_PATH = ()=> ROOM+"/control";
 const SUBS_PATH = ()=> ROOM+"/subs";
@@ -1329,13 +1337,17 @@ function sessionTile(){
     const g2=el("div","ab-grp");
     g2.append(el("span","tinylabel","Section"));
     const cur=curMSection();
-    const mkSec=(val,label)=>{ const b=el("button","ghost-btn"); b.textContent=label; b.style.padding="6px 12px";
-      if(cur===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
-      b.title="Section meeting now (switching starts it at Round 1; submissions tagged S"+curSession()+(val?"."+val:"")+")";
-      // Switching section starts that section's meeting fresh: reset the round to 1.
-      b.onclick=()=>{ if(cur!==val) writeControl({section:val, round:1, phase:"waiting"}); }; return b; };
-    g2.append(mkSec("","None"));
-    rsecs.forEach(s=> g2.append(mkSec(s, s)));
+    if(rsecs.length===1){
+      // Only one section — nothing to choose; show it as a static label.
+      const chip=el("span","rnum"); chip.textContent=rsecs[0]; chip.title="This course has one section; all submissions are tagged S"+curSession()+"."+rsecs[0]; g2.append(chip);
+    } else {
+      const mkSec=(val)=>{ const b=el("button","ghost-btn"); b.textContent=val; b.style.padding="6px 12px";
+        if(cur===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
+        b.title="Section meeting now (switching starts it at Round 1; submissions tagged S"+curSession()+"."+val+")";
+        // Switching section starts that section's meeting fresh: reset the round to 1.
+        b.onclick=()=>{ if(cur!==val) writeControl({section:val, round:1, phase:"waiting"}); }; return b; };
+      rsecs.forEach(s=> g2.append(mkSec(s)));
+    }
     bar.append(g2);
   }
   return bar;
