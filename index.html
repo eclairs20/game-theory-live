@@ -1346,9 +1346,12 @@ function roundActionBar(){
   const openBtn=el("button","btn"+(phase==="open"?" neutral":""), phase==="open"?"Close submissions":"Open submissions");
   // Opening a round auto-launches the class-facing collection screen (participation only).
   openBtn.onclick=()=>{ const opening=phase!=="open"; if(opening) presentMode=true; writeControl({phase: opening?"open":"waiting"}); render(); };
-  const revealBtn=el("button","btn gold","Reveal results");
-  if(phase==="revealed"){ revealBtn.textContent="Revealed ✓"; revealBtn.classList.add("neutral"); revealBtn.classList.remove("gold"); }
-  revealBtn.onclick=()=>{ presentMode=false; writeControl({phase:"revealed"}); };
+  // Reveal ↔ Hide toggle. Hiding returns to "waiting" — results hidden from the class,
+  // submissions stay closed (does NOT reopen the round).
+  const revealed=phase==="revealed";
+  const revealBtn=el("button","btn"+(revealed?" neutral":" gold"), revealed?"Hide results":"Reveal results");
+  revealBtn.title=revealed?"Hide results from the class (submissions stay closed)":"Show results to the class";
+  revealBtn.onclick=()=>{ if(revealed){ writeControl({phase:"waiting"}); } else { presentMode=false; writeControl({phase:"revealed"}); } };
   const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>writeControl({round:control.round+1,phase:"open"});
   const presentBtn=el("button","ghost-btn","Present ⛶"); presentBtn.title="Show the class the full-screen collection screen (no results)";
   presentBtn.onclick=()=>{ presentMode=true; render(); };
