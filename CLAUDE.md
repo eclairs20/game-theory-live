@@ -102,6 +102,29 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   (`E` each); social optimum = everyone contributes (`mult·E` each); efficiency = average
   contribution rate. NOT the fixed-MPCR model (per-head no longer scales with N). Analysis:
   contribution histogram, free-riders, avg earnings per player vs Nash & optimum, efficiency.
+- `quatro` — **Simultaneous Quatro Uno** (**G5**) and `redblack` — **Red vs Black** (**G6**) are
+  **physical card games played face-to-face with a neighbour**; the portal only shows the rules
+  and collects/reveals data — no live play happens on screen. Each **pair records ONE submission**
+  (one partner enters it) via `pairRules`/`pairSubmittedNote`, and the multi-field forms are held in
+  module-state `gameDraft` (keyed `‹game›-‹roundKey›`, via `draftFor()`) so a classmate's live
+  submission re-render can't wipe a half-filled form. Flow is Open → pairs play physically & enter
+  results → Reveal; no `pairSubs` pairing (the pairing happened at the desk). Both take a config
+  `{ rounds }` (`paramEditor` "Rounds played"; default `quatro:5`, `redblack:20`).
+  - `quatro` (G5) — 4-card duel (1<2<3<4): stack your four cards into a pile order, reveal top cards,
+    lower card discarded / equal → both discarded / **1 vs 4 → both discarded**; empty your pile
+    first and you lose. **Non-transitive** (1 beats 4), like RPS — no dominant ordering.
+    `studentQuatro` records `cf.rounds` rounds of (my pile, partner's pile, winner me/them/tie);
+    `orderingPicker` builds a 4-permutation by tapping 1–4 in order (↺ resets). Stored as field
+    `q` = `JSON.stringify([{m:"1234",p:"4321",w:"me"},…])`. `analyzeQuatro` shows ordering
+    popularity (top orderings), win-rate by ordering, and a **rule-check** (recorded winner vs
+    `quatroPlay(a,b)` which simulates the two piles) plus the non-transitivity teaching note.
+  - `redblack` (G6) — one player Red, one Black (coin toss); cards K, A(=1), 2, 3. Red wins if both
+    play K or both play **different** numbers; Black wins if exactly one plays K or both play the
+    **same** number — structurally favours Black (~60%), so "coin toss for colour isn't fair".
+    `studentRedBlack` collects **8 marginal counts** (Red K/1/2/3, Black K/1/2/3, each summing to
+    `rounds`) in fields `rk,r1,r2,r3,bk,b1,b2,b3`; validates all eight present, warns if the Red and
+    Black totals differ. `analyzeRedBlack` aggregates each colour's card mix as %, states the Nash
+    mix (K 40%, each number 20%) and the implied Red/Black win split via the independence formula.
 
 ## Interactive lessons (no submissions)
 - **Pareto optimality** (`paretoLesson`, local `lessonMode="pareto"` + `PZ` state) — an

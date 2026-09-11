@@ -204,6 +204,25 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .coord-srow .cq{color:var(--muted); font-size:.85rem}
 .coord-srow .ca{font-weight:700; font-family:"IBM Plex Mono",monospace; color:var(--accent-ink)}
 @media(max-width:520px){ .coord-opts.seq{grid-template-columns:1fr 1fr} }
+/* Pair card games (Red vs Black, Quatro Uno) */
+.rb-row{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:12px}
+.rb-who{font-weight:700; margin-bottom:8px}
+.rb-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:8px}
+.rb-cell{display:flex; flex-direction:column; gap:3px}
+.rb-cell label{font-size:.72rem; color:var(--muted); font-weight:600; text-align:center}
+.rb-cell input{width:100%; text-align:center; font-size:1.1rem; padding:8px 4px}
+.rb-totline{display:flex; justify-content:space-between; align-items:center; margin-top:8px}
+.rb-tot{font-family:"IBM Plex Mono",monospace; font-weight:700}
+.q-round{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:12px; display:flex; flex-direction:column; gap:10px}
+.q-cards{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+.q-card{position:relative; width:44px; height:56px; border:2px solid var(--line); border-radius:8px; background:var(--surface); font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:1.3rem; transition:.12s}
+.q-card:hover{border-color:var(--accent)}
+.q-card.used{border-color:var(--accent); background:var(--accent-wash); color:var(--accent-ink); opacity:.55}
+.q-card .q-pos{position:absolute; top:2px; right:4px; font-size:.6rem; color:var(--accent-ink); font-weight:700}
+.q-reset{width:40px; height:56px; border:1px dashed var(--line); border-radius:8px; background:transparent; color:var(--muted); font-size:1.1rem}
+.q-win{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.q-wbtn{padding:6px 14px; border:1px solid var(--line); border-radius:999px; background:var(--surface); font-weight:600; font-size:.85rem}
+.q-wbtn.sel{border-color:var(--accent); background:var(--accent-wash); color:var(--accent-ink)}
 /* Full-screen "collection" view projected to the class while submissions are open —
    participation only, never results, so it can't leak the answer. */
 .present{position:fixed; inset:0; z-index:60; background:var(--bg); color:var(--ink);
@@ -415,12 +434,18 @@ const GAMES = {
   coord: { name:"Coordination", short:"G3", icon:"G3",
     blurb:"Match the class without talking — 4 quick focal-point questions." },
   publicgoods: { name:"Public Goods", short:"G4", icon:"G4",
-    blurb:"Contribute to a shared fund that pays everyone." }
+    blurb:"Contribute to a shared fund that pays everyone." },
+  quatro: { name:"Simultaneous Quatro Uno", short:"G5", icon:"G5",
+    blurb:"Card duel with a neighbour — record your 4-card piles." },
+  redblack: { name:"Red vs Black", short:"G6", icon:"G6",
+    blurb:"Card duel with a neighbour — record how often each card was played." }
 };
 const DEFAULT_CONFIG = {
   guess23:{ frac:1/2, min:0, max:100, step:0.5 },
   pd:{ keep:2, give:3 },
   coord:{ pot:100 },
+  quatro:{ rounds:5 },
+  redblack:{ rounds:20 },
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -760,6 +785,11 @@ function viewKey(){
     control?control.session:"", control?control.section:"", myCourses().length].join("|");
 }
 let lastViewKey=null, presentMode=false, lessonMode=null;
+/* In-progress form state for the multi-field pair games (quatro/redblack), kept OUTSIDE
+   the render cycle so a live re-render (a classmate submitting) can't wipe a half-filled
+   form. Keyed by game+roundKey. */
+let gameDraft={};
+function draftFor(k){ if(!gameDraft[k]) gameDraft[k]={}; return gameDraft[k]; }
 function render(){
   applyIdentity();
   syncPhasePill();
@@ -937,6 +967,8 @@ function studentView(){
   if(g==="guess23") studentGuess(c);
   else if(g==="pd") studentColor(c);
   else if(g==="coord") studentCoord(c);
+  else if(g==="quatro") studentQuatro(c);
+  else if(g==="redblack") studentRedBlack(c);
   else studentPG(c);
   return c;
 }
@@ -1088,6 +1120,108 @@ function studentCoord(c){
   c.append(wrap);
   c.append(liveCount());
 }
+/* ─── Pair card games (played physically; one partner records the pair's data) ─── */
+function pairRules(title, lines){
+  const box=el("div","coord-rules"); box.append(Object.assign(el("div","tinylabel"),{textContent:title}));
+  lines.forEach(t=> box.append(Object.assign(el("div","coord-rule"),{textContent:t})));
+  return box;
+}
+function pairSubmittedNote(){
+  const box=el("div","note-box teal"); box.style.marginTop="14px";
+  box.innerHTML="<b>Submitted for your pair.</b> Thanks — you can update it until the instructor reveals. Only one partner needs to submit.";
+  return box;
+}
+/* G6 — Red vs Black: enter how many of the rounds each colour played each card. */
+function studentRedBlack(c){
+  const cf=cfg("redblack"), R=cf.rounds||20, cur=mySub();
+  const dk="redblack-"+roundKey(control.activeGame,control.round), d=draftFor(dk);
+  if(cur && d._loaded!==true){ ["rk","r1","r2","r3","bk","b1","b2","b3"].forEach(k=>{ if(cur[k]!=null) d[k]=cur[k]; }); d._loaded=true; }
+  c.append(Object.assign(el("h2"),{textContent:"Red vs Black — record your "+R+" rounds",style:"font-size:1.4rem;margin:6px 0 4px"}));
+  c.append(pairRules("How it was played",[
+    "Two of you: one Red, one Black (decided by a coin toss). Cards K, A(=1), 2, 3.",
+    "Each round you both play one card at the same time.",
+    "Red wins if BOTH play K, or both play number cards with DIFFERENT numbers.",
+    "Black wins if exactly ONE plays K, or both play number cards with the SAME number.",
+    "You played "+R+" rounds. Below, enter how many times each of you chose each card."]));
+  const mk=(who,keys,color)=>{
+    const card=el("div","rb-row"); card.append(Object.assign(el("div","rb-who"),{textContent:who+" chose…",style:"color:"+color}));
+    const grid=el("div","rb-grid"); const tot=el("span","rb-tot");
+    const upd=()=>{ const s=keys.reduce((a,k)=>a+(Number(d[k])||0),0); tot.textContent=s+" / "+R; tot.style.color = s===R?"var(--good)":"var(--muted)"; };
+    [["K","K"],["1","A / 1"],["2","2"],["3","3"]].forEach(([k,lbl],i)=>{
+      const key=keys[i]; const f=el("div","rb-cell"); f.append(Object.assign(el("label"),{textContent:lbl}));
+      const inp=el("input","input mono"); inp.type="number"; inp.min=0; inp.max=R; inp.step=1; inp.value=d[key]!=null?d[key]:""; inp.placeholder="0";
+      inp.oninput=()=>{ d[key]=inp.value===""?null:Math.max(0,Math.round(Number(inp.value))); upd(); };
+      f.append(inp); grid.append(f);
+    });
+    card.append(grid);
+    const tl=el("div","rb-totline"); tl.append(el("span","sm mut","Total"), tot); card.append(tl); upd();
+    return card;
+  };
+  const form=el("div"); form.style.marginTop="16px";
+  form.append(mk("Red","rk r1 r2 r3".split(" "),"var(--bad)"), mk("Black","bk b1 b2 b3".split(" "),"var(--ink)"));
+  c.append(form);
+  const b=el("button","btn big wide",cur?"Update submission":"Submit for our pair"); b.style.marginTop="16px"; b.style.maxWidth="360px";
+  b.onclick=async()=>{
+    const keys=["rk","r1","r2","r3","bk","b1","b2","b3"];
+    if(keys.some(k=>d[k]==null)){ toast("Fill in all eight counts"); return; }
+    const rSum=d.rk+d.r1+d.r2+d.r3, bSum=d.bk+d.b1+d.b2+d.b3;
+    if(rSum===0||bSum===0){ toast("Counts can't all be zero"); return; }
+    if(rSum!==bSum){ if(!confirm("Red's counts total "+rSum+" and Black's total "+bSum+" — they usually match (both played the same rounds). Submit anyway?")) return; }
+    const payload={}; keys.forEach(k=>payload[k]=d[k]);
+    await submit(payload); toast("Submitted for your pair");
+  };
+  c.append(b);
+  if(cur) c.append(pairSubmittedNote());
+  c.append(liveCount());
+}
+/* G5 — Simultaneous Quatro Uno: record 5 rounds of (my pile, partner pile, winner). */
+function studentQuatro(c){
+  const cf=cfg("quatro"), R=cf.rounds||5, cur=mySub();
+  const dk="quatro-"+roundKey(control.activeGame,control.round), d=draftFor(dk);
+  if(!d.rounds) d.rounds=Array.from({length:R},()=>({m:[],p:[],w:null}));
+  if(cur && cur.q && d._loaded!==true){ try{ const arr=JSON.parse(cur.q); d.rounds=arr.map(o=>({m:String(o.m).split("").map(Number),p:String(o.p).split("").map(Number),w:o.w})); }catch(e){} d._loaded=true; }
+  c.append(Object.assign(el("h2"),{textContent:"Quatro Uno — record your "+R+" rounds",style:"font-size:1.4rem;margin:6px 0 4px"}));
+  c.append(pairRules("How it was played",[
+    "You and a neighbour each hold cards 1, 2, 3, 4 (1<2<3<4) and stack them into a pile in any order.",
+    "Reveal top cards repeatedly: the lower card is discarded, the higher stays. Equal cards → both discarded. A 1 against a 4 → both discarded.",
+    "First player to empty their pile loses.",
+    "For each of the "+R+" rounds, enter your pile order and your partner's (top card first), and who won."]));
+  const wrap=el("div"); wrap.style.marginTop="14px";
+  d.rounds.forEach((rd,i)=>{
+    const card=el("div","q-round"); card.append(Object.assign(el("div","tinylabel"),{textContent:"Round "+(i+1)}));
+    card.append(orderingPicker("Your pile (top → bottom)", rd.m, seq=>{ rd.m=seq; }));
+    card.append(orderingPicker("Partner's pile (top → bottom)", rd.p, seq=>{ rd.p=seq; }));
+    const wr=el("div","q-win"); wr.append(Object.assign(el("span","tinylabel"),{textContent:"Winner"}));
+    [["me","You"],["them","Partner"],["tie","Tie"]].forEach(([v,l])=>{ const bt=el("button","q-wbtn"+(rd.w===v?" sel":""));
+      bt.textContent=l; bt.onclick=()=>{ rd.w=v; render(); }; wr.append(bt); });
+    card.append(wr); wrap.append(card);
+  });
+  c.append(wrap);
+  const b=el("button","btn big wide",cur?"Update submission":"Submit for our pair"); b.style.marginTop="8px"; b.style.maxWidth="360px";
+  b.onclick=async()=>{
+    for(let i=0;i<d.rounds.length;i++){ const rd=d.rounds[i];
+      if(rd.m.length!==4||rd.p.length!==4){ toast("Round "+(i+1)+": finish both piles (tap all four cards)"); return; }
+      if(!rd.w){ toast("Round "+(i+1)+": choose a winner"); return; } }
+    const q=JSON.stringify(d.rounds.map(rd=>({m:rd.m.join(""),p:rd.p.join(""),w:rd.w})));
+    await submit({q}); toast("Submitted for your pair");
+  };
+  c.append(b);
+  if(cur) c.append(pairSubmittedNote());
+  c.append(liveCount());
+}
+/* Tap 1..4 in order to build a pile ordering; ↺ resets. Calls onChange(arrayOfNums). */
+function orderingPicker(label, current, onChange){
+  const box=el("div","q-pick"); box.append(Object.assign(el("div","sm mut"),{textContent:label,style:"margin-bottom:4px"}));
+  const row=el("div","q-cards");
+  const redraw=()=>{ row.replaceChildren();
+    [1,2,3,4].forEach(n=>{ const used=current.indexOf(n); const bt=el("button","q-card"+(used>=0?" used":""));
+      bt.textContent=n; if(used>=0) bt.append(Object.assign(el("span","q-pos"),{textContent:used+1}));
+      bt.onclick=()=>{ if(current.indexOf(n)>=0) return; if(current.length>=4) return; current.push(n); onChange(current.slice()); redraw(); };
+      row.append(bt); });
+    const reset=el("button","q-reset"); reset.textContent="↺"; reset.title="Clear"; reset.onclick=()=>{ current.length=0; onChange([]); redraw(); }; row.append(reset);
+  };
+  redraw(); box.append(row); return box;
+}
 
 /* ═══════════════════════ ANALYSIS ═══════════════════════ */
 function analysisView(teacher){
@@ -1107,6 +1241,8 @@ function analysisView(teacher){
   if(g==="guess23") c.append(analyzeGuess(teacher,list));
   else if(g==="pd") c.append(analyzeColor(teacher,list));
   else if(g==="coord") c.append(analyzeCoord(teacher,list));
+  else if(g==="quatro") c.append(analyzeQuatro(list));
+  else if(g==="redblack") c.append(analyzeRedBlack(list));
   else c.append(analyzePG(list));
   return c;
 }
@@ -1114,6 +1250,8 @@ function revealNarr(g){
   if(g==="guess23") return "Where did the class land relative to pure rationality?";
   if(g==="pd") return "Did people keep the money for themselves or give it to their partner?";
   if(g==="coord") return "Without a word exchanged, did the class converge on the same answer?";
+  if(g==="quatro") return "Which card orderings did the class favour, and did any win more?";
+  if(g==="redblack") return "How did the class play each card — and does it match the equilibrium?";
   return "How close did the group get to the socially optimal outcome?";
 }
 function analyzeGuess(teacher,list){
@@ -1361,6 +1499,87 @@ function coordSquareChart(tally,rd){
     cell.style.setProperty("--fill", (0.12+0.88*(cnt/max)).toFixed(2));
     cell.append(Object.assign(el("span","sqn"),{textContent:cnt})); g.append(cell); });
   return g;
+}
+/* G6 — Red vs Black: aggregate each colour's card-choice counts across all pairs, compare
+   to the mixed Nash (K 40%, each number 20%; the structure favours Black 60/40). */
+function analyzeRedBlack(list){
+  const cf=cfg("redblack");
+  const R={K:0,1:0,2:0,3:0}, B={K:0,1:0,2:0,3:0};
+  list.forEach(s=>{ R.K+=(+s.rk||0);R[1]+=(+s.r1||0);R[2]+=(+s.r2||0);R[3]+=(+s.r3||0);
+                    B.K+=(+s.bk||0);B[1]+=(+s.b1||0);B[2]+=(+s.b2||0);B[3]+=(+s.b3||0); });
+  const rN=R.K+R[1]+R[2]+R[3], bN=B.K+B[1]+B[2]+B[3];
+  const wrap=el("div","grid-analysis");
+  const nash=[40,20,20,20];
+  const mkChart=(title,T,tot,col)=>{
+    const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:title}));
+    card.append(barChart(["K",1,2,3].map((k,i)=>({label:String(k),value:tot?Math.round(1000*T[k]/tot)/10:0,color:col})), Math.max(40,...["K",1,2,3].map(k=>tot?100*T[k]/tot:0)), false, "%"));
+    card.append(Object.assign(el("div","cap"),{textContent:"Nash mix: K 40%, and 1 / 2 / 3 at 20% each. This colour played K "+(tot?pct(T.K/tot):"—")+"."}));
+    return card;
+  };
+  wrap.append(mkChart("Red's card choices ("+rN+" plays)",R,rN,"var(--bad)"));
+  const right=el("div","stack");
+  right.append(mkChart("Black's card choices ("+bN+" plays)",B,bN,"var(--ink)"));
+  // implied win split if the two colours' choices met independently at these frequencies
+  const rk=rN?R.K/rN:0, bk=bN?B.K/bN:0;
+  const redWin = rk*bk + (rN&&bN? ((R[1]+R[2]+R[3])/rN)*((B[1]+B[2]+B[3])/bN) * (1 - (R[1]*B[1]+R[2]*B[2]+R[3]*B[3])/Math.max(1,(R[1]+R[2]+R[3])*(B[1]+B[2]+B[3]))) : 0);
+  const st=el("div","stats");
+  st.append(statTile("Nash win split","Red 40% · Black 60%","the structure favours Black","gold"),
+    statTile("Implied here","Red "+pct(redWin)+" · Black "+pct(1-redWin),"if choices met at random",true));
+  right.append(st);
+  const nb=el("div","note-box");
+  nb.innerHTML="<b>Teaching point.</b> This is a zero-sum game with a <b>mixed-strategy equilibrium</b>: each colour should play <b>K 40%</b> of the time and each number 20%. Even played perfectly, <b>Black wins ~60%</b> — so the coin toss for colour isn't a fair start. Compare the bars above to the 40/20/20/20 benchmark: where did the class over- or under-play K?";
+  right.append(nb);
+  wrap.append(right);
+  return wrap;
+}
+/* Quatro Uno win outcome for a pile matchup (both piles top→bottom, arrays of 1..4). */
+function quatroPlay(a,b){
+  a=a.slice(); b=b.slice();
+  let guard=0;
+  while(a.length&&b.length&&guard++<50){
+    const x=a[0], y=b[0];
+    const bothOut = x===y || (x===1&&y===4) || (x===4&&y===1);
+    if(bothOut){ a.shift(); b.shift(); }
+    else if(x>y){ b.shift(); } else { a.shift(); }
+  }
+  if(!a.length&&!b.length) return "tie";
+  return a.length? "me":"them";   // "me" = first pile (a) survives
+}
+/* G5 — Quatro Uno: ordering popularity + win rate; flags mismatches with the actual rules. */
+function analyzeQuatro(list){
+  const orders={}, winByOrder={};   // order -> {games,wins}
+  let rounds=0, recordedWins={me:0,them:0,tie:0}, ruleWins={me:0,them:0,tie:0}, mismatch=0;
+  list.forEach(s=>{ let arr; try{ arr=JSON.parse(s.q||"[]"); }catch(e){ arr=[]; }
+    arr.forEach(rd=>{ if(!rd||!rd.m||!rd.p) return; rounds++;
+      [rd.m,rd.p].forEach(o=>{ orders[o]=(orders[o]||0)+1; });
+      // credit a win to each player's ordering
+      const mi=String(rd.m).split("").map(Number), pi=String(rd.p).split("").map(Number);
+      const res=quatroPlay(mi,pi);   // me = rd.m's pile
+      ruleWins[res]++; recordedWins[rd.w]=(recordedWins[rd.w]||0)+1;
+      if(rd.w!==res) mismatch++;
+      const cred=(ord,won)=>{ const w=winByOrder[ord]||(winByOrder[ord]={g:0,w:0}); w.g++; if(won)w.w++; };
+      cred(rd.m, rd.w==="me"); cred(rd.p, rd.w==="them");
+    });
+  });
+  const wrap=el("div","stack");
+  const top=Object.entries(orders).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const left=el("div","chart-card");
+  left.append(Object.assign(el("h3"),{textContent:"Most-chosen pile orderings"}),
+    Object.assign(el("div","cap"),{textContent:"Across both players over all recorded rounds ("+rounds+" piles). Top card is leftmost digit."}));
+  left.append(barChart(top.map(([o,n])=>({label:o.split("").join(""),value:n,color:"var(--accent)"})), Math.max(1,...top.map(t=>t[1])), false, ""));
+  wrap.append(left);
+  const right=el("div","stack"); const st=el("div","stats");
+  const winRows=Object.entries(winByOrder).filter(([o,w])=>w.g>=3).sort((a,b)=>(b[1].w/b[1].g)-(a[1].w/a[1].g));
+  const best=winRows[0];
+  st.append(statTile("Recorded winner","You "+pct(rounds?recordedWins.me/rounds:0),"vs Partner "+pct(rounds?recordedWins.them/rounds:0)+" · Tie "+pct(rounds?recordedWins.tie/rounds:0),true),
+    statTile("Best ordering",best?best[0]:"—",best?("won "+pct(best[1].w/best[1].g)+" of "+best[1].g):"need more data","good"),
+    statTile("Rule check",pct(rounds?1-mismatch/rounds:1)+" match",mismatch+" recorded winners differ from the rules",mismatch?"bad":"good"));
+  right.append(st);
+  const nb=el("div","note-box");
+  nb.innerHTML="<b>Teaching point.</b> The “1 beats 4” twist makes Quatro Uno <b>non-transitive</b> — like rock-paper-scissors, no single ordering dominates, so the equilibrium is to <b>mix</b>. If everyone clustered on one “obvious” ordering, a counter-ordering beats it. The rule-check compares the winners you recorded with the outcome the rules actually give each pile matchup.";
+  right.append(nb);
+  wrap.append(right);
+  return wrap;
 }
 function analyzePG(list){
   list=list||subs;
@@ -1999,8 +2218,7 @@ function exportCSV(){
   const out=[head.join(",")];
   rows.forEach(s=>{
     const email=subEmail(s); const enrolled = email && roster[email.toLowerCase()] ? "yes" : "no";
-    const resp = s.game==="coord" ? coordVal(s)
-      : (s.value!=null?s.value : (s.choice!=null?(s.choice==="keep"?"Keep":s.choice==="give"?"Give":s.choice) : (s.contrib!=null?s.contrib:"")));
+    const resp = subValue(s);
     out.push([ROOM, (s.session!=null?"S"+s.session:""), s.game||"", (s.round!=null?s.round:""), s.roundKey||"", email, s.name||"", s.sid||"", s.area||"", secOf(s), enrolled, resp, (s.ts?new Date(s.ts).toISOString():"")].map(csvCell).join(","));
   });
   try{
@@ -2016,6 +2234,8 @@ function subValue(s){
   if(s.game==="pd") return s.choice==="keep"?"Keep":"Give";
   if(s.game==="publicgoods") return s.contrib!=null?String(s.contrib):"—";
   if(s.game==="coord") return coordVal(s);
+  if(s.game==="redblack") return "R "+[s.rk,s.r1,s.r2,s.r3].map(x=>x==null?"·":x).join("/")+" · B "+[s.bk,s.b1,s.b2,s.b3].map(x=>x==null?"·":x).join("/");
+  if(s.game==="quatro"){ try{ return JSON.parse(s.q||"[]").length+" rounds"; }catch(e){ return "—"; } }
   return s.value!=null?String(s.value):"—";   // guess23 and default
 }
 /* Meeting-scope toggle: which section's meeting to analyze (A / B / … / Both).
@@ -2102,6 +2322,11 @@ function paramEditor(){
     wrap.append(list);
     const grid=el("div","paramgrid"); grid.append(mk("Split pot ($)","pot",cf.pot)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Question 4 splits this pot; the focal answer is half of it. Just Open → students play all four → Reveal (all four results show together)."})); }
+  else if(g==="quatro" || g==="redblack"){
+    const grid=el("div","paramgrid"); grid.append(mk("Rounds played","rounds",cf.rounds)); wrap.append(grid);
+    wrap.append(Object.assign(el("div","sm mut"),{textContent: g==="redblack"
+      ? "How many hands each pair played with physical cards. One partner records the counts here; results aggregate across all pairs on reveal."
+      : "How many hands each pair played. One partner records both piles + the winner for each; results aggregate on reveal."})); }
   else { const grid=el("div","paramgrid");
     grid.append(mk("Endowment (marks)","E",cf.E),mk("Pot multiplier","mult",cf.mult,"0.1")); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"The pot is ×multiplier then split among all players. Keep multiplier > 1 (socially worth it) but < class size (so each person's share of a given mark, multiplier÷N, stays below 1 — free-riding tempting)."})); }
