@@ -14,8 +14,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   asia-southeast1 / Singapore), under Prof. Sonia's Google account. The config lives in the
   `FIREBASE_CONFIG` const inside `index.html`. Rules are public read/write (classroom use).
   The Firebase web `apiKey` is public by design — it is NOT a secret; security is via rules.
-- Only runtime dependencies: the Firebase **compat** SDK (gstatic CDN) and Google Fonts.
-  Everything else is inline — keep it that way.
+- Only external runtime dependencies: the Firebase **compat** SDK (gstatic CDN) and Google
+  Fonts. Everything else is inline — keep it that way. (The `qrcode-generator` library, MIT,
+  is **inlined** as a `<script>` for the class-join QR — a bundled copy, not a new CDN dep.)
 
 ## Data model (Firebase Realtime DB)
 - `ROOM` = one class (course + year), from the `?class=<id>` URL param (default `"main"`).
@@ -91,6 +92,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   a count. Aggregates are hidden until the instructor reveals.
 - Instructor: click "Instructor" → passcode → console (pick game, open/close submissions,
   reveal, next round, clear round data, edit parameters). First run sets the passcode.
+- **Collection view** (`presentView`, local `presentMode` flag) — a full-screen, class-facing
+  screen that auto-opens when the instructor presses **Open submissions** (also via the round
+  bar's **Present** button). It shows participation only — live count, progress vs the section's
+  roster, and a **join QR** (`qrSVG`/`qrFor` of `location.href`) — and **never any result**, so
+  the instructor can project it safely while the console preview would otherwise leak the
+  answer. Close/Reopen/Reveal/Fullscreen/Exit controls live on it; Reveal exits present mode.
 
 ## Conventions
 - Theme-aware: light/dark via CSS tokens on `:root`, `:root[data-theme=...]`, and
