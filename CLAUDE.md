@@ -59,6 +59,15 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   tab/comma/2-space separated) and also accepts a plain `email, name` list. When present,
   the student join screen prefers Google sign-in; a Google email matching the roster joins
   under that name, a non-matching email joins as a flagged `guest`. Name-join is the fallback.
+- `‹room›/schedule` — optional array of `{ date:"YYYY-MM-DD", session, section? }` mapping class
+  dates to a meeting. `parseSchedule` accepts ISO or day-first (DD/MM/YYYY) dates, optional `S`
+  prefix on the session, and an optional single-letter section (header row and junk lines skipped).
+  When today's date matches, `scheduleBanner()` (top of the console main pane) offers a **tap-to-apply**
+  reminder — one button per scheduled `(session, section)`, or a session-only button when no section is
+  listed — that `writeControl`s the session/section. It **never auto-writes** `control`; the instructor
+  taps to apply (or `dismiss`). Section-less rows nag only on a session mismatch (the common
+  both-sections-same-day case); section rows also nag if the running section isn't scheduled that day.
+  Edited via the console's **Session schedule** card (`scheduleEditor`, paste like the roster).
 - The data layer is a thin adapter over the Firebase compat SDK; the app only uses
   `.ref().on()/.once()/.set()/.update()/.remove()`. Preserve these paths and shapes.
 

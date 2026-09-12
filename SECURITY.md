@@ -18,6 +18,11 @@ are not deployed from this repo automatically.
 > user and writable only by the allowlisted instructor emails (same list as `control`/`roster`).
 > **Re-publish whichever tier you're on** after this change, or creating a course / saving a
 > roster will be denied.
+>
+> **Per-room `schedule` node:** the optional session schedule (date → session/section, for the
+> console's tap-to-apply reminder) is stored at `‹room›/schedule`. Both rule files now include it,
+> mirroring `roster` (open under the stopgap; instructor-only write under lockdown). **Re-publish
+> your tier** after pulling this change, or saving a schedule will be denied.
 
 ## Two tiers
 

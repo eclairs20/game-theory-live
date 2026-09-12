@@ -559,6 +559,47 @@ function setRoster(val){
   }); }
 }
 function rosterSections(){ const s={}; rosterList.forEach(e=>{ if(e.section) s[e.section]=1; }); return Object.keys(s).sort(); }
+/* Optional session schedule: date → session (+ optional section), so the console can
+   remind the instructor which meeting today is (tap-to-apply). Stored at ‹room›/schedule. */
+const SCHEDULE_PATH = ()=> ROOM+"/schedule";
+let schedule=[];
+const haveSchedule = ()=> schedule.length>0;
+const pad2 = n=>String(n).padStart(2,"0");
+function todayISO(d){ d=d||new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+/* Accepts ISO (YYYY-MM-DD) or day-first (DD/MM/YYYY, DD-MM-YYYY); returns ISO or null. */
+function normDate(t){
+  let m=/^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t); if(m) return m[1]+"-"+pad2(m[2])+"-"+pad2(m[3]);
+  m=/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/.exec(t); if(m){ let y=m[3]; if(y.length===2) y="20"+y; return y+"-"+pad2(m[2])+"-"+pad2(m[1]); }
+  return null;
+}
+function setSchedule(val){
+  schedule=[];
+  if(val){ (Array.isArray(val)?val:Object.values(val)).forEach(e=>{
+    if(!e||!e.date) return; const date=normDate(String(e.date).trim())||(/^\d{4}-\d{2}-\d{2}$/.test(String(e.date))?String(e.date):null); if(!date) return;
+    schedule.push({ date, session:Math.max(1,parseInt(e.session,10)||1), section:e.section?String(e.section).trim().toUpperCase():"" });
+  }); }
+  schedule.sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:(a.section<b.section?-1:1));
+}
+function parseSchedule(text){
+  const lines=String(text||"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const out=[], seen={};
+  for(const line of lines){
+    if(/date|session|section/i.test(line) && !/\d{4}|\d[\/-]\d/.test(line)) continue;   // header row
+    const toks=line.split(/[\t,;]+|\s+/).map(x=>x.trim()).filter(Boolean);
+    let date=null, session=null, section="";
+    toks.forEach(t=>{ const d=normDate(t);
+      if(d){ if(!date) date=d; return; }
+      let sm=/^S?(\d{1,2})$/i.exec(t); if(sm && session==null){ session=parseInt(sm[1],10); return; }
+      if(/^[A-Za-z]$/.test(t) && !section){ section=t.toUpperCase(); } });
+    if(!date || session==null) continue;
+    const key=date+"|"+section; const row={date,session,section};
+    if(seen[key]!=null){ out[seen[key]]=row; } else { seen[key]=out.length; out.push(row); }
+  }
+  out.sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:(a.section<b.section?-1:1));
+  return out;
+}
+async function writeSchedule(list){ try{ await fb.ref(SCHEDULE_PATH()).set(list); return true; }catch(e){ toast("Couldn't save schedule"); return false; } }
+async function removeSchedule(){ try{ await fb.ref(SCHEDULE_PATH()).remove(); toast("Schedule cleared"); }catch(e){} }
 /* A submission's home section: denormalized on the doc, else looked up from the roster. */
 function secOf(s){ return (s.section || (roster[String(s.studentId||"").toLowerCase()]||{}).section || "").toUpperCase(); }
 /* Instructor analysis scope by MEETING section. null = follow the running section;
@@ -624,6 +665,7 @@ function boot(){
 function onCtrl(snap){ control = snap.exists()?snap.val():null; controlLoaded=true; recompute(); render(); }
 function onSubs(snap){ allSubs = snap.val()||{}; recompute(); render(); }
 function onRoster(snap){ setRoster(snap.val()); render(); }
+function onSchedule(snap){ setSchedule(snap.val()); render(); }
 function onCourses(snap){ courses = snap.val()||{}; render(); }
 function onEnroll(snap){ enroll = snap.val()||{}; maybeAutoRoute(); render(); }
 function attachData(){
@@ -631,13 +673,14 @@ function attachData(){
   fb.ref(CTRL_PATH()).on("value", onCtrl, err=>{ console.warn("control",err); renderRulesError(); });
   fb.ref(SUBS_PATH()).on("value", onSubs, err=>{ console.warn("subs",err); });
   fb.ref(ROSTER_PATH()).on("value", onRoster, err=>{ console.warn("roster",err); });
+  fb.ref(SCHEDULE_PATH()).on("value", onSchedule, err=>{ console.warn("schedule",err); });
   fb.ref(COURSES_PATH).on("value", onCourses, err=>{ console.warn("courses",err); });
   if(authUser&&authUser.email) fb.ref(ENROLL_DOC(authUser.email)).on("value", onEnroll, err=>{ console.warn("enroll",err); });
 }
 function detachData(){
   if(!listenersOn) return; listenersOn=false;
-  try{ fb.ref(CTRL_PATH()).off(); fb.ref(SUBS_PATH()).off(); fb.ref(ROSTER_PATH()).off(); fb.ref(COURSES_PATH).off(); }catch(e){}
-  control=null; controlLoaded=false; allSubs={}; roster={}; rosterList=[]; courses={}; enroll={}; recompute();
+  try{ fb.ref(CTRL_PATH()).off(); fb.ref(SUBS_PATH()).off(); fb.ref(ROSTER_PATH()).off(); fb.ref(SCHEDULE_PATH()).off(); fb.ref(COURSES_PATH).off(); }catch(e){}
+  control=null; controlLoaded=false; allSubs={}; roster={}; rosterList=[]; schedule=[]; courses={}; enroll={}; recompute();
 }
 /* My enrolled course ids, from the enrollment index (signed-in students only). */
 function myCourses(){ return enroll && typeof enroll==="object" ? Object.keys(enroll).filter(k=>enroll[k]) : []; }
@@ -2183,6 +2226,55 @@ function presentView(){
 }
 /* Session + section controls as a compact bar (mirrors the round bar), at the top of
    the main panel. Titles carry the longer explanations the old card spelled out. */
+/* Tap-to-apply reminder: if today's date is in the schedule and the console isn't on
+   that session/section, offer a one-tap "set it" (never auto-writes control). */
+let schedBannerHidden=false;
+function scheduleBanner(){
+  if(!haveSchedule() || schedBannerHidden) return null;
+  const today=todayISO();
+  const rows=schedule.filter(r=>r.date===today);
+  if(!rows.length) return null;
+  const sess=rows.map(r=>r.session).sort((a,b)=>b-a)[0];        // usually one; take the highest if they differ
+  const secs=[...new Set(rows.map(r=>r.section).filter(Boolean))].sort();
+  const curS=curSession(), curSec=curMSection();
+  const sessionOK = curS===sess;
+  const sectionOK = !secs.length || secs.includes(curSec);
+  if(sessionOK && sectionOK) return null;
+  const box=el("div","note-box gold"); box.style.display="flex"; box.style.flexDirection="column"; box.style.gap="8px";
+  const top=el("div"); top.style.cssText="display:flex;justify-content:space-between;align-items:flex-start;gap:10px";
+  const dateLbl=new Date(today+"T00:00:00").toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"});
+  const p=el("div"); p.innerHTML="<b>Today ("+dateLbl+")</b> is scheduled as <b>Session "+sess+"</b>"+(secs.length?(" · Section"+(secs.length>1?"s ":" ")+secs.join(" & ")):"")+". Your console is on <b>S"+curS+(curSec?"."+curSec:"")+"</b>.";
+  const x=el("button","linkbtn","dismiss"); x.type="button"; x.onclick=()=>{ schedBannerHidden=true; render(); };
+  top.append(p,x); box.append(top);
+  const btns=el("div","row"); btns.style.gap="8px"; btns.style.flexWrap="wrap";
+  if(secs.length){ secs.forEach(sec=>{ const b=el("button","btn gold"); b.textContent="Set S"+sess+" · Section "+sec;
+    b.onclick=()=>writeControl({session:sess, section:sec, round:1, phase:"waiting"}); btns.append(b); }); }
+  else { const b=el("button","btn gold"); b.textContent="Set Session "+sess;
+    b.onclick=()=>writeControl({session:sess, round:1, phase:"waiting"}); btns.append(b); }
+  box.append(btns);
+  return box;
+}
+function scheduleEditor(){
+  const wrap=el("div","stack");
+  wrap.append(Object.assign(el("div","sm mut"),{textContent:"One meeting per line: date, session, and optional section. Dates are day-first (12/09/2026) or ISO (2026-09-12). For two sections on the same day, add a line each — or leave the section off to set just the session."}));
+  const ta=el("textarea","input"); ta.rows=4; ta.style.cssText='font-family:"IBM Plex Mono",monospace;font-size:.82rem;width:100%';
+  ta.placeholder="2026-09-12  S2  A\n2026-09-12  S2  B\n2026-09-19  S3";
+  ta.value=schedule.map(r=>r.date+"  S"+r.session+(r.section?"  "+r.section:"")).join("\n");
+  wrap.append(ta);
+  if(haveSchedule()){
+    const today=todayISO();
+    const t=el("table","matrix"); t.style.fontSize=".8rem";
+    let html="<tr><th>Date</th><th>Session</th><th>Section</th></tr>";
+    schedule.forEach(r=>{ const isT=r.date===today;
+      html+="<tr"+(isT?" style='font-weight:700;color:var(--accent-ink)'":"")+"><td style='text-align:left'>"+esc(r.date)+(isT?" · today":"")+"</td><td>S"+r.session+"</td><td>"+(r.section||"—")+"</td></tr>"; });
+    t.innerHTML=html; const sc=el("div","tablescroll"); sc.style.marginTop="6px"; sc.append(t); wrap.append(sc);
+  }
+  const save=el("button","btn wide","Save schedule"); save.style.marginTop="2px";
+  save.onclick=async()=>{ const list=parseSchedule(ta.value); const ok=await writeSchedule(list); if(ok) toast(list.length?(list.length+" meetings saved"):"Schedule saved (empty)"); };
+  wrap.append(save);
+  if(haveSchedule()){ const clr=el("button","ghost-btn","Clear schedule"); clr.style.marginTop="6px"; clr.onclick=removeSchedule; wrap.append(clr); }
+  return wrap;
+}
 function sessionTile(){
   const bar=el("div","actionbar");
   const g1=el("div","ab-grp");
@@ -2429,6 +2521,12 @@ function teacherConsole(){
   const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
   sD.append(expB); rail.append(sD);
 
+  const sSch=el("div","rail-sec");
+  sSch.append(Object.assign(el("h3"),{textContent:"Session schedule"}));
+  sSch.append(Object.assign(el("div","sm mut"),{textContent:"Optional — map class dates to a session (and section). On a scheduled day the console offers a one-tap reminder so you never forget to bump the session.",style:"margin:-4px 0 8px"}));
+  sSch.append(scheduleEditor());
+  rail.append(sSch);
+
   // Course picker + roster live at the bottom — one-time setup, rarely touched once the
   // course is running.
   rail.append(courseCard());
@@ -2447,6 +2545,7 @@ function teacherConsole(){
   c.append(rail);
 
   const main=el("div","stack");
+  const sBan=scheduleBanner(); if(sBan) main.append(sBan);
   main.append(sessionTile());
   if(control&&control.activeGame) main.append(roundActionBar());
   if(control&&control.activeGame && rosterSections().length>1) main.append(sectionScopeBar());

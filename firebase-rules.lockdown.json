@@ -36,6 +36,9 @@
       "roster": {
         ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'sonia@iiml.ac.in')"
       },
+      "schedule": {
+        ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'sonia@iiml.ac.in')"
+      },
       "subs": {
         "$sub": {
           ".write": "auth != null && auth.token.email_verified == true",

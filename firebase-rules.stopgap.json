@@ -28,6 +28,10 @@
         ".read": true,
         ".write": true
       },
+      "schedule": {
+        ".read": true,
+        ".write": true
+      },
       "subs": {
         ".read": true,
         "$sub": {
