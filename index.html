@@ -103,6 +103,8 @@ code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding
 .btn.gold{background:var(--gold)}
 .btn.neutral{background:var(--surface); color:var(--ink); border-color:var(--line)}
 .btn.neutral:hover{border-color:var(--accent)}
+.btn.danger{background:var(--surface); color:var(--bad); border-color:var(--bad); box-shadow:none}
+.btn.danger:hover{background:var(--bad); color:#fff}
 .btn.big{padding:15px 26px; font-size:1.05rem}
 .btn.wide{width:100%}
 
@@ -793,6 +795,18 @@ function googleErr(e){
   return "Google sign-in didn't complete — try again, or join with your name.";
 }
 async function signOutStudent(){ try{ if(fbAuth) await fbAuth.signOut(); }catch(e){} }
+/* Full log-out for a shared classroom PC: sign out of Google (if signed in), close
+   the instructor console, and forget the typed name so the next person starts clean. */
+async function logOut(){
+  const wasTeacher=isTeacher();
+  if(!confirm("Log out of this device? This closes the instructor console"+(authUser?" and signs you out of Google":"")+".")) return;
+  try{ if(fbAuth) await fbAuth.signOut(); }catch(e){}
+  role="student"; unlocked=false; myName="";
+  try{ ls("gtl_role","student"); ls("gtl_name",""); }catch(e){}
+  sectionScope=null; presentMode=false; lessonMode=null;
+  refreshRoleBtn(); lastViewKey=null; render();
+  toast(wasTeacher?"Logged out of the console":"Signed out");
+}
 
 /* ═══════════════════════ RENDER ROOT ═══════════════════════ */
 /* Under lockdown, console access requires an allowlisted Google sign-in (matching
@@ -2423,6 +2437,13 @@ function teacherConsole(){
   sRost.append(Object.assign(el("div","sm mut"),{textContent:"Set once for the whole course — shared across every session and section.",style:"margin:-4px 0 8px"}));
   sRost.append(rosterEditor());
   rail.append(sRost);
+
+  // Explicit log-out for shared classroom PCs — closes the console and (if signed in) Google.
+  const sOut=el("div","rail-sec");
+  sOut.append(Object.assign(el("h3"),{textContent:"This device"}));
+  sOut.append(Object.assign(el("div","sm mut"),{textContent:"On a shared classroom PC, log out when you're done so the next person starts clean.",style:"margin:-4px 0 8px"}));
+  const outB=el("button","btn danger wide", authUser?"Log out (console + Google)":"Log out of console"); outB.onclick=logOut;
+  sOut.append(outB); rail.append(sOut);
   c.append(rail);
 
   const main=el("div","stack");
