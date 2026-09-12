@@ -112,36 +112,39 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   contribution rate. NOT the fixed-MPCR model (per-head no longer scales with N). Analysis:
   contribution histogram, free-riders, avg earnings per player vs Nash & optimum, efficiency.
 - `quatro` — **Simultaneous Quatro Uno** (**G5**) and `redblack` — **Red vs Black** (**G6**) are
-  **physical card games played face-to-face with a neighbour**; the portal shows the rules and
-  collects/reveals data — no live play on screen. **Each player records only their OWN moves** (not
-  one recorder per pair) and **picks their partner from the section roster** (`partnerPicker`:
-  type-to-filter the roster in `curMSection()`, excluding self; guests type a name → `partner`
-  becomes `"name:…"`). So each is an ordinary **one-sub-per-student** doc carrying `partner` +
-  `partnerName`; at reveal `mutualPairs(list)` zips the two docs that name each other. **Winners are
-  never entered — always computed** (`redBlackWinner`, `quatroPlay`). A player whose partner hasn't
-  submitted still counts toward class marginals, just not the joint/win analysis. Cards are drawn as
-  **inline-SVG faces** (`cardFace(rank,kind)` — `"red"/"black"` suited for G6, a hex colour per
-  number for G5; `cardBtn` wraps them as tap targets — no images/CDN). Forms live in module-state
-  `gameDraft` (keyed `‹game›-‹roundKey›`, via `draftFor()`) and each view repaints from that draft
-  via a local `paint()`, so a classmate's live submission never wipes a half-filled form. Flow: Open
-  → both partners tap their own cards → Reveal. Config `{ rounds }` (`paramEditor` "Rounds played";
-  default `quatro:5`, `redblack:20`). Three shared mechanics:
-  - **Incremental writes + `done` flag.** Each tap `schedulePairSave()`s the sub with `done:false`
-    (debounced ~450ms); the Submit button flips it to `done:true`. `isDone(s)` (`s.done!==false`;
-    older games have no `done`, so they read as done) gates every "submitted" count — `liveCount`,
-    `presentView`, `attendanceCard`, and the analyses all filter `isDone(s) && !s.bot`.
-  - **Live partner panel.** Each view finds the partner's live sub in `subs` and streams their tapped
-    cards (`partnerPanel`/`miniCardRow`) as they play; global `render()` repaints on every Firebase
-    change while the local draft keeps your own half-filled entry intact.
-  - **Practice bot** (`partnerPicker`'s "🤖 Practice bot"): sets `d.bot`, generates the opponent's
-    moves locally (`botRBSeq`/`botPiles`, ~Nash mix), shows them in the live panel, and on submit
-    `saveBot()` writes a synthetic opponent doc keyed `"bot:<myId>"` pointing back at you — so one
-    person completes a whole pair (solo testing, or an odd student out). Bot docs are
-    `bot:true`/`guest:true` and excluded from participation counts.
-  - **G6 colour auto-resolves.** Each still indicates their real colour, but once your partner's sub
-    carries one you are **locked to the opposite** (`oppColor`); a both-picked-same clash is broken
-    deterministically by `studentId` order, so a pair is always one Red + one Black. The bot takes
-    the opposite of your pick.
+  **real-time two-player games** played through the portal (in class, students who are physically
+  playing with card decks still pair up here to record each hand and get live scoring). `studentPair`
+  routes to a **waiting room** (`pairLobby`) or a **live match** (`pairMatch`).
+  - **Waiting room / matchmaking** lives in an ephemeral node `‹room›/live/‹mc›` (`mc` = the game's
+    `roundKey`, e.g. `S1A-redblack-1`). On opening the game a student joins the **lobby**
+    (`lobby/‹enc(id)›` = presence with a 20s heartbeat + `onDisconnect().remove()`; entries older
+    than 60s are filtered out). Tap a classmate → a directed **invite** (`invite/‹enc(toId)›`); the
+    invitee sees Accept/Decline. **Accept** creates a `pairs/‹pid›` record (`pid` =
+    `enc(idA)~enc(idB)`, key-safe) with **colours assigned at random** (guaranteed one Red + one
+    Black — the winner is label-invariant, so random is fine) and sets the `of/‹enc(id)›` → `pid`
+    pointer for both. Each side watches `of/<me>`; when it points at a pid they load the pair and
+    enter the match. Works for **guests** too — matching is by presence, not roster identity. The
+    listeners attach via `ensureLive(mc)` and are torn down by `detachLive()` (which also removes
+    your lobby presence) whenever `render()` sees you're no longer on an open pair game.
+  - **Live match** (`pairMatch`): the pair is **locked** — no changing partner or colour mid-game;
+    an explicit **Leave match** clears your sub + `of` pointer and marks the pair `ended` (the
+    partner is offered "back to the waiting room"). Play is **strictly sequential** — only the
+    current (first-unplayed) hand is tappable, no skipping. Moves still write to each student's own
+    **sub** incrementally (`savePair`, `done` flips true on the last hand), so `mutualPairs` +
+    `analyzeRedBlack`/`analyzeQuatro` are unchanged and now zip reliably (both subs carry the real
+    partner id). After both players commit hand *i*, `handResult`/`redBlackWinner`/`quatroPlay`
+    reveal **who won that hand** and a running **scoreboard** (`pairScore`/`scoreboard`) updates;
+    a **history** list shows each scored hand. `isDone(s)` (`s.done!==false`) still gates every
+    "submitted" count (`liveCount`, `presentView`, `attendanceCard`, analyses filter
+    `isDone(s) && !s.bot`).
+  - **Practice bot** — a "🤖 Practice bot" button in the lobby sets `d.bot` and drops you straight
+    into a match against a locally-generated ~Nash opponent (`botRBSeq`/`botPiles`), revealed hand
+    by hand as you play; on completion `saveBot()` writes a synthetic `"bot:<myId>"` opponent sub so
+    the analysis sees a full pair. Bot docs are `bot:true`/`guest:true`, excluded from counts.
+  - Cards are inline-SVG faces (`cardFace(rank,kind)` — `"red"/"black"` suited for G6, a hex colour
+    per number for G5; `cardBtn` taps). Config `{ rounds }` (`paramEditor` "Rounds played"; default
+    `quatro:5`, `redblack:20`). The `live` node needs read/write in the Firebase rules (both tiers
+    include it: open under stopgap, any signed-in user under lockdown).
   - `quatro` (G5) — 4-card duel (1<2<3<4): stack your four cards into a pile, reveal top cards, lower
     discarded / equal → both discarded / **1 vs 4 → both discarded**; empty your pile first and you
     lose. **Non-transitive** (1 beats 4), like RPS — no dominant ordering. `studentQuatro` records

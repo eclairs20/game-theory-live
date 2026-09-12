@@ -39,6 +39,10 @@
       "schedule": {
         ".write": "auth != null && auth.token.email_verified == true && (auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'sonia@iiml.ac.in')"
       },
+      "live": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.token.email_verified == true"
+      },
       "subs": {
         "$sub": {
           ".write": "auth != null && auth.token.email_verified == true",

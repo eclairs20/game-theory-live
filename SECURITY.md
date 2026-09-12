@@ -23,6 +23,13 @@ are not deployed from this repo automatically.
 > console's tap-to-apply reminder) is stored at `‹room›/schedule`. Both rule files now include it,
 > mirroring `roster` (open under the stopgap; instructor-only write under lockdown). **Re-publish
 > your tier** after pulling this change, or saving a schedule will be denied.
+>
+> **Per-room `live` node:** the real-time waiting room for the pair card games (G5/G6) stores
+> ephemeral coordination at `‹room›/live/‹mc›` — lobby presence, invites, id→pair pointers, and pair
+> records. Both rule files include it: open under the stopgap; under lockdown **any signed-in,
+> email-verified user** may read/write it (students, including guests, coordinate matches there —
+> this is not instructor-only). The actual moves still live in `subs` under the existing rules.
+> **Re-publish your tier**, or the waiting room can't pair anyone.
 
 ## Two tiers
 

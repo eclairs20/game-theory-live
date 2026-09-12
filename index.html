@@ -249,6 +249,26 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .mini-slot{width:26px; height:36px; border-radius:5px; overflow:hidden; display:inline-flex}
 .mini-slot.empty{border:1px dashed var(--line); background:transparent}
 .q-oppline{display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap}
+/* Real-time waiting room + live match */
+.lobby{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:14px}
+.lobby-list{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px}
+.invite-in{background:var(--gold-wash); border:1px solid var(--gold); border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:12px}
+.match-head{margin:6px 0}
+.match-vs{font-size:1.05rem}
+.scorebar{display:flex; gap:1px; background:var(--line-2); border:1px solid var(--line); border-radius:var(--radius-sm); overflow:hidden; margin:10px 0 14px}
+.score{flex:1; background:var(--surface-2); padding:10px 12px; text-align:center}
+.score.me{background:var(--accent-wash)}
+.score.them{background:var(--gold-wash)}
+.score-k{font-size:.72rem; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.score-v{font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:1.6rem; line-height:1.1}
+.match-hist{margin-top:16px}
+.hist-row{display:flex; align-items:center; gap:8px; padding:5px 0; border-top:1px solid var(--line-2)}
+.hist-n{font-family:"IBM Plex Mono",monospace; font-size:.72rem; color:var(--faint); width:30px}
+.hist-vs{font-size:.72rem; color:var(--muted)}
+.hist-res{margin-left:auto; font-size:.74rem; font-weight:700; padding:3px 9px; border-radius:999px}
+.hist-res.win{background:var(--good-wash,rgba(46,139,87,.14)); color:var(--good)}
+.hist-res.lose{background:rgba(210,31,60,.12); color:var(--bad)}
+.hist-res.tie{background:var(--surface-2); color:var(--muted)}
 /* Full-screen "collection" view projected to the class while submissions are open —
    participation only, never results, so it can't leak the answer. */
 .present{position:fixed; inset:0; z-index:60; background:var(--bg); color:var(--ink);
@@ -917,6 +937,9 @@ function render(){
   // Interactive lessons (no submissions/Firebase) — instructor-launched, projected.
   if(lessonMode && !isTeacher()) lessonMode=null;
   if(lessonMode==="pareto"){ app.replaceChildren(paretoLesson()); return; }
+  // Leave the waiting room / release presence when we're no longer on an open pair game.
+  const wantLive = !isTeacher() && control && control.phase==="open" && (control.activeGame==="quatro"||control.activeGame==="redblack") && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser);
+  if(!wantLive && liveCtx) detachLive();
   let next;
   if(REQUIRE_GOOGLE && !authUser){
     next = authResolved ? signInLanding() : connectingScreen();
@@ -1326,148 +1349,247 @@ function partnerPanel(name, kind, tokens, note){
 /* G6 — Red vs Black: pick partner (or a practice bot), take the colour opposite
    your partner's, then tap the card YOU played each hand. Writes incrementally so
    your partner watches it fill in live; stores the full sequence for the joint matrix. */
-function studentRedBlack(c){
-  const cf=cfg("redblack"), R=cf.rounds||20, cur=mySub();
-  const dk="redblack-"+roundKey(control.activeGame,control.round), d=draftFor(dk);
-  if(cur && d._loaded!==true){
-    if(cur.color) d.color=cur.color; if(cur.partner) d.partner=cur.partner; if(cur.partnerName) d.partnerName=cur.partnerName; if(cur.bot) d.bot=true;
-    if(cur.seq) d.seq=String(cur.seq).split(",").map(x=>{ x=x.trim(); return x===""?undefined:x; });
-    d._loaded=true;
+/* ─── Real-time pairing (waiting room) for the two pair card games. ‹room›/live/‹mc›
+   holds ephemeral coordination: lobby presence, directed invites, an id→pairId pointer
+   (of), and pair records with assigned colours. Moves still live in the students' own
+   subs (so the analysis is unchanged and mutualPairs zips by real id). ─── */
+const LIVE_ROOT = mc=> ROOM+"/live/"+mc;
+const LOBBY_DOC = (mc,id)=> LIVE_ROOT(mc)+"/lobby/"+encodeKey(id);
+const INVITE_DOC = (mc,id)=> LIVE_ROOT(mc)+"/invite/"+encodeKey(id);   // invite addressed TO id
+const OF_DOC = (mc,id)=> LIVE_ROOT(mc)+"/of/"+encodeKey(id);           // id → pairId
+const PAIR_DOC = (mc,pid)=> LIVE_ROOT(mc)+"/pairs/"+pid;
+let liveCtx=null, lobby={}, invIn=null, invSent=null, myPairId=null, pairData=null, _pairRef=null, _hbT=null;
+function attachLive(mc){
+  liveCtx=mc; lobby={}; invIn=null; myPairId=null; pairData=null; _pairRef=null;
+  fb.ref(LIVE_ROOT(mc)+"/lobby").on("value", s=>{ lobby=s.val()||{}; render(); }, e=>{});
+  fb.ref(INVITE_DOC(mc,myId)).on("value", s=>{ invIn=s.val()||null; render(); }, e=>{});
+  fb.ref(OF_DOC(mc,myId)).on("value", s=>{ onMyPair(mc, s.val()); }, e=>{});
+  liveJoin(mc);
+  if(_hbT) clearInterval(_hbT);
+  _hbT=setInterval(()=>{ if(liveCtx===mc && !myPairId){ try{ fb.ref(LOBBY_DOC(mc,myId)+"/ts").set(Date.now()); }catch(e){} } }, 20000);
+}
+function onMyPair(mc, pid){
+  if(_pairRef){ try{ fb.ref(_pairRef).off(); }catch(e){} _pairRef=null; }
+  myPairId = pid||null; pairData=null;
+  if(pid){ _pairRef=PAIR_DOC(mc,pid); fb.ref(_pairRef).on("value", s=>{ pairData=s.val()||null; render(); }, e=>{});
+    try{ fb.ref(LOBBY_DOC(mc,myId)).remove(); }catch(e){} }
+  else render();
+}
+function detachLive(){
+  if(!liveCtx) return; const mc=liveCtx;
+  try{ fb.ref(LIVE_ROOT(mc)+"/lobby").off(); fb.ref(INVITE_DOC(mc,myId)).off(); fb.ref(OF_DOC(mc,myId)).off(); if(_pairRef) fb.ref(_pairRef).off(); }catch(e){}
+  try{ fb.ref(LOBBY_DOC(mc,myId)).remove(); }catch(e){}
+  if(_hbT){ clearInterval(_hbT); _hbT=null; }
+  liveCtx=null; lobby={}; invIn=null; invSent=null; myPairId=null; pairData=null; _pairRef=null;
+}
+function ensureLive(mc){ if(liveCtx!==mc) attachLive(mc); }
+async function liveJoin(mc){
+  try{ const r=fb.ref(LOBBY_DOC(mc,myId)); await r.set({id:myId,name:myName||"Player",guest:!!meGuest,ts:Date.now()}); if(r.onDisconnect) r.onDisconnect().remove(); }catch(e){}
+}
+async function liveInvite(mc,toId,toName){ try{ await fb.ref(INVITE_DOC(mc,toId)).set({from:myId,fromName:myName||"Player",to:toId,ts:Date.now()}); invSent={to:toId,toName}; render(); }catch(e){ toast("Couldn't invite"); } }
+async function liveCancelInvite(mc){ if(!invSent) return; try{ await fb.ref(INVITE_DOC(mc,invSent.to)).remove(); }catch(e){} invSent=null; render(); }
+async function liveAccept(mc,fromId,fromName){
+  const ids=[String(myId),String(fromId)].sort();          // raw ids (values)
+  const pid=ids.map(encodeKey).join("~");                    // key-safe (emails have dots)
+  const redFirst=Math.random()<0.5;
+  const colors={}, names={};
+  colors[encodeKey(ids[0])]=redFirst?"red":"black"; colors[encodeKey(ids[1])]=redFirst?"black":"red";
+  names[encodeKey(String(myId))]=myName||"Player"; names[encodeKey(String(fromId))]=fromName||"Player";
+  try{
+    await fb.ref(PAIR_DOC(mc,pid)).set({a:ids[0],b:ids[1],colors,names,ts:Date.now()});
+    await fb.ref(OF_DOC(mc,myId)).set(pid);
+    await fb.ref(OF_DOC(mc,fromId)).set(pid);
+    await fb.ref(INVITE_DOC(mc,myId)).remove();
+    try{ await fb.ref(LOBBY_DOC(mc,fromId)).remove(); }catch(e){}
+    invSent=null;
+  }catch(e){ toast("Couldn't pair"); }
+}
+async function liveDecline(mc){ try{ await fb.ref(INVITE_DOC(mc,myId)).remove(); }catch(e){} }
+async function liveLeaveMatch(mc){
+  if(!confirm("Leave this match? Your recorded hands are cleared and you return to the waiting room.")) return;
+  const pid=myPairId;
+  try{ if(pid) await fb.ref(PAIR_DOC(mc,pid)+"/ended").set(String(myId)); }catch(e){}
+  try{ await fb.ref(OF_DOC(mc,myId)).remove(); }catch(e){}
+  try{ await fb.ref(SUB_DOC(curKey,myId)).remove(); }catch(e){}
+  const dk=control.activeGame+"-"+curKey; if(gameDraft[dk]) delete gameDraft[dk];
+  render();
+}
+/* Outcome of one hand from MY perspective. Returns {winner:"me"|"them"|"tie"} or null
+   if either side hasn't played that hand yet. */
+function handResult(game, mine, theirs, myColor){
+  if(mine==null||theirs==null||mine===""||theirs==="") return null;
+  if(game==="redblack"){
+    const rc = myColor==="red"?mine:theirs, bc = myColor==="red"?theirs:mine;
+    const w = redBlackWinner(rc,bc);
+    return { winner: (w==="red")===(myColor==="red") ? "me":"them" };
   }
-  if(!Array.isArray(d.seq)) d.seq=[];
-  d.seq.length=R;
-  const saveNow=()=>schedulePairSave({color:d.color,partner:d.partner,partnerName:d.partnerName,seq:d.seq.map(x=>x==null?"":x).join(",")});
-  c.append(Object.assign(el("h2"),{textContent:"Red vs Black",style:"font-size:1.4rem;margin:6px 0 4px"}));
-  c.append(pairRules("How it was played",[
-    "Two of you, one Red and one Black (coin toss). Cards: K, A(=1), 2 and 3.",
-    "Each hand you both play one card at the same time.",
-    "Red wins if BOTH play K, or both play number cards with DIFFERENT numbers.",
-    "Black wins if exactly ONE plays K, or both play the SAME number.",
-    "Pick your partner, take your colour, then tap the card YOU played each hand — we work out who won."]));
-  const host=el("div"); host.style.marginTop="14px"; c.append(host);
-  const paint=()=>{
-    host.replaceChildren();
-    host.append(partnerPicker(d, paint));
-    if(!d.partner){ host.append(hintLine("Pick your partner (or the practice bot) to start.")); return; }
-    // live partner sub + colour lock
-    const psub = d.bot ? null : subs.find(s=> String(s.studentId)===String(d.partner));
-    const linked = !!(psub && String(psub.partner)===String(myId));
-    let locked=false;
-    if(linked && psub.color){
-      if(psub.color!==d.color){ d.color=oppColor(psub.color); locked=true; }
-      else { if(String(myId) > String(psub.studentId)) d.color=oppColor(psub.color); locked=true; }  // conflict tiebreak by id
-    }
-    const cp=el("div","colorpick"); cp.append(tinyLabel("Your colour"));
-    if(locked){ cp.append(Object.assign(el("div","note-box teal"),{innerHTML:"You're <b>"+(d.color==="red"?"Red ♥":"Black ♠")+"</b> — "+esc(psub.name)+" took "+(psub.color==="red"?"Red":"Black")+"."})); }
-    else {
-      const cprow=el("div","row"); cprow.style.gap="8px";
-      [["red","Red ♥"],["black","Black ♠"]].forEach(([v,l])=>{ const b=el("button","colbtn"+(d.color===v?" sel "+v:"")); b.type="button"; b.textContent=l;
-        b.onclick=()=>{ d.color=v; saveNow(); paint(); }; cprow.append(b); });
-      cp.append(cprow);
-      if(d.bot) cp.append(Object.assign(el("div","sm mut"),{textContent:"The bot takes the other colour.",style:"margin-top:4px"}));
-    }
-    host.append(cp);
-    if(!d.color){ host.append(hintLine("Pick your colour to start tapping.")); return; }
-    if(d.bot && (!Array.isArray(d.botSeq)||d.botSeq.length!==R)) d.botSeq=botRBSeq(R);
-    if(d.active==null || d.seq[d.active]!=null){ const f=d.seq.findIndex(x=>x==null); d.active = f<0? R-1 : f; }
-    const done=d.seq.filter(x=>x!=null).length;
-    const prog=el("div","rtap-prog");
-    prog.append(tinyLabel(done<R? ("Hand "+(d.active+1)+" of "+R+" — tap the card you played") : "All "+R+" hands recorded"),
-      Object.assign(el("span","sm mut"),{textContent: done+" / "+R}));
-    host.append(prog);
-    const rail=el("div","card-rail");
-    RB_CARDS.forEach(rk=>{ rail.append(cardBtn(rk, d.color, ()=>{
-      d.seq[d.active]=rk; const f=d.seq.findIndex(x=>x==null); if(f>=0) d.active=f; saveNow(); paint();
-    })); });
-    host.append(rail);
-    const strip=el("div","rtap-strip");
-    for(let i=0;i<R;i++){ const slot=el("button","rtap-slot"+(i===d.active?" active":"")+(d.seq[i]!=null?" filled":"")); slot.type="button";
-      slot.append(Object.assign(el("span","rtap-n"),{textContent:i+1}));
-      if(d.seq[i]!=null){ const mini=cardFace(d.seq[i], d.color); mini.setAttribute("class","cf mini"); slot.append(mini); }
-      slot.onclick=()=>{ d.active=i; paint(); };
-      strip.append(slot);
-    }
-    host.append(strip);
-    // live partner / bot panel
-    if(d.bot){ const shown=d.botSeq.map((t,i)=> i<done? t : null); host.append(partnerPanel("Practice bot", oppColor(d.color), shown, done<R?"playing along":"done")); }
-    else if(linked){ const raw=rbRawSeq(psub); const toks=[]; for(let i=0;i<R;i++) toks.push(raw[i]||null); host.append(partnerPanel(psub.name, psub.color, toks, isDone(psub)?"submitted ✓":"playing live")); }
-    else if(psub){ host.append(hintLine(psub.name+" is here but hasn't picked you back yet.")); }
-    else { host.append(hintLine("Waiting for "+(d.partnerName||"your partner")+" to open the game…")); }
-    const b=el("button","btn big wide",(cur&&isDone(cur))?"Update my cards":"Submit my cards"); b.style.marginTop="14px"; b.style.maxWidth="360px";
-    if(done<R) b.disabled=true;
-    b.onclick=async()=>{
-      if(d.seq.some(x=>x==null)){ toast("Tap a card for every hand"); return; }
-      if(_pairSaveT){ clearTimeout(_pairSaveT); _pairSaveT=null; }
-      await savePair({color:d.color, partner:d.partner, partnerName:d.partnerName, seq:d.seq.join(",")}, true);
-      if(d.bot) await saveBot({ color:oppColor(d.color), seq:d.botSeq.join(",") });
-      lastViewKey=null; toast("Your cards are in"); render();
-    };
-    host.append(b);
-    if(cur && isDone(cur)) host.append(pairSubmittedNote());
-  };
-  paint();
+  const a=String(mine), b=String(theirs); if(a.length!==4||b.length!==4) return null;
+  return { winner: quatroPlay(a.split("").map(Number), b.split("").map(Number)) };
+}
+function pairScore(game, myArr, theirArr, myColor, R){
+  const sc={me:0,them:0,tie:0,done:0};
+  for(let i=0;i<R;i++){ const r=handResult(game, myArr[i], theirArr[i], myColor); if(!r) continue;
+    sc.done++; sc[r.winner]++; }
+  return sc;
+}
+function scoreboard(game, sc, partnerName){
+  const box=el("div","scorebar");
+  const mk=(lbl,v,cls)=>{ const t=el("div","score"+(cls?" "+cls:"")); t.append(Object.assign(el("div","score-k"),{textContent:lbl})); t.append(Object.assign(el("div","score-v"),{textContent:v})); return t; };
+  box.append(mk("You", sc.me, "me"), mk(partnerName||"Partner", sc.them, "them"));
+  if(game==="quatro") box.append(mk("Ties", sc.tie));
+  return box;
+}
+function studentRedBlack(c){ studentPair(c,"redblack"); }
+function studentQuatro(c){ studentPair(c,"quatro"); }
+function studentPair(c, game){
+  const mc=curKey, cf=cfg(game), R=cf.rounds||(game==="redblack"?20:5);
+  const dk=game+"-"+mc, d=draftFor(dk);
+  c.append(Object.assign(el("h2"),{textContent:GAMES[game].name,style:"font-size:1.4rem;margin:6px 0 4px"}));
+  if(d.bot){ pairMatch(c, game, R, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", myColor:(d.color||(d.color=Math.random()<0.5?"red":"black")), mc}); return; }
+  ensureLive(mc);
+  if(pairData && pairData.ended){
+    c.append(hintLine("Your partner left the match."));
+    const b=el("button","btn wide","Back to the waiting room"); b.style.marginTop="10px"; b.style.maxWidth="320px";
+    b.onclick=async()=>{ try{ await fb.ref(OF_DOC(mc,myId)).remove(); }catch(e){} render(); }; c.append(b); return;
+  }
+  if(myPairId && pairData){
+    const partner = String(pairData.a)===String(myId)? pairData.b : pairData.a;
+    const partnerName = (pairData.names&&pairData.names[encodeKey(String(partner))])||"Partner";
+    const myColor = pairData.colors ? pairData.colors[encodeKey(String(myId))] : null;
+    pairMatch(c, game, R, d, {partner, partnerName, myColor, mc}); return;
+  }
+  pairLobby(c, game, mc, R, d);
+}
+function pairLobby(c, game, mc, R, d){
+  c.append(pairRules(game==="redblack"?"Red vs Black":"Quatro Uno",[
+    game==="redblack"
+      ? "Pair up, then each hand tap the card you played. We score each hand live."
+      : "Pair up, then each hand tap your pile order. We work out who won, live.",
+    "Playing with real cards at your desk? Still pair up here and record each hand for live scoring."]));
+  const wr=el("div","lobby"); wr.style.marginTop="14px";
+  if(invIn){
+    const inv=el("div","invite-in");
+    inv.innerHTML="<b>"+esc(invIn.fromName||"A player")+"</b> wants to play with you.";
+    const row=el("div","row"); row.style.gap="8px"; row.style.marginTop="8px";
+    const acc=el("button","btn gold","Accept"); acc.onclick=()=>liveAccept(mc, invIn.from, invIn.fromName);
+    const dec=el("button","ghost-btn","Decline"); dec.onclick=()=>liveDecline(mc);
+    row.append(acc,dec); inv.append(row); wr.append(inv);
+  }
+  wr.append(tinyLabel("Waiting room — tap a classmate to invite them"));
+  if(invSent){
+    const s=el("div","note-box teal"); s.style.margin="8px 0";
+    s.innerHTML="Waiting for <b>"+esc(invSent.toName)+"</b> to accept… ";
+    const cx=el("button","linkbtn","cancel"); cx.onclick=()=>liveCancelInvite(mc); s.append(cx); wr.append(s);
+  }
+  const now=Date.now();
+  const players=Object.values(lobby||{}).filter(p=>p&&p.id&&String(p.id)!==String(myId)&&(now-(p.ts||0)<60000));
+  const list=el("div","lobby-list");
+  if(!players.length) list.append(hintLine("No one else here yet — keep this open; classmates appear as they join."));
+  players.forEach(p=>{ const sel=invSent&&String(invSent.to)===String(p.id);
+    const b=el("button","pair-name"+(sel?" sel":"")); b.textContent=p.name+(p.guest?" · guest":"");
+    b.onclick=()=>{ if(!sel) liveInvite(mc,p.id,p.name); }; list.append(b); });
+  wr.append(list);
+  const botB=el("button","pair-name bot","🤖 Practice bot — play solo"); botB.style.marginTop="12px";
+  botB.onclick=()=>{ d.bot=true; render(); }; wr.append(botB);
+  c.append(wr);
   c.append(liveCount());
 }
-/* G5 — Quatro Uno: pick partner, then tap YOUR pile order each hand. Winners are
-   computed by matching your pile against your partner's at reveal. */
-function studentQuatro(c){
-  const cf=cfg("quatro"), R=cf.rounds||5, cur=mySub();
-  const dk="quatro-"+roundKey(control.activeGame,control.round), d=draftFor(dk);
-  if(cur && d._loaded!==true){
-    if(cur.partner) d.partner=cur.partner; if(cur.partnerName) d.partnerName=cur.partnerName;
-    if(cur.piles){ try{ d.piles=JSON.parse(cur.piles).map(o=>String(o).split("").map(Number)); }catch(e){} }
-    d._loaded=true;
+function pairMatch(c, game, R, d, opts){
+  const {partner, partnerName, myColor, mc, bot}=opts, cur=mySub();
+  // my moves store
+  if(game==="redblack"){
+    if(cur && d._loaded!==true && cur.seq){ d.seq=String(cur.seq).split(",").map(x=>{x=x.trim();return x===""?undefined:x;}); }
+    if(!Array.isArray(d.seq)) d.seq=[]; d.seq.length=R;
+  } else {
+    if(cur && d._loaded!==true && cur.piles){ try{ d.piles=JSON.parse(cur.piles).map(o=>String(o)); }catch(e){} }
+    if(!Array.isArray(d.piles)) d.piles=Array.from({length:R},()=>""); d.piles.length=R;
+    for(let i=0;i<R;i++){ if(typeof d.piles[i]!=="string"){ d.piles[i]=Array.isArray(d.piles[i])?d.piles[i].join(""):""; } }
   }
-  if(!Array.isArray(d.piles)) d.piles=Array.from({length:R},()=>[]);
-  if(d.piles.length!==R) d.piles=Array.from({length:R},(_,i)=>d.piles[i]||[]);
-  c.append(Object.assign(el("h2"),{textContent:"Quatro Uno",style:"font-size:1.4rem;margin:6px 0 4px"}));
-  c.append(pairRules("How it was played",[
-    "You and a neighbour each hold cards 1, 2, 3, 4 and secretly stack them into a pile.",
-    "Reveal top cards together: lower card is discarded, higher stays. Equal → both go. A 1 against a 4 → both go.",
-    "First to empty their pile loses.",
-    "Pick your partner, then for each hand tap YOUR four cards in the order you stacked them (top first). We match piles and work out who won."]));
-  const saveNow=()=>schedulePairSave({partner:d.partner,partnerName:d.partnerName,piles:JSON.stringify(d.piles.map(p=>p.join("")))});
-  const host=el("div"); host.style.marginTop="14px"; c.append(host);
-  const paint=()=>{
-    host.replaceChildren();
-    host.append(partnerPicker(d, paint));
-    if(!d.partner){ host.append(hintLine("Pick your partner (or the practice bot) to start.")); return; }
-    const psub = d.bot ? null : subs.find(s=> String(s.studentId)===String(d.partner));
-    const linked = !!(psub && String(psub.partner)===String(myId));
-    if(d.bot && (!Array.isArray(d.botPiles)||d.botPiles.length!==R)) d.botPiles=botPiles(R);
-    const doneCount=d.piles.filter(p=>p.length===4).length;
-    d.piles.forEach((pile,i)=>{
-      const card=el("div","q-round");
-      card.append(tinyLabel("Hand "+(i+1)+" — your pile (top → bottom)"));
-      card.append(orderingPicker(pile, seq=>{ d.piles[i]=seq; saveNow(); paint(); }));
-      // live partner pile for this hand
-      let opp=null, oppKind="black";
-      if(d.bot && i<doneCount) opp=String(d.botPiles[i]).split("").map(Number);
-      else if(linked){ try{ const pp=JSON.parse(psub.piles||"[]"); if(pp[i]) opp=String(pp[i]).split("").map(Number); }catch(e){} }
-      if(opp){ const row=el("div","q-oppline"); row.append(Object.assign(el("span","sm mut"),{textContent:(d.bot?"Bot":psub&&psub.name||"Partner")+"'s pile:"}));
-        row.append(miniCardRow(opp.map(n=>String(n)), null)); card.append(row); }
-      host.append(card);
-    });
-    // partner status line
-    if(d.bot) host.append(hintLine(doneCount<R?"Practice bot is playing along…":"Practice bot is ready."));
-    else if(linked) host.append(hintLine(psub.name+" — "+(isDone(psub)?"submitted ✓":"playing live")));
-    else if(psub) host.append(hintLine(psub.name+" hasn't picked you back yet."));
-    else host.append(hintLine("Waiting for "+(d.partnerName||"your partner")+" to open the game…"));
-    const complete=d.piles.every(p=>p.length===4);
-    const b=el("button","btn big wide",(cur&&isDone(cur))?"Update my piles":"Submit my piles"); b.style.marginTop="8px"; b.style.maxWidth="360px";
-    if(!complete) b.disabled=true;
-    b.onclick=async()=>{
-      if(!d.piles.every(p=>p.length===4)){ toast("Finish all "+R+" piles (tap all four cards)"); return; }
-      if(_pairSaveT){ clearTimeout(_pairSaveT); _pairSaveT=null; }
-      await savePair({partner:d.partner, partnerName:d.partnerName, piles:JSON.stringify(d.piles.map(p=>p.join("")))}, true);
-      if(d.bot) await saveBot({ piles:JSON.stringify(d.botPiles) });
-      lastViewKey=null; toast("Your piles are in"); render();
-    };
-    host.append(b);
-    if(cur && isDone(cur)) host.append(pairSubmittedNote());
+  d._loaded=true;
+  // opponent moves
+  let theirs=[];
+  if(bot){
+    if(game==="redblack"){ if(!Array.isArray(d.botSeq)||d.botSeq.length!==R) d.botSeq=botRBSeq(R); }
+    else { if(!Array.isArray(d.botPiles)||d.botPiles.length!==R) d.botPiles=botPiles(R); }
+  }
+  const psub = bot? null : subs.find(s=> String(s.studentId)===String(partner));
+  const myArr = game==="redblack"? d.seq.map(x=>x==null?null:x) : d.piles.map(p=> (typeof p==="string"&&p.length===4)?p:null);
+  const myFilled = i=> game==="redblack"? (d.seq[i]!=null) : (typeof d.piles[i]==="string"&&d.piles[i].length===4);
+  const theirMove = i=>{
+    if(bot){ if(!myFilled(i)) return null; return game==="redblack"? d.botSeq[i] : d.botPiles[i]; }
+    if(!psub) return null;
+    if(game==="redblack"){ const raw=rbRawSeq(psub); return raw[i]||null; }
+    try{ const pp=JSON.parse(psub.piles||"[]"); return pp[i]?String(pp[i]):null; }catch(e){ return null; }
   };
-  paint();
-  c.append(liveCount());
+  for(let i=0;i<R;i++) theirs[i]=theirMove(i);
+  const sc=pairScore(game, myArr, theirs, myColor, R);
+  // header: opponent + colour + score
+  const head=el("div","match-head");
+  const vs=el("div","match-vs");
+  if(game==="redblack"){ vs.innerHTML="You <b>"+(myColor==="red"?"Red ♥":"Black ♠")+"</b> vs <b>"+esc(partnerName)+"</b> "+(myColor==="red"?"Black ♠":"Red ♥"); }
+  else { vs.innerHTML="You vs <b>"+esc(partnerName)+"</b>"; }
+  head.append(vs); c.append(head);
+  c.append(scoreboard(game, sc, partnerName));
+  // current hand (sequential — first unplayed)
+  let active=-1; for(let i=0;i<R;i++){ if(!myFilled(i)){ active=i; break; } }
+  const allMine = active<0;
+  const commit=(after)=>{ const payload = game==="redblack"
+      ? {color:myColor,partner,partnerName,seq:d.seq.map(x=>x==null?"":x).join(",")}
+      : {partner,partnerName,piles:JSON.stringify(d.piles.map(p=>typeof p==="string"?p:""))};
+    const done = game==="redblack"? d.seq.every(x=>x!=null) : d.piles.every(p=>typeof p==="string"&&p.length===4);
+    savePair(payload, done);
+    if(done && bot){ if(game==="redblack") saveBot({color:oppColor(myColor), seq:d.botSeq.join(",")}); else saveBot({piles:JSON.stringify(d.botPiles)}); }
+    if(after) after(done); render();
+  };
+  if(active>=0){
+    const prog=el("div","rtap-prog");
+    prog.append(tinyLabel("Hand "+(active+1)+" of "+R+" — "+(game==="redblack"?"tap the card you played":"tap your pile, top first")),
+      Object.assign(el("span","sm mut"),{textContent:sc.done+" scored"}));
+    c.append(prog);
+    if(game==="redblack"){
+      const rail=el("div","card-rail");
+      RB_CARDS.forEach(rk=> rail.append(cardBtn(rk, myColor, ()=>{ d.seq[active]=rk; commit(); })));
+      c.append(rail);
+    } else {
+      const cardEl=el("div","q-round");
+      const build = Array.isArray(d._build)? d._build : (d._build=[]);
+      cardEl.append(orderingPicker(build, seq=>{
+        d._build=seq;
+        if(seq.length===4){ d.piles[active]=seq.join(""); d._build=[]; commit(); }
+        else render();
+      }));
+      c.append(cardEl);
+    }
+  } else if(!bot && sc.done<R){
+    c.append(hintLine("You've played all "+R+" hands — waiting for "+esc(partnerName)+" to finish so the last hands can be scored."));
+  } else {
+    c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:12px",innerHTML:"<b>Match complete.</b> Final score — you "+sc.me+", "+esc(partnerName)+" "+sc.them+(game==="quatro"?(", ties "+sc.tie):"")+". Results appear when your instructor reveals."}));
+  }
+  // history of scored hands (most recent first)
+  const hist=el("div","match-hist");
+  const rows=[];
+  for(let i=0;i<R;i++){ const r=handResult(game, myArr[i], theirs[i], myColor); if(!r) continue;
+    rows.push({i, r, mine:myArr[i], theirs:theirs[i]}); }
+  if(rows.length){
+    hist.append(tinyLabel("Hands so far"));
+    rows.slice().reverse().slice(0,8).forEach(({i,r,mine,theirs})=>{
+      const row=el("div","hist-row");
+      row.append(Object.assign(el("span","hist-n"),{textContent:"#"+(i+1)}));
+      if(game==="redblack"){ const m=cardFace(mine,myColor); m.setAttribute("class","cf mini"); const t=cardFace(theirs, oppColor(myColor)); t.setAttribute("class","cf mini");
+        const mw=el("span","mini-slot"); mw.append(m); const tw=el("span","mini-slot"); tw.append(t);
+        row.append(mw, Object.assign(el("span","hist-vs"),{textContent:"vs"}), tw);
+      } else {
+        row.append(miniCardRow(String(mine).split(""), null), Object.assign(el("span","hist-vs"),{textContent:"vs"}), miniCardRow(String(theirs).split(""), null));
+      }
+      const badge=el("span","hist-res "+(r.winner==="me"?"win":r.winner==="them"?"lose":"tie"));
+      badge.textContent = r.winner==="me"?"You win":r.winner==="them"?(partnerName+" wins"):"Tie";
+      row.append(badge); hist.append(row);
+    });
+    c.append(hist);
+  }
+  // controls
+  if(!bot){ const lv=el("button","btn danger","Leave match"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
+  else { const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="14px"; lv.onclick=()=>{ d.bot=false; const dk=game+"-"+curKey; delete gameDraft[dk]; render(); }; c.append(lv); }
 }
 /* Tap the number cards in stacking order to build a 4-permutation; ↺ resets.
    Calls onChange(arrayOfNums) — the caller repaints from its own draft state. */

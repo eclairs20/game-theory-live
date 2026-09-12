@@ -32,6 +32,10 @@
         ".read": true,
         ".write": true
       },
+      "live": {
+        ".read": true,
+        ".write": true
+      },
       "subs": {
         ".read": true,
         "$sub": {
