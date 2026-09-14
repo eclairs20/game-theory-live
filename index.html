@@ -105,6 +105,8 @@ code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding
 .btn.neutral:hover{border-color:var(--accent)}
 .btn.danger{background:var(--surface); color:var(--bad); border-color:var(--bad); box-shadow:none}
 .btn.danger:hover{background:var(--bad); color:#fff}
+.sandbox-bar{background:var(--gold); color:#1c1500; font-weight:700; font-size:.82rem; text-align:center; padding:8px 12px; border-radius:var(--radius-sm); margin:0 0 14px; letter-spacing:.01em}
+.ghost-btn.hold-on{border-color:var(--gold); color:var(--gold); background:var(--gold-wash); font-weight:700}
 .btn.big{padding:15px 26px; font-size:1.05rem}
 .btn.wide{width:100%}
 
@@ -422,6 +424,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     <button id="roleBtn" class="ghost-btn">Instructor</button>
     <button id="themeBtn" class="ghost-btn" title="Toggle theme">◐</button>
   </div>
+  <div id="sandboxBar" class="sandbox-bar" hidden></div>
   <div id="app"><div class="card stage center" style="padding:60px"><div class="mut">Loading the session…</div></div></div>
   <footer class="footer">A <b>Strategic Interaction Lab</b> instrument · designed by <b>Prof. Sonia</b>, IIM Lucknow</footer>
 </div>
@@ -454,6 +457,10 @@ const CLASS_PARAM = (function(){
 })();
 const ROOM = CLASS_PARAM || "main";
 const HAS_CLASS_PARAM = CLASS_PARAM != null;
+/* Sandbox rooms are for testing — flagged with a banner and kept out of the global
+   course registry / auto-routing so real students never land in one. */
+const SANDBOX_ID = "sandbox";
+const isSandbox = ()=> /^(sandbox|dev|test)(-.*)?$/i.test(ROOM);
 
 /* Instructor allowlist. Any Google account whose email is listed here gets the
    console straight away on sign-in — no passcode. Add EVERY instructor's Google
@@ -790,8 +797,11 @@ async function writeRoster(list){
   try{
     await fb.ref(ROSTER_PATH()).set(list);
     // Register this course in the global picker and index each email→course for auto-routing.
-    try{ if(!courses[ROOM]) await fb.ref(COURSES_PATH+"/"+ROOM).update({name:(courses[ROOM]&&courses[ROOM].name)||ROOM, createdAt:Date.now()}); }catch(e){}
-    try{ const up={}; list.forEach(e=>{ if(e.email) up[encodeKey(String(e.email).toLowerCase())+"/"+ROOM]=true; }); if(Object.keys(up).length) await fb.ref("enroll").update(up); }catch(e){}
+    // Sandbox rooms are deliberately NOT registered, so no one is ever auto-routed into a test room.
+    if(!isSandbox()){
+      try{ if(!courses[ROOM]) await fb.ref(COURSES_PATH+"/"+ROOM).update({name:(courses[ROOM]&&courses[ROOM].name)||ROOM, createdAt:Date.now()}); }catch(e){}
+      try{ const up={}; list.forEach(e=>{ if(e.email) up[encodeKey(String(e.email).toLowerCase())+"/"+ROOM]=true; }); if(Object.keys(up).length) await fb.ref("enroll").update(up); }catch(e){}
+    }
     return true;
   }catch(e){ toast("Couldn't save roster"); return false; }
 }
@@ -889,6 +899,11 @@ function syncBrand(){
   // narrow phones (see .brand-course) and stays inline on wider screens.
   s.innerHTML="Strategic Interaction Lab"+(nm?" <span class=\"brand-course\">("+esc(nm)+")</span>":"");
 }
+function syncSandbox(){
+  const b=$("#sandboxBar"); if(!b) return;
+  if(isSandbox()){ b.hidden=false; b.textContent="🧪 SANDBOX — test room “"+ROOM+"”. Real students never see this."; }
+  else b.hidden=true;
+}
 /* Instructor-only course switcher in the top bar. Rebuilt only when the course set
    changes, so it doesn't reset (or close) while live counts tick during a round. */
 let _courseSelSig=null;
@@ -915,7 +930,7 @@ function viewKey(){
   return [role, unlocked, isTeacher(), authUser?authUser.email:"", myName||"", routed,
     (REQUIRE_GOOGLE&&!authUser)?"signin":"", authResolved,
     control?control.activeGame:"", control?control.phase:"", control?control.round:"",
-    control?control.session:"", control?control.section:"", myCourses().length].join("|");
+    control?control.session:"", control?control.section:"", control&&control.hold?"hold":"", myCourses().length].join("|");
 }
 let lastViewKey=null, presentMode=false, lessonMode=null;
 /* In-progress form state for the multi-field pair games (quatro/redblack), kept OUTSIDE
@@ -927,6 +942,7 @@ function render(){
   applyIdentity();
   syncPhasePill();
   syncBrand();
+  syncSandbox();
   syncCourseSel();
   const app = $("#app");
   // Instructor "collection" view — full-screen, projected to the class. Shows
@@ -1076,6 +1092,15 @@ function joinPanel(){
 }
 function studentView(){
   const g=control.activeGame;
+  // Instructor "hold": freeze what the class sees (a neutral waiting screen) while the
+  // instructor sets up or tests, regardless of game/phase. Instructors are unaffected.
+  if(control.hold){
+    const c=el("div","card stage center"); c.style.padding="clamp(30px,6vw,64px)";
+    c.append(el("div","eyebrow gold","Please wait"),
+      Object.assign(el("h2"),{textContent:"Your instructor will start the activity shortly",style:"font-size:1.5rem;margin:8px 0"}),
+      el("p","lead","Stay on this page — it updates automatically when the class begins."));
+    return c;
+  }
   if(control.phase==="revealed"){
     if(!haveIdentity()){ const c=el("div","card stage"); c.append(el("div","eyebrow gold",GAMES[g].name)); const w=el("div"); w.style.marginTop="8px"; w.append(joinPanel()); c.append(w); return c; }
     const wrap=el("div","stack"); wrap.append(identityBar(), analysisView(false)); return wrap;
@@ -2424,6 +2449,15 @@ function sessionTile(){
     }
     bar.append(g2);
   }
+  bar.append(el("div","ab-spacer"));
+  const g3=el("div","ab-grp");
+  g3.append(el("span","tinylabel","Students"));
+  const hold=!!(control&&control.hold);
+  const hb=el("button","ghost-btn"+(hold?" hold-on":""));
+  hb.textContent = hold ? "On hold — Go live ▶" : "⏸ Hold";
+  hb.title = hold ? "Students see a waiting screen. Click to go live." : "Freeze what students see (a waiting screen) while you set up or test.";
+  hb.onclick=()=>writeControl({hold: !hold});
+  g3.append(hb); bar.append(g3);
   return bar;
 }
 
@@ -2658,6 +2692,22 @@ function teacherConsole(){
   sRost.append(rosterEditor());
   rail.append(sRost);
 
+  // Testing sandbox — a throwaway room real students never land in.
+  const sTest=el("div","rail-sec");
+  sTest.append(Object.assign(el("h3"),{textContent:"Testing sandbox"}));
+  const sandLink=location.origin+location.pathname+"?class="+SANDBOX_ID;
+  if(isSandbox()){
+    sTest.append(Object.assign(el("div","sm mut"),{textContent:"You're in the sandbox — a safe test room. Share its link with anyone you want to help test; real students never see it.",style:"margin:-4px 0 8px"}));
+    const cp=el("button","ghost-btn wide","Copy sandbox link to share"); cp.onclick=()=>{ try{navigator.clipboard.writeText(sandLink); toast("Sandbox link copied");}catch(e){toast(sandLink);} };
+    sTest.append(cp);
+  } else {
+    sTest.append(Object.assign(el("div","sm mut"),{textContent:"Try new games or run a rehearsal in a throwaway room. It's isolated — real students never land there, and its data never mixes with this class.",style:"margin:-4px 0 8px"}));
+    const open=el("button","ghost-btn wide","Open the sandbox room"); open.onclick=()=>{ try{ location.search="?class="+SANDBOX_ID; }catch(e){} };
+    const cp=el("button","ghost-btn wide","Copy sandbox link"); cp.style.marginTop="6px"; cp.onclick=()=>{ try{navigator.clipboard.writeText(sandLink); toast("Sandbox link copied");}catch(e){toast(sandLink);} };
+    sTest.append(open, cp);
+  }
+  rail.append(sTest);
+
   // Explicit log-out for shared classroom PCs — closes the console and (if signed in) Google.
   const sOut=el("div","rail-sec");
   sOut.append(Object.assign(el("h3"),{textContent:"This device"}));
@@ -2667,6 +2717,11 @@ function teacherConsole(){
   c.append(rail);
 
   const main=el("div","stack");
+  if(control&&control.hold){
+    const hn=el("div","note-box"); hn.style.borderColor="var(--gold)"; hn.style.background="var(--gold-wash)";
+    hn.innerHTML="<b>Students are on hold.</b> Everyone in this room sees a waiting screen — pick, open and preview freely. Press <b>Go live</b> (top bar) when you're ready for them to play.";
+    main.append(hn);
+  }
   const sBan=scheduleBanner(); if(sBan) main.append(sBan);
   main.append(sessionTile());
   if(control&&control.activeGame) main.append(roundActionBar());
@@ -2832,8 +2887,8 @@ function paramEditor(){
   else if(g==="quatro" || g==="redblack"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent: g==="redblack"
-      ? "Hands each pair plays with physical cards. Each player picks their partner + colour and taps their own cards; the class joint distribution and win split aggregate on reveal."
-      : "Hands each pair plays. Each player picks their partner and taps their own pile each hand; winners are computed and results aggregate on reveal."})); }
+      ? "Hands each pair plays. Students pair up in a waiting room, are dealt opposite colours, and tap their card each hand for live scoring; the class joint distribution and win split aggregate on reveal."
+      : "Hands each pair plays. Students pair up in a waiting room and tap their pile each hand; winners are computed live and results aggregate on reveal."})); }
   else { const grid=el("div","paramgrid");
     grid.append(mk("Endowment (marks)","E",cf.E),mk("Pot multiplier","mult",cf.mult,"0.1")); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"The pot is ×multiplier then split among all players. Keep multiplier > 1 (socially worth it) but < class size (so each person's share of a given mark, multiplier÷N, stays below 1 — free-riding tempting)."})); }

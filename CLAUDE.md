@@ -68,6 +68,19 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   taps to apply (or `dismiss`). Section-less rows nag only on a session mismatch (the common
   both-sections-same-day case); section rows also nag if the running section isn't scheduled that day.
   Edited via the console's **Session schedule** card (`scheduleEditor`, paste like the roster).
+- **Students on hold** — `control.hold` (boolean). When true, every student in the room sees a
+  neutral "your instructor will start shortly" screen (checked at the top of `studentView`,
+  overriding game/phase/reveal); instructors are unaffected. Toggled from the **Students** control in
+  `sessionTile` ("⏸ Hold" / "On hold — Go live ▶"); the console shows a reminder note while held.
+  `hold` is part of `viewKey()` so flipping it re-renders students immediately. Use it to freeze what
+  the class sees while setting up or testing.
+- **Sandbox / testing rooms** — a room whose id matches `isSandbox()` (`sandbox`, `dev`, `test`, or
+  `‹those›-…`) is a throwaway test room: a gold `#sandboxBar` banner shows for everyone in it
+  (`syncSandbox()`), and `writeRoster` **skips** the global course/enrollment registration for it, so
+  no real student is ever auto-routed into a test room. The console's **Testing sandbox** rail
+  section opens `?class=sandbox` and copies its link to share with testers (who join as guests with a
+  Google sign-in). Real students only ever see their own room, so building/playing in a sandbox is
+  invisible to them.
 - The data layer is a thin adapter over the Firebase compat SDK; the app only uses
   `.ref().on()/.once()/.set()/.update()/.remove()`. Preserve these paths and shapes.
 
