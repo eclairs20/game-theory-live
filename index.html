@@ -1383,10 +1383,10 @@ const LOBBY_DOC = (mc,id)=> LIVE_ROOT(mc)+"/lobby/"+encodeKey(id);
 const INVITE_DOC = (mc,id)=> LIVE_ROOT(mc)+"/invite/"+encodeKey(id);   // invite addressed TO id
 const OF_DOC = (mc,id)=> LIVE_ROOT(mc)+"/of/"+encodeKey(id);           // id → pairId
 const PAIR_DOC = (mc,pid)=> LIVE_ROOT(mc)+"/pairs/"+pid;
-let liveCtx=null, lobby={}, invIn=null, invSent=null, myPairId=null, pairData=null, _pairRef=null, _hbT=null;
+let liveCtx=null, lobby={}, invIn=null, invSent=null, myPairId=null, pairData=null, _pairRef=null, _hbT=null, liveErr=null;
 function attachLive(mc){
-  liveCtx=mc; lobby={}; invIn=null; myPairId=null; pairData=null; _pairRef=null;
-  fb.ref(LIVE_ROOT(mc)+"/lobby").on("value", s=>{ lobby=s.val()||{}; render(); }, e=>{});
+  liveCtx=mc; lobby={}; invIn=null; myPairId=null; pairData=null; _pairRef=null; liveErr=null;
+  fb.ref(LIVE_ROOT(mc)+"/lobby").on("value", s=>{ lobby=s.val()||{}; liveErr=null; render(); }, e=>{ liveErr=(e&&e.code)||"read-denied"; render(); });
   fb.ref(INVITE_DOC(mc,myId)).on("value", s=>{ invIn=s.val()||null; render(); }, e=>{});
   fb.ref(OF_DOC(mc,myId)).on("value", s=>{ onMyPair(mc, s.val()); }, e=>{});
   liveJoin(mc);
@@ -1409,7 +1409,8 @@ function detachLive(){
 }
 function ensureLive(mc){ if(liveCtx!==mc) attachLive(mc); }
 async function liveJoin(mc){
-  try{ const r=fb.ref(LOBBY_DOC(mc,myId)); await r.set({id:myId,name:myName||"Player",guest:!!meGuest,ts:Date.now()}); if(r.onDisconnect) r.onDisconnect().remove(); }catch(e){}
+  try{ const r=fb.ref(LOBBY_DOC(mc,myId)); await r.set({id:myId,name:myName||"Player",guest:!!meGuest,ts:Date.now()}); if(r.onDisconnect) r.onDisconnect().remove(); liveErr=null; }
+  catch(e){ liveErr=(e&&e.code)||"write-denied"; render(); }
 }
 async function liveInvite(mc,toId,toName){ try{ await fb.ref(INVITE_DOC(mc,toId)).set({from:myId,fromName:myName||"Player",to:toId,ts:Date.now()}); invSent={to:toId,toName}; render(); }catch(e){ toast("Couldn't invite"); } }
 async function liveCancelInvite(mc){ if(!invSent) return; try{ await fb.ref(INVITE_DOC(mc,invSent.to)).remove(); }catch(e){} invSent=null; render(); }
@@ -1500,7 +1501,13 @@ function pairLobby(c, game, mc, R, d){
     const dec=el("button","ghost-btn","Decline"); dec.onclick=()=>liveDecline(mc);
     row.append(acc,dec); inv.append(row); wr.append(inv);
   }
+  if(liveErr){
+    const er=el("div","note-box"); er.style.borderColor="var(--bad)"; er.style.background="rgba(210,31,60,.08)";
+    er.innerHTML="<b>Waiting room can't connect.</b> Your presence couldn't be saved (<code>"+esc(String(liveErr))+"</code>) — usually the Firebase rules need re-publishing to allow the <code>live</code> node. Until then, pairing won't work; the practice bot below still does.";
+    wr.append(er);
+  }
   wr.append(tinyLabel("Waiting room — tap a classmate to invite them"));
+  wr.append(Object.assign(el("div","sm mut"),{textContent:"You're here as "+(myName||"Player")+(meGuest?" (guest)":"")+". You won't see your own name below."}));
   if(invSent){
     const s=el("div","note-box teal"); s.style.margin="8px 0";
     s.innerHTML="Waiting for <b>"+esc(invSent.toName)+"</b> to accept… ";
