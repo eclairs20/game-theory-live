@@ -1312,10 +1312,17 @@ function pairSubmittedNote(){
    a red/black suited card (G6); a hex colour draws a plain number card (G5). */
 const RB_CARDS=["K","A","2","3"];                 // "A" is the ace, worth 1
 const Q_COLORS={1:"#d21f3c",2:"#c77d0a",3:"#2e8b57",4:"#2f6fb0"};
+const CARD_SUITS=["♠","♥","♦","♣"];
+const RED_SUITS={"♥":1,"♦":1};
+/* Two distinct suits at random — for a Quatro Uno pair, each player holds one suit. */
+function pickTwoSuits(){ const s=CARD_SUITS.slice().sort(()=>Math.random()-0.5); return [s[0],s[1]]; }
+/* `kind`: "red"/"black" (G6 — big centre suit), a suit char ♠♥♦♣ (G5 — number card in that
+   suit, red for ♥/♦), or a hex colour (legacy number card, no suit). */
 function cardFace(rank, kind){
   const isRB=(kind==="red"||kind==="black");
-  const ink=kind==="red"?"#d21f3c":kind==="black"?"#161616":kind;
-  const suit=kind==="red"?"♥":kind==="black"?"♠":"";
+  const isSuit=(typeof kind==="string" && CARD_SUITS.indexOf(kind)>=0);
+  const ink = kind==="red"?"#d21f3c" : kind==="black"?"#161616" : isSuit?(RED_SUITS[kind]?"#d21f3c":"#161616") : (kind||"#161616");
+  const suit = kind==="red"?"♥" : kind==="black"?"♠" : isSuit?kind : "";
   const s=svgEl("svg",{viewBox:"0 0 60 84","class":"cf",width:"60",height:"84","aria-hidden":"true"});
   s.append(svgEl("rect",{x:2,y:2,width:56,height:80,rx:8,fill:"#fbfaf5",stroke:"#ded8c8","stroke-width":"1.5"}));
   s.append(svgEl("text",{x:8,y:20,fill:ink,"font-size":"17","font-weight":"700","font-family":"IBM Plex Mono"},String(rank)));
@@ -1384,8 +1391,9 @@ function cardStack(tokens, kind){
     const f=cardFace(t, kind==null?Q_COLORS[Number(t)]:kind); f.setAttribute("class","cf mini"); w.append(f); box.append(w); });
   return box;
 }
-/* One scored hand, showing YOUR play vs the opponent's, clearly labelled. */
-function matchHandCard(game, i, r, mine, theirs, myColor, partnerName){
+/* One scored hand, showing YOUR play vs the opponent's, clearly labelled. myKind/partnerKind
+   are the card "kind" for each side (G6 colour, or a G5 suit char). */
+function matchHandCard(game, i, r, mine, theirs, myKind, partnerKind, partnerName){
   const card=el("div","hist-card");
   const head=el("div","hist-head");
   head.append(Object.assign(el("span","hist-n"),{textContent:"Hand "+(i+1)}));
@@ -1395,11 +1403,11 @@ function matchHandCard(game, i, r, mine, theirs, myColor, partnerName){
   const side=(who, tokens, kind, isMe, won)=>{
     const rowEl=el("div","hist-side"+(won?" won":""));
     rowEl.append(Object.assign(el("span","hist-who"+(isMe?" me":" them")),{textContent:who}));
-    rowEl.append(game==="redblack" ? oneCard(tokens, kind) : cardStack(String(tokens).split(""), null));
+    rowEl.append(game==="redblack" ? oneCard(tokens, kind) : cardStack(String(tokens).split(""), kind));
     return rowEl;
   };
-  card.append(side("You", mine, myColor, true, r.winner==="me"));
-  card.append(side(partnerName, theirs, oppColor(myColor), false, r.winner==="them"));
+  card.append(side("You", mine, myKind, true, r.winner==="me"));
+  card.append(side(partnerName, theirs, partnerKind, false, r.winner==="them"));
   return card;
 }
 function partnerPanel(name, kind, tokens, note){
@@ -1457,11 +1465,12 @@ async function liveAccept(mc,fromId,fromName){
   const ids=[String(myId),String(fromId)].sort();          // raw ids (values)
   const pid=ids.map(encodeKey).join("~");                    // key-safe (emails have dots)
   const redFirst=Math.random()<0.5;
-  const colors={}, names={};
+  const colors={}, names={}, suits={};
   colors[encodeKey(ids[0])]=redFirst?"red":"black"; colors[encodeKey(ids[1])]=redFirst?"black":"red";
+  const sw=pickTwoSuits(); suits[encodeKey(ids[0])]=sw[0]; suits[encodeKey(ids[1])]=sw[1];   // G5: a distinct suit each
   names[encodeKey(String(myId))]=myName||"Player"; names[encodeKey(String(fromId))]=fromName||"Player";
   try{
-    await fb.ref(PAIR_DOC(mc,pid)).set({a:ids[0],b:ids[1],colors,names,ts:Date.now()});
+    await fb.ref(PAIR_DOC(mc,pid)).set({a:ids[0],b:ids[1],colors,suits,names,ts:Date.now()});
     await fb.ref(OF_DOC(mc,myId)).set(pid);
     await fb.ref(OF_DOC(mc,fromId)).set(pid);
     await fb.ref(INVITE_DOC(mc,myId)).remove();
@@ -1521,7 +1530,7 @@ function studentPair(c, game){
     const partner = String(pairData.a)===String(myId)? pairData.b : pairData.a;
     const partnerName = (pairData.names&&pairData.names[encodeKey(String(partner))])||"Partner";
     const myColor = pairData.colors ? pairData.colors[encodeKey(String(myId))] : null;
-    pairMatch(c, game, R, d, {partner, partnerName, myColor, mc}); return;
+    pairMatch(c, game, R, d, {partner, partnerName, myColor, suits:pairData.suits, mc}); return;
   }
   pairLobby(c, game, mc, R, d);
 }
@@ -1577,6 +1586,11 @@ function pairMatch(c, game, R, d, opts){
     for(let i=0;i<R;i++){ if(typeof d.piles[i]!=="string"){ d.piles[i]=Array.isArray(d.piles[i])?d.piles[i].join(""):""; } }
   }
   d._loaded=true;
+  // Card "kind" for each side: G6 → colour (red/black); G5 → a distinct suit per player.
+  let myKind, partnerKind;
+  if(game==="redblack"){ myKind=myColor; partnerKind=oppColor(myColor); }
+  else if(bot){ if(!d.suit){ const sw=pickTwoSuits(); d.suit=sw[0]; d.botSuit=sw[1]; } myKind=d.suit; partnerKind=d.botSuit; }
+  else { const su=opts.suits||{}; myKind=su[encodeKey(String(myId))]||"♠"; partnerKind=su[encodeKey(String(partner))]||(myKind==="♠"?"♥":"♠"); }
   // opponent moves
   let theirs=[];
   if(bot){
@@ -1598,7 +1612,7 @@ function pairMatch(c, game, R, d, opts){
   const head=el("div","match-head");
   const vs=el("div","match-vs");
   if(game==="redblack"){ vs.innerHTML="You <b>"+(myColor==="red"?"Red ♥":"Black ♠")+"</b> vs <b>"+esc(partnerName)+"</b> "+(myColor==="red"?"Black ♠":"Red ♥"); }
-  else { vs.innerHTML="You vs <b>"+esc(partnerName)+"</b>"; }
+  else { vs.innerHTML="You <b>"+myKind+"</b> vs <b>"+esc(partnerName)+"</b> "+partnerKind; }
   head.append(vs); c.append(head);
   c.append(scoreboard(game, sc, partnerName));
   // current hand (sequential — first unplayed)
@@ -1624,11 +1638,11 @@ function pairMatch(c, game, R, d, opts){
     } else {
       const cardEl=el("div","q-round");
       const build = Array.isArray(d._build)? d._build : (d._build=[]);
-      cardEl.append(tinyLabel("Tap your four cards in play order — your first tap is the TOP of the pile"));
+      cardEl.append(tinyLabel("Your cards are "+myKind+" — tap them in play order; your first tap is the TOP of the pile"));
       // live preview of the pile you're building (overlapping, top on the left)
       const prev=el("div","q-build");
       if(build.length){
-        prev.append(Object.assign(el("span","q-buildlbl"),{textContent:"Top ▸"}), cardStack(build.map(String), null));
+        prev.append(Object.assign(el("span","q-buildlbl"),{textContent:"Top ▸"}), cardStack(build.map(String), myKind));
         const rs=el("button","q-reset","↺"); rs.type="button"; rs.title="Clear"; rs.onclick=()=>{ d._build=[]; render(); }; prev.append(rs);
       } else prev.append(Object.assign(el("span","sm mut"),{textContent:"No cards picked yet — tap below."}));
       cardEl.append(prev);
@@ -1636,7 +1650,7 @@ function pairMatch(c, game, R, d, opts){
         d._build=seq;
         if(seq.length===4){ d.piles[active]=seq.join(""); d._build=[]; commit(); }
         else render();
-      }));
+      }, myKind));
       c.append(cardEl);
     }
   } else if(!bot && sc.done<R){
@@ -1652,7 +1666,7 @@ function pairMatch(c, game, R, d, opts){
   if(rows.length){
     hist.append(tinyLabel("Hands so far"));
     rows.slice().reverse().slice(0,10).forEach(({i,r,mine,theirs})=>{
-      hist.append(matchHandCard(game, i, r, mine, theirs, myColor, partnerName));
+      hist.append(matchHandCard(game, i, r, mine, theirs, myKind, partnerKind, partnerName));
     });
     c.append(hist);
   }
@@ -1660,14 +1674,14 @@ function pairMatch(c, game, R, d, opts){
   if(!bot){ const lv=el("button","btn danger","Leave match"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
   else { const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="14px"; lv.onclick=()=>{ d.bot=false; const dk=game+"-"+curKey; delete gameDraft[dk]; render(); }; c.append(lv); }
 }
-/* Tap the number cards in stacking order to build a 4-permutation; ↺ resets.
-   Calls onChange(arrayOfNums) — the caller repaints from its own draft state. */
-function orderingPicker(current, onChange){
+/* Tap the number cards in stacking order to build a 4-permutation.
+   Calls onChange(arrayOfNums); `kind` is the player's suit (falls back to per-number colour). */
+function orderingPicker(current, onChange, kind){
   const box=el("div","q-pick");
   const row=el("div","card-rail small");
   [1,2,3,4].forEach(n=>{
     const used=current.indexOf(n);
-    const b=cardBtn(n, Q_COLORS[n], null, "q"+(used>=0?" used":""));
+    const b=cardBtn(n, kind||Q_COLORS[n], null, "q"+(used>=0?" used":""));
     if(used>=0) b.append(Object.assign(el("span","q-pos"),{textContent:used+1}));
     b.onclick=()=>{ if(current.indexOf(n)>=0||current.length>=4) return; onChange(current.concat(n)); };
     row.append(b);

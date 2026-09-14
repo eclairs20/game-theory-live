@@ -134,7 +134,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     than 60s are filtered out). Tap a classmate → a directed **invite** (`invite/‹enc(toId)›`); the
     invitee sees Accept/Decline. **Accept** creates a `pairs/‹pid›` record (`pid` =
     `enc(idA)~enc(idB)`, key-safe) with **colours assigned at random** (guaranteed one Red + one
-    Black — the winner is label-invariant, so random is fine) and sets the `of/‹enc(id)›` → `pid`
+    Black — the winner is label-invariant, so random is fine) and, for G5, **a distinct random suit
+    per player** (`pickTwoSuits` → `pair.suits`, keyed by `enc(id)`; `cardFace` renders a suit char
+    ♠♥♦♣ red/black), so each player's four cards look like a real suit and whose-is-whose is obvious.
+    It also sets the `of/‹enc(id)›` → `pid`
     pointer for both. Each side watches `of/<me>`; when it points at a pid they load the pair and
     enter the match. Works for **guests** too — matching is by presence, not roster identity. The
     listeners attach via `ensureLive(mc)` and are torn down by `detachLive()` (which also removes
