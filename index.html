@@ -263,14 +263,25 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .score.them{background:var(--gold-wash)}
 .score-k{font-size:.72rem; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .score-v{font-family:"IBM Plex Mono",monospace; font-weight:700; font-size:1.6rem; line-height:1.1}
-.match-hist{margin-top:16px}
-.hist-row{display:flex; align-items:center; gap:8px; padding:5px 0; border-top:1px solid var(--line-2)}
-.hist-n{font-family:"IBM Plex Mono",monospace; font-size:.72rem; color:var(--faint); width:30px}
-.hist-vs{font-size:.72rem; color:var(--muted)}
-.hist-res{margin-left:auto; font-size:.74rem; font-weight:700; padding:3px 9px; border-radius:999px}
-.hist-res.win{background:var(--good-wash,rgba(46,139,87,.14)); color:var(--good)}
+.match-hist{margin-top:16px; display:flex; flex-direction:column; gap:8px}
+.hist-card{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:8px 10px}
+.hist-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:6px}
+.hist-n{font-family:"IBM Plex Mono",monospace; font-size:.74rem; color:var(--muted); font-weight:600}
+.hist-res{font-size:.74rem; font-weight:700; padding:3px 9px; border-radius:999px}
+.hist-res.win{background:rgba(46,139,87,.15); color:var(--good)}
 .hist-res.lose{background:rgba(210,31,60,.12); color:var(--bad)}
-.hist-res.tie{background:var(--surface-2); color:var(--muted)}
+.hist-res.tie{background:var(--surface); color:var(--muted)}
+.hist-side{display:flex; align-items:center; gap:10px; padding:3px 6px; border-radius:6px}
+.hist-side.won{background:rgba(46,139,87,.10)}
+.hist-who{font-size:.78rem; font-weight:700; width:88px; flex:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.hist-who.me{color:var(--accent-ink)}
+.hist-who.them{color:var(--gold)}
+.card-stack{display:inline-flex; align-items:center}
+.card-stack .stack-card{position:relative; display:inline-flex}
+.card-stack .stack-card:not(:first-child){margin-left:-15px}
+.card-stack .cf.mini{filter:drop-shadow(-1px 0 1px rgba(0,0,0,.25))}
+.q-build{display:flex; align-items:center; gap:10px; min-height:44px; flex-wrap:wrap}
+.q-buildlbl{font-size:.72rem; font-weight:700; color:var(--muted)}
 /* Full-screen "collection" view projected to the class while submissions are open —
    participation only, never results, so it can't leak the answer. */
 .present{position:fixed; inset:0; z-index:60; background:var(--bg); color:var(--ink);
@@ -1363,6 +1374,34 @@ function miniCardRow(tokens, kind){
     row.append(cell); });
   return row;
 }
+/* One mini card face in a slot. */
+function oneCard(token, kind){ const s=el("span","mini-slot"); const f=cardFace(token, kind==null?Q_COLORS[Number(token)]:kind); f.setAttribute("class","cf mini"); s.append(f); return s; }
+/* A pile as slightly-overlapping cards, left = TOP of the pile (drawn on top). kind
+   null → colour each card by its number (G5). */
+function cardStack(tokens, kind){
+  const box=el("div","card-stack");
+  tokens.forEach((t,i)=>{ const w=el("span","stack-card"); w.style.zIndex=String(tokens.length-i);
+    const f=cardFace(t, kind==null?Q_COLORS[Number(t)]:kind); f.setAttribute("class","cf mini"); w.append(f); box.append(w); });
+  return box;
+}
+/* One scored hand, showing YOUR play vs the opponent's, clearly labelled. */
+function matchHandCard(game, i, r, mine, theirs, myColor, partnerName){
+  const card=el("div","hist-card");
+  const head=el("div","hist-head");
+  head.append(Object.assign(el("span","hist-n"),{textContent:"Hand "+(i+1)}));
+  const badge=el("span","hist-res "+(r.winner==="me"?"win":r.winner==="them"?"lose":"tie"));
+  badge.textContent = r.winner==="me"?"You win":r.winner==="them"?(partnerName+" wins"):"Tie";
+  head.append(badge); card.append(head);
+  const side=(who, tokens, kind, isMe, won)=>{
+    const rowEl=el("div","hist-side"+(won?" won":""));
+    rowEl.append(Object.assign(el("span","hist-who"+(isMe?" me":" them")),{textContent:who}));
+    rowEl.append(game==="redblack" ? oneCard(tokens, kind) : cardStack(String(tokens).split(""), null));
+    return rowEl;
+  };
+  card.append(side("You", mine, myColor, true, r.winner==="me"));
+  card.append(side(partnerName, theirs, oppColor(myColor), false, r.winner==="them"));
+  return card;
+}
 function partnerPanel(name, kind, tokens, note){
   const box=el("div","pair-live");
   const head=el("div","pair-live-head");
@@ -1585,6 +1624,14 @@ function pairMatch(c, game, R, d, opts){
     } else {
       const cardEl=el("div","q-round");
       const build = Array.isArray(d._build)? d._build : (d._build=[]);
+      cardEl.append(tinyLabel("Tap your four cards in play order — your first tap is the TOP of the pile"));
+      // live preview of the pile you're building (overlapping, top on the left)
+      const prev=el("div","q-build");
+      if(build.length){
+        prev.append(Object.assign(el("span","q-buildlbl"),{textContent:"Top ▸"}), cardStack(build.map(String), null));
+        const rs=el("button","q-reset","↺"); rs.type="button"; rs.title="Clear"; rs.onclick=()=>{ d._build=[]; render(); }; prev.append(rs);
+      } else prev.append(Object.assign(el("span","sm mut"),{textContent:"No cards picked yet — tap below."}));
+      cardEl.append(prev);
       cardEl.append(orderingPicker(build, seq=>{
         d._build=seq;
         if(seq.length===4){ d.piles[active]=seq.join(""); d._build=[]; commit(); }
@@ -1604,18 +1651,8 @@ function pairMatch(c, game, R, d, opts){
     rows.push({i, r, mine:myArr[i], theirs:theirs[i]}); }
   if(rows.length){
     hist.append(tinyLabel("Hands so far"));
-    rows.slice().reverse().slice(0,8).forEach(({i,r,mine,theirs})=>{
-      const row=el("div","hist-row");
-      row.append(Object.assign(el("span","hist-n"),{textContent:"#"+(i+1)}));
-      if(game==="redblack"){ const m=cardFace(mine,myColor); m.setAttribute("class","cf mini"); const t=cardFace(theirs, oppColor(myColor)); t.setAttribute("class","cf mini");
-        const mw=el("span","mini-slot"); mw.append(m); const tw=el("span","mini-slot"); tw.append(t);
-        row.append(mw, Object.assign(el("span","hist-vs"),{textContent:"vs"}), tw);
-      } else {
-        row.append(miniCardRow(String(mine).split(""), null), Object.assign(el("span","hist-vs"),{textContent:"vs"}), miniCardRow(String(theirs).split(""), null));
-      }
-      const badge=el("span","hist-res "+(r.winner==="me"?"win":r.winner==="them"?"lose":"tie"));
-      badge.textContent = r.winner==="me"?"You win":r.winner==="them"?(partnerName+" wins"):"Tie";
-      row.append(badge); hist.append(row);
+    rows.slice().reverse().slice(0,10).forEach(({i,r,mine,theirs})=>{
+      hist.append(matchHandCard(game, i, r, mine, theirs, myColor, partnerName));
     });
     c.append(hist);
   }
@@ -1635,8 +1672,6 @@ function orderingPicker(current, onChange){
     b.onclick=()=>{ if(current.indexOf(n)>=0||current.length>=4) return; onChange(current.concat(n)); };
     row.append(b);
   });
-  const reset=el("button","q-reset","↺"); reset.type="button"; reset.title="Clear"; reset.onclick=()=>onChange([]);
-  row.append(reset);
   box.append(row); return box;
 }
 

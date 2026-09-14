@@ -147,7 +147,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     `analyzeRedBlack`/`analyzeQuatro` are unchanged and now zip reliably (both subs carry the real
     partner id). After both players commit hand *i*, `handResult`/`redBlackWinner`/`quatroPlay`
     reveal **who won that hand** and a running **scoreboard** (`pairScore`/`scoreboard`) updates;
-    a **history** list shows each scored hand. `isDone(s)` (`s.done!==false`) still gates every
+    a **history** list (`matchHandCard`) shows each scored hand with explicit **You / opponent**
+    rows (winner's row highlighted); G5 piles render as **overlapping cards** (`cardStack`, top-left =
+    top of pile), and the G5 builder previews the pile you're stacking the same way.
+    `isDone(s)` (`s.done!==false`) still gates every
     "submitted" count (`liveCount`, `presentView`, `attendanceCard`, analyses filter
     `isDone(s) && !s.bot`).
   - **Practice bot** — a "🤖 Practice bot" button in the lobby sets `d.bot` and drops you straight
