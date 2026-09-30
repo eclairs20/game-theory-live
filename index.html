@@ -615,6 +615,27 @@ function hubCfg(){ return (control&&control.hub)||{}; }
 const hubOn = ()=> !!hubCfg().on;
 /* Meetings whose results the instructor has published to students (auto on Reveal). */
 function publishedMap(){ return (control&&control.published)||{}; }
+/* Which specific meetings / lessons the instructor has ticked as visible on the student
+   hub. Empty (the default) = nothing shown, so results/lessons are explicit opt-in per item
+   and there's no ambiguity about what students can see. */
+function hubResultKeys(){ return hubCfg().resultKeys||{}; }
+function hubLessonKeys(){ return hubCfg().lessonKeys||{}; }
+const lessonVisible = id => !!(hubCfg().lessons && hubLessonKeys()[id]);
+/* Interactive lessons available to expose on the hub. Add a new lesson here + a case in
+   launchLesson() and it becomes individually tick-able in the console. */
+const HUB_LESSONS = [ {id:"pareto", name:"Pareto optimality"} ];
+function launchLesson(id){ if(id==="pareto"){ paretoInit("dilemma"); lessonMode="pareto"; render(); } }
+/* Every meeting that has completed submissions, newest first — the menu the instructor
+   ticks from (which results to share) and the source for the student results list. */
+function playedMeetings(){
+  const m={};
+  Object.values(allSubs).forEach(s=>{ if(!s || !s.roundKey || !isDone(s)) return;
+    const pk=parseRoundKey(s.roundKey); if(!pk) return;
+    const e=m[s.roundKey]||(m[s.roundKey]={rk:s.roundKey, game:pk.game, session:pk.session, section:pk.section, round:pk.round, count:0, ts:0});
+    e.count++; e.ts=Math.max(e.ts, s.ts||0);
+  });
+  return Object.values(m).sort((a,b)=>(b.session-a.session)||(a.section<b.section?1:a.section>b.section?-1:0)||(b.ts-a.ts));
+}
 const CTRL_PATH = ()=> ROOM+"/control";
 const SUBS_PATH = ()=> ROOM+"/subs";
 const ROSTER_PATH = ()=> ROOM+"/roster";
@@ -1027,7 +1048,7 @@ function render(){
   if(presentMode && !(isTeacher() && control && control.activeGame)) presentMode=false;
   if(presentMode){ app.replaceChildren(presentView()); return; }
   // Interactive lessons — instructor-launched, or student-launched from the hub (Lessons on).
-  if(lessonMode && !isTeacher() && !(hubOn() && hubCfg().lessons)) lessonMode=null;
+  if(lessonMode && !isTeacher() && !(hubOn() && lessonVisible(lessonMode))) lessonMode=null;
   if(lessonMode==="pareto"){ app.replaceChildren(paretoLesson()); return; }
   // Leave the waiting room / release presence when we're not actively on an open pair game
   // (also when a hub-enabled student is browsing "My page" rather than the live class).
@@ -1209,9 +1230,9 @@ function studentHub(){
     Object.assign(el("p","lead"),{textContent:"Everything you've played, the class results your instructor has shared, and things you can try on your own."}));
   c.append(head);
   c.append(hubMySubs());
-  if(h.results) c.append(hubResults());
+  if(h.results){ const r=hubResults(); if(r) c.append(r); }
   if(h.practice) c.append(hubPractice());
-  if(h.lessons) c.append(hubLessons());
+  if(h.lessons){ const l=hubLessons(); if(l) c.append(l); }
   return c;
 }
 function hubMySubs(){
@@ -1227,21 +1248,21 @@ function hubMySubs(){
   return card;
 }
 function hubResults(){
-  const card=el("div","card stage");
-  card.append(el("div","eyebrow gold","Class results"));
   const mySec=(roster[String(myId).toLowerCase()]||{}).section||"";
-  const pub=publishedMap();
-  // Every meeting that has completed submissions the student could have attended —
-  // i.e. all games played so far in class. The one exception is the meeting that is
-  // live RIGHT NOW and not yet revealed, so an open round's answers never leak here.
+  const pub=publishedMap(), pick=hubResultKeys();
+  // Only the meetings the instructor has explicitly ticked for students, and only those
+  // this student could have attended. The currently-live, not-yet-revealed round is never
+  // shown even if ticked, so an open round's answers can't leak.
   const curLive=(control && control.activeGame && control.phase!=="revealed") ? roundKey(control.activeGame, control.round) : null;
   const seen={};
   Object.values(allSubs).forEach(s=>{ if(s && s.roundKey && isDone(s)) seen[s.roundKey]=Math.max(seen[s.roundKey]||0, s.ts||0); });
-  const keys=Object.keys(seen).filter(rk=>{ if(rk===curLive) return false; const pk=parseRoundKey(rk); if(!pk) return false;
+  const keys=Object.keys(seen).filter(rk=>{ if(!pick[rk] || rk===curLive) return false; const pk=parseRoundKey(rk); if(!pk) return false;
     const played=Object.values(allSubs).some(s=>s && s.roundKey===rk && String(s.studentId)===String(myId));
     return played || !pk.section || pk.section===mySec;      // ones the student could have attended
   }).sort((a,b)=>((pub[b]||seen[b]||0)-(pub[a]||seen[a]||0)));
-  if(!keys.length){ card.append(Object.assign(el("p","lead"),{textContent:"No class results yet — they appear here as games are played in class.",style:"margin-top:6px"})); return card; }
+  if(!keys.length) return null;   // nothing shared to this student → don't render the card at all
+  const card=el("div","card stage");
+  card.append(el("div","eyebrow gold","Class results"));
   if(!studentResK || keys.indexOf(studentResK)<0) studentResK=keys[0];
   const list=el("div","res-list"); list.style.margin="8px 0 4px";
   keys.forEach(rk=>{ const pk=parseRoundKey(rk); const b=el("button","res-btn"+(rk===studentResK?" on":"")); b.type="button";
@@ -1275,10 +1296,14 @@ function practiceMatch(game){
   return c;
 }
 function hubLessons(){
+  const shown=HUB_LESSONS.filter(L=>hubLessonKeys()[L.id]);
+  if(!shown.length) return null;   // instructor hasn't ticked any lesson → hide the card
   const card=el("div","card stage");
   card.append(el("div","eyebrow gold","Interactive lessons"));
   card.append(Object.assign(el("p","lead"),{textContent:"Explore a concept at your own pace — a hands-on visual, no submissions.",style:"margin:6px 0 10px"}));
-  const il=el("button","btn neutral","Pareto optimality"); il.onclick=()=>{ paretoInit("dilemma"); lessonMode="pareto"; render(); }; card.append(il);
+  const row=el("div","row"); row.style.gap="10px"; row.style.flexWrap="wrap";
+  shown.forEach(L=>{ const il=el("button","btn neutral",L.name); il.onclick=()=>launchLesson(L.id); row.append(il); });
+  card.append(row);
   return card;
 }
 function studentView(){
@@ -3051,15 +3076,47 @@ function teacherConsole(){
   // Student page — a personal dashboard students can open between activities. You choose what's on.
   const sHub=el("div","rail-sec");
   sHub.append(Object.assign(el("h3"),{textContent:"Student page"}));
-  sHub.append(Object.assign(el("div","sm mut"),{textContent:"A personal dashboard for students — their own submissions plus anything you switch on below. Class results cover every game played so far this course (the live round stays hidden until you reveal it).",style:"margin:-4px 0 8px"}));
+  sHub.append(Object.assign(el("div","sm mut"),{textContent:"A personal dashboard for students — their own submissions, plus anything you switch on below. You pick exactly which past results and which lessons appear, so there's no doubt about what students can see.",style:"margin:-4px 0 8px"}));
   const hc=hubCfg();
   const setHub=(k,v)=>{ const nh=Object.assign({}, control.hub||{}); nh[k]=v; writeControl({hub:nh}); };
+  const setHubMap=(mp,key,v)=>{ const nh=Object.assign({}, control.hub||{}); const o=Object.assign({}, nh[mp]||{}); if(v) o[key]=true; else delete o[key]; nh[mp]=o; writeControl({hub:nh}); };
+  const setHubMapAll=(mp,o)=>{ const nh=Object.assign({}, control.hub||{}); nh[mp]=o; writeControl({hub:nh}); };
   const toggle=(k,label)=>{ const on=!!hc[k]; const b=el("button","ghost-btn wide"+(on?" hold-on":"")); b.textContent=(on?"✓ ":"")+label; b.style.marginTop="6px"; b.onclick=()=>setHub(k,!on); return b; };
+  const chip=(on,label,onclick)=>{ const b=el("button","res-btn"+(on?" on":"")); b.type="button"; b.textContent=(on?"✓ ":"")+label; b.onclick=onclick; return b; };
   sHub.append(toggle("on","Student dashboard"));
   if(hc.on){
-    sHub.append(toggle("results","Show class results (all games played)"));
+    // Class results — tick the specific meetings students may see.
+    sHub.append(toggle("results","Show class results"));
+    if(hc.results){
+      const wrap=el("div"); wrap.style.margin="6px 0 2px";
+      const meetings=playedMeetings();
+      if(!meetings.length){
+        wrap.append(Object.assign(el("div","sm mut"),{textContent:"No meetings played yet — once students submit, tick which results to share here."}));
+      } else {
+        const bar=el("div","res-list"); bar.style.margin="0 0 4px";
+        const selAll=el("button","res-btn","Select all"); selAll.type="button"; selAll.onclick=()=>{ const o={}; meetings.forEach(m=>o[m.rk]=true); setHubMapAll("resultKeys",o); };
+        const clr=el("button","res-btn","Clear"); clr.type="button"; clr.onclick=()=>setHubMapAll("resultKeys",{});
+        bar.append(selAll,clr); wrap.append(bar);
+        const list=el("div","res-list");
+        meetings.forEach(m=>{ const on=!!(hc.resultKeys&&hc.resultKeys[m.rk]);
+          list.append(chip(on, ((GAMES[m.game]||{}).name||m.game)+" · S"+m.session+(m.section?"."+m.section:"")+" ("+m.count+")", ()=>setHubMap("resultKeys",m.rk,!on))); });
+        wrap.append(list);
+        wrap.append(Object.assign(el("div","sm mut"),{textContent:"Only ticked meetings show on My page. The live round is never shown until you reveal it.",style:"margin-top:6px"}));
+      }
+      sHub.append(wrap);
+    }
     sHub.append(toggle("practice","Practice vs bots"));
+    // Interactive lessons — tick the specific lessons students may open.
     sHub.append(toggle("lessons","Interactive lessons"));
+    if(hc.lessons){
+      const lwrap=el("div"); lwrap.style.margin="6px 0 2px";
+      const list=el("div","res-list");
+      HUB_LESSONS.forEach(L=>{ const on=!!(hc.lessonKeys&&hc.lessonKeys[L.id]);
+        list.append(chip(on, L.name, ()=>setHubMap("lessonKeys",L.id,!on))); });
+      lwrap.append(list);
+      lwrap.append(Object.assign(el("div","sm mut"),{textContent:"Only ticked lessons show on My page.",style:"margin-top:6px"}));
+      sHub.append(lwrap);
+    }
   }
   rail.append(sHub);
 

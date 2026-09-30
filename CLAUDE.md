@@ -86,20 +86,28 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   Google sign-in). Real students only ever see their own room, so building/playing in a sandbox is
   invisible to them.
 - **Student hub ("My page")** — a personal student dashboard, gated by the instructor per course
-  via `control.hub = { on, results, practice, lessons }` (all default **off**; a **Student page** card
-  in the console toggles them). When `hub.on`, students get a **Class / My page** tab bar
-  (`studentNav`; `studentRoot`/`curStudentTab` decide the default — the live class when something's
-  open, else the hub; `onCtrl` resets `studentTab` on any activity change so an opening game pulls
-  them back). The hub (`studentHub`) shows: **What you submitted** (`allSubs` filtered to `myId`),
-  **Class results** (`hubResults` — **every meeting played so far** that the student could have
-  attended, derived from `allSubs` roundKeys, *excluding* the currently-live, not-yet-revealed round
-  so an open round never leaks; independent of the old `control.published` map, which `doReveal` still
-  writes and is used only to sort by reveal time; the student sees the student-variant analysis via
-  `analysisBody(game, historicalList, false)`, reused from `analysisView`), **Practice vs a bot**
-  (`hubPractice`/`practiceMatch` → `pairMatch` with `practice:true` — plays locally and **writes
-  nothing**), and **Interactive lessons** (the Pareto lesson, now student-launchable). Reveal-gating
-  + hub toggles live entirely in `control` (instructor-writable, world-readable), so **no Firebase
-  rules change** is needed. `parseRoundKey` inverts `roundKey`.
+  via `control.hub = { on, results, practice, lessons, resultKeys, lessonKeys }` (all default
+  **off/empty**; a **Student page** card in the console controls them). When `hub.on`, students get a
+  **Class / My page** tab bar (`studentNav`; `studentRoot`/`curStudentTab` decide the default — the
+  live class when something's open, else the hub; `onCtrl` resets `studentTab` on any activity change
+  so an opening game pulls them back). The hub (`studentHub`) shows: **What you submitted** (`allSubs`
+  filtered to `myId`); **Class results** and **Interactive lessons** are **explicit opt-in per item** —
+  the instructor ticks exactly which meetings/lessons are visible, so there's no ambiguity:
+  - **Class results** (`hubResults`) shows only the meetings whose roundKey is ticked in
+    `hub.resultKeys` (`{<roundKey>:true}`), further filtered to ones this student could have attended,
+    and the currently-live/not-yet-revealed round is never shown even if ticked (leak guard). Returns
+    `null` (card hidden) when nothing is visible to that student. The console lists every played
+    meeting from `playedMeetings()` (deduped roundKeys with `isDone` subs) as tick-chips, plus
+    **Select all / Clear**. `control.published` (written by `doReveal`) is now used only to sort.
+  - **Interactive lessons** (`hubLessons`) shows only lessons ticked in `hub.lessonKeys`
+    (`{<id>:true}`); available lessons live in the `HUB_LESSONS` registry and launch via
+    `launchLesson(id)`; `lessonVisible(id)` gates a student launching one (also enforced in `render()`).
+    Add a lesson = one `HUB_LESSONS` entry + a `launchLesson` case.
+  - **Practice vs a bot** (`hubPractice`/`practiceMatch` → `pairMatch` with `practice:true`) plays
+    locally and **writes nothing**; gated by the plain `hub.practice` boolean.
+  All hub state lives in `control` (instructor-writable, world-readable), so **no Firebase rules
+  change** is needed. `parseRoundKey` inverts `roundKey`; the student analysis is `analysisBody(game,
+  historicalList, false)`, reused from `analysisView`.
 - The data layer is a thin adapter over the Firebase compat SDK; the app only uses
   `.ref().on()/.once()/.set()/.update()/.remove()`. Preserve these paths and shapes.
 
