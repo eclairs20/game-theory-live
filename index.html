@@ -301,6 +301,15 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .rec-w{font-size:.64rem; font-weight:700; padding:1px 6px; border-radius:999px}
 .rec-w.red{background:rgba(210,31,60,.14); color:var(--bad)}
 .rec-w.black{background:var(--surface-2); color:var(--ink-2)}
+/* Student hub nav + results picker */
+.stud-nav{display:flex; gap:6px; margin-bottom:14px; background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:4px}
+.stud-tab{flex:1; padding:9px 14px; border:none; background:transparent; border-radius:999px; font-weight:700; font-size:.92rem; color:var(--muted); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px}
+.stud-tab.on{background:var(--surface); color:var(--ink); box-shadow:var(--shadow)}
+.live-dot{width:8px; height:8px; border-radius:50%; background:var(--good); box-shadow:0 0 0 3px rgba(46,139,87,.2)}
+.res-list{display:flex; flex-wrap:wrap; gap:6px}
+.res-btn{padding:6px 12px; border:1px solid var(--line); border-radius:999px; background:var(--surface-2); font-weight:600; font-size:.82rem; cursor:pointer}
+.res-btn.on{border-color:var(--accent); background:var(--accent-wash); color:var(--accent-ink)}
+.btn.neutral.on{border-color:var(--accent); background:var(--accent-wash); color:var(--accent-ink)}
 /* Full-screen "collection" view projected to the class while submissions are open —
    participation only, never results, so it can't leak the answer. */
 .present{position:fixed; inset:0; z-index:60; background:var(--bg); color:var(--ink);
@@ -598,6 +607,14 @@ const curMSection = ()=>{
   return secs.length ? secs[0] : "";
 };
 const roundKey = (g,r)=> "S"+curSession()+curMSection()+"-"+g+"-"+r;         // e.g. "S1A-pd-1" or "S1-pd-1"
+/* Split a roundKey back into its parts (inverse of roundKey). */
+function parseRoundKey(rk){ const m=/^S(\d+)([A-Za-z]*)-(.+)-(\d+)$/.exec(String(rk||"")); return m? {session:+m[1], section:m[2]||"", game:m[3], round:+m[4]} : null; }
+/* Course-level student-hub settings (instructor-controlled, stored in control.hub;
+   everything defaults OFF so nothing changes until the instructor turns it on). */
+function hubCfg(){ return (control&&control.hub)||{}; }
+const hubOn = ()=> !!hubCfg().on;
+/* Meetings whose results the instructor has published to students (auto on Reveal). */
+function publishedMap(){ return (control&&control.published)||{}; }
 const CTRL_PATH = ()=> ROOM+"/control";
 const SUBS_PATH = ()=> ROOM+"/subs";
 const ROSTER_PATH = ()=> ROOM+"/roster";
@@ -719,7 +736,16 @@ function boot(){
   render();
 }
 /* control/subs/roster live data — attached/detached around authentication under Option A. */
-function onCtrl(snap){ control = snap.exists()?snap.val():null; controlLoaded=true; recompute(); render(); }
+let _ctrlSig=null;
+function onCtrl(snap){
+  control = snap.exists()?snap.val():null; controlLoaded=true;
+  // When the instructor changes the activity (game/phase/round/section), pull students
+  // back to the default screen (live class when something's open) rather than leaving
+  // them stranded on the hub — so they don't miss an activity that just opened.
+  const sig=control?[control.activeGame,control.phase,control.round,control.session,control.section].join("|"):"";
+  if(sig!==_ctrlSig){ studentTab=null; _ctrlSig=sig; }
+  recompute(); render();
+}
 function onSubs(snap){ allSubs = snap.val()||{}; recompute(); render(); }
 function onRoster(snap){ setRoster(snap.val()); render(); }
 function onSchedule(snap){ setSchedule(snap.val()); render(); }
@@ -761,6 +787,14 @@ async function writeControl(patch){
     else await ref.set(Object.assign({createdAt:Date.now()},patch));
     return true;
   }catch(e){ toast("Couldn't update — check your connection"); return false; }
+}
+/* Reveal results, and record this meeting as published so it shows in the student hub
+   (auto-publish on reveal). Merges into control.published so past meetings persist. */
+function doReveal(){
+  presentMode=false;
+  const rk=roundKey(control.activeGame, control.round);
+  const pub=Object.assign({}, publishedMap()); pub[rk]=Date.now();
+  writeControl({phase:"revealed", published:pub});
 }
 function cfg(game){ return Object.assign({}, DEFAULT_CONFIG[game], (control&&control.config&&control.config[game])||{}); }
 
@@ -960,9 +994,17 @@ function viewKey(){
   return [role, unlocked, isTeacher(), authUser?authUser.email:"", myName||"", routed,
     (REQUIRE_GOOGLE&&!authUser)?"signin":"", authResolved,
     control?control.activeGame:"", control?control.phase:"", control?control.round:"",
-    control?control.session:"", control?control.section:"", control&&control.hold?"hold":"", myCourses().length].join("|");
+    control?control.session:"", control?control.section:"", control&&control.hold?"hold":"", myCourses().length,
+    curStudentTab(), practiceGame||"", lessonMode||"", hubOn()?"hub":""].join("|");
 }
-let lastViewKey=null, presentMode=false, lessonMode=null;
+let lastViewKey=null, presentMode=false, lessonMode=null, studentTab=null, practiceGame=null, studentResK=null;
+/* Which student screen is showing: the live class, or the personal hub ("My page").
+   Defaults to the class when an activity is live, otherwise the hub (when enabled). */
+function curStudentTab(){
+  if(isTeacher() || !hubOn()) return "class";
+  const liveActive = !!(control && control.activeGame && (control.phase==="open"||control.phase==="revealed") && !control.hold);
+  return studentTab || (liveActive?"class":"hub");
+}
 /* In-progress form state for the multi-field pair games (quatro/redblack), kept OUTSIDE
    the render cycle so a live re-render (a classmate submitting) can't wipe a half-filled
    form. Keyed by game+roundKey. */
@@ -980,11 +1022,12 @@ function render(){
   // phase (Reveal from the console exits it); only drops if the console context is gone.
   if(presentMode && !(isTeacher() && control && control.activeGame)) presentMode=false;
   if(presentMode){ app.replaceChildren(presentView()); return; }
-  // Interactive lessons (no submissions/Firebase) — instructor-launched, projected.
-  if(lessonMode && !isTeacher()) lessonMode=null;
+  // Interactive lessons — instructor-launched, or student-launched from the hub (Lessons on).
+  if(lessonMode && !isTeacher() && !(hubOn() && hubCfg().lessons)) lessonMode=null;
   if(lessonMode==="pareto"){ app.replaceChildren(paretoLesson()); return; }
-  // Leave the waiting room / release presence when we're no longer on an open pair game.
-  const wantLive = !isTeacher() && control && control.phase==="open" && (control.activeGame==="quatro"||control.activeGame==="redblack") && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser);
+  // Leave the waiting room / release presence when we're not actively on an open pair game
+  // (also when a hub-enabled student is browsing "My page" rather than the live class).
+  const wantLive = !isTeacher() && control && control.phase==="open" && (control.activeGame==="quatro"||control.activeGame==="redblack") && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class";
   if(!wantLive && liveCtx) detachLive();
   let next;
   if(REQUIRE_GOOGLE && !authUser){
@@ -992,12 +1035,10 @@ function render(){
   } else if(!HAS_CLASS_PARAM && !isTeacher() && authUser && !routed && myCourses().length>1){
     // Signed-in student on the bare link, enrolled in more than one course → let them choose.
     next = coursePicker();
-  } else if(!control || !control.activeGame){
-    next = isTeacher() ? teacherConsole() : studentWaiting();
   } else if(isTeacher()){
     next = teacherConsole();
   } else {
-    next = studentView();
+    next = studentRoot();
   }
   // If the student/instructor is actively typing in a field and the structural view
   // hasn't changed (only a live count did), don't replace the DOM — that would blow
@@ -1119,6 +1160,108 @@ function joinPanel(){
       ? "Enrolled students: use Continue with Google so your instructor can match you to the class list."
       : "Tip: Continue with Google so your instructor gets your name — a typed name joins as an anonymous guest.",style:"margin-top:8px"})); }
   return wrap;
+}
+/* ═══════════════════════ STUDENT HUB ("My page") ═══════════════════════ */
+/* Routes a student to the live class or their personal hub, with a small tab bar when
+   the hub is enabled for the course. Hold still overrides everything. */
+function studentRoot(){
+  if(control && control.hold) return studentView();
+  if(!hubOn()) return (control && control.activeGame) ? studentView() : studentWaiting();
+  if(!haveIdentity()){ const c=el("div","card stage"); c.append(el("div","eyebrow gold","Sign in")); const w=el("div"); w.style.marginTop="8px"; w.append(joinPanel()); c.append(w); return c; }
+  const tab=curStudentTab();
+  const liveActive = !!(control && control.activeGame && (control.phase==="open"||control.phase==="revealed"));
+  const wrap=el("div","stack");
+  wrap.append(studentNav(tab, liveActive));
+  wrap.append(tab==="hub" ? studentHub() : ((control && control.activeGame) ? studentView() : studentWaiting()));
+  return wrap;
+}
+function studentNav(tab, liveActive){
+  const bar=el("div","stud-nav");
+  const mk=(id,label,live)=>{ const b=el("button","stud-tab"+(tab===id?" on":"")); b.type="button";
+    b.append(document.createTextNode(label)); if(live) b.append(Object.assign(el("span","live-dot"),{}));
+    b.onclick=()=>{ studentTab=id; render(); }; return b; };
+  bar.append(mk("class","Class", liveActive), mk("hub","My page", false));
+  return bar;
+}
+function studentHub(){
+  const h=hubCfg(), c=el("div","stack");
+  c.append(identityBar());
+  if(control && control.activeGame && (control.phase==="open"||control.phase==="revealed") && !control.hold){
+    const jb=el("div","note-box teal"); jb.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:10px";
+    jb.append(Object.assign(el("div"),{innerHTML:"<b>A class activity is live.</b> "+esc(GAMES[control.activeGame].name)}));
+    const jbtn=el("button","btn gold","Join ▶"); jbtn.onclick=()=>{ studentTab="class"; render(); }; jb.append(jbtn);
+    c.append(jb);
+  }
+  const head=el("div","card stage");
+  head.append(el("div","eyebrow gold","My page"), Object.assign(el("h2"),{textContent:"Your game-theory dashboard",style:"font-size:1.5rem;margin-top:4px"}),
+    Object.assign(el("p","lead"),{textContent:"Everything you've played, the class results your instructor has shared, and things you can try on your own."}));
+  c.append(head);
+  c.append(hubMySubs());
+  if(h.results) c.append(hubResults());
+  if(h.practice) c.append(hubPractice());
+  if(h.lessons) c.append(hubLessons());
+  return c;
+}
+function hubMySubs(){
+  const card=el("div","card stage");
+  card.append(el("div","eyebrow","What you submitted"));
+  const mine=Object.values(allSubs).filter(s=>s && String(s.studentId)===String(myId) && isDone(s)).sort((a,b)=>(b.ts||0)-(a.ts||0));
+  if(!mine.length){ card.append(Object.assign(el("p","lead"),{textContent:"Nothing yet — your answers will appear here as you play.",style:"margin-top:6px"})); return card; }
+  let html="<tr><th>Session</th><th style='text-align:left'>Game</th><th style='text-align:left'>Your answer</th></tr>";
+  mine.forEach(s=>{ const pk=parseRoundKey(s.roundKey)||{};
+    html+="<tr><td>S"+(s.session||pk.session||"?")+(pk.section?"."+pk.section:"")+"</td><td style='text-align:left'>"+esc((GAMES[s.game]||{}).name||s.game)+"</td><td style='text-align:left'>"+esc(subValue(s))+"</td></tr>"; });
+  const t=el("table","matrix"); t.style.fontSize=".86rem"; t.innerHTML=html;
+  const sc=el("div","tablescroll"); sc.style.marginTop="10px"; sc.append(t); card.append(sc);
+  return card;
+}
+function hubResults(){
+  const card=el("div","card stage");
+  card.append(el("div","eyebrow gold","Class results"));
+  const mySec=(roster[String(myId).toLowerCase()]||{}).section||"";
+  const pub=publishedMap();
+  const keys=Object.keys(pub).filter(rk=>{ const pk=parseRoundKey(rk); if(!pk) return false;
+    const played=Object.values(allSubs).some(s=>s && s.roundKey===rk && String(s.studentId)===String(myId));
+    return played || !pk.section || pk.section===mySec;      // ones the student could have attended
+  }).sort((a,b)=>(pub[b]||0)-(pub[a]||0));
+  if(!keys.length){ card.append(Object.assign(el("p","lead"),{textContent:"No results shared yet — they appear here after your instructor reveals a game in class.",style:"margin-top:6px"})); return card; }
+  if(!studentResK || keys.indexOf(studentResK)<0) studentResK=keys[0];
+  const list=el("div","res-list"); list.style.margin="8px 0 4px";
+  keys.forEach(rk=>{ const pk=parseRoundKey(rk); const b=el("button","res-btn"+(rk===studentResK?" on":"")); b.type="button";
+    b.textContent=((GAMES[pk.game]||{}).name||pk.game)+" · S"+pk.session+(pk.section?"."+pk.section:""); b.onclick=()=>{ studentResK=rk; render(); }; list.append(b); });
+  card.append(list);
+  const pk=parseRoundKey(studentResK);
+  const list2=Object.values(allSubs).filter(s=>s && s.roundKey===studentResK && isDone(s));
+  const body=el("div"); body.style.marginTop="10px";
+  body.append(el("div","eyebrow","Results · "+((GAMES[pk.game]||{}).name||pk.game)+" · S"+pk.session+(pk.section?"."+pk.section:"")));
+  if(!list2.length) body.append(Object.assign(el("p","lead"),{textContent:"No submissions were recorded for this meeting."}));
+  else body.append(analysisBody(pk.game, list2, false));
+  card.append(body);
+  return card;
+}
+function hubPractice(){
+  const card=el("div","card stage");
+  card.append(el("div","eyebrow","Practice vs a bot"));
+  card.append(Object.assign(el("p","lead"),{textContent:"Play a quick game against a practice bot — just for you, nothing is recorded.",style:"margin:6px 0 10px"}));
+  const row=el("div","row"); row.style.gap="10px"; row.style.flexWrap="wrap";
+  [["quatro","Quatro Uno"],["redblack","Red vs Black"]].forEach(([g,label])=>{ const b=el("button","btn neutral"+(practiceGame===g?" on":"")); b.textContent="▶ "+label; b.onclick=()=>{ practiceGame=(practiceGame===g?null:g); if(!practiceGame){ delete gameDraft["practice-"+g]; } render(); }; row.append(b); });
+  card.append(row);
+  if(practiceGame) card.append(practiceMatch(practiceGame));
+  return card;
+}
+function practiceMatch(game){
+  const c=el("div"); c.style.marginTop="14px";
+  const R=cfg(game).rounds||(game==="redblack"?20:5);
+  const dk="practice-"+game, d=draftFor(dk);
+  const myColor = game==="redblack" ? (d.color||(d.color=Math.random()<0.5?"red":"black")) : null;
+  pairMatch(c, game, R, d, {bot:true, practice:true, partner:"bot", partnerName:"Practice bot", myColor, mc:"practice", onExit:()=>{ practiceGame=null; delete gameDraft[dk]; render(); }});
+  return c;
+}
+function hubLessons(){
+  const card=el("div","card stage");
+  card.append(el("div","eyebrow gold","Interactive lessons"));
+  card.append(Object.assign(el("p","lead"),{textContent:"Explore a concept at your own pace — a hands-on visual, no submissions.",style:"margin:6px 0 10px"}));
+  const il=el("button","btn neutral","Pareto optimality"); il.onclick=()=>{ paretoInit("dilemma"); lessonMode="pareto"; render(); }; card.append(il);
+  return card;
 }
 function studentView(){
   const g=control.activeGame;
@@ -1601,7 +1744,7 @@ function pairLobby(c, game, mc, R, d){
   c.append(liveCount());
 }
 function pairMatch(c, game, R, d, opts){
-  const {partner, partnerName, myColor, mc, bot}=opts, cur=mySub();
+  const {partner, partnerName, myColor, mc, bot, practice, onExit}=opts, cur=practice?null:mySub();
   // my moves store
   if(game==="redblack"){
     if(cur && d._loaded!==true && cur.seq){ d.seq=String(cur.seq).split(",").map(x=>{x=x.trim();return x===""?undefined:x;}); }
@@ -1648,8 +1791,10 @@ function pairMatch(c, game, R, d, opts){
       ? {color:myColor,partner,partnerName,seq:d.seq.map(x=>x==null?"":x).join(",")}
       : {partner,partnerName,piles:JSON.stringify(d.piles.map(p=>typeof p==="string"?p:""))};
     const done = game==="redblack"? d.seq.every(x=>x!=null) : d.piles.every(p=>typeof p==="string"&&p.length===4);
-    savePair(payload, done);
-    if(done && bot){ if(game==="redblack") saveBot({color:oppColor(myColor), seq:d.botSeq.join(",")}); else saveBot({piles:JSON.stringify(d.botPiles)}); }
+    if(!practice){
+      savePair(payload, done);
+      if(done && bot){ if(game==="redblack") saveBot({color:oppColor(myColor), seq:d.botSeq.join(",")}); else saveBot({piles:JSON.stringify(d.botPiles)}); }
+    }
     if(after) after(done); render();
   };
   if(active>=0){
@@ -1682,7 +1827,7 @@ function pairMatch(c, game, R, d, opts){
   } else if(!bot && sc.done<R){
     c.append(hintLine("You've played all "+R+" hands — waiting for "+esc(partnerName)+" to finish so the last hands can be scored."));
   } else {
-    c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:12px",innerHTML:"<b>Match complete.</b> Final score — you "+sc.me+", "+esc(partnerName)+" "+sc.them+(game==="quatro"?(", ties "+sc.tie):"")+". Results appear when your instructor reveals."}));
+    c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:12px",innerHTML:"<b>Match complete.</b> Final score — you "+sc.me+", "+esc(partnerName)+" "+sc.them+(game==="quatro"?(", ties "+sc.tie):"")+"."+(bot?"":" Results appear when your instructor reveals.")}));
   }
   // history of scored hands (most recent first)
   const hist=el("div","match-hist");
@@ -1697,7 +1842,8 @@ function pairMatch(c, game, R, d, opts){
     c.append(hist);
   }
   // controls
-  if(!bot){ const lv=el("button","btn danger","Leave match"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
+  if(practice){ const lv=el("button","ghost-btn","Stop practice"); lv.style.marginTop="14px"; lv.onclick=()=> onExit ? onExit() : render(); c.append(lv); }
+  else if(!bot){ const lv=el("button","btn danger","Leave match"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
   else { const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="14px"; lv.onclick=()=>{ d.bot=false; const dk=game+"-"+curKey; delete gameDraft[dk]; render(); }; c.append(lv); }
 }
 async function recSet(mc,pid,patch){ try{ await fb.ref(PAIR_DOC(mc,pid)+"/rec").update(patch); }catch(e){} }
@@ -1850,13 +1996,18 @@ function analysisView(teacher){
   head.append(el("p","lead", n+" "+(n===1?"response":"responses")+" in"+scLbl+". "+revealNarr(g)));
   c.append(head);
   if(n===0){ const e=el("div","card stage center mut"); e.textContent = sc==="BOTH"?"No submissions in either section for this round.":sc?("No Section "+sc+" submissions in this round."):"No submissions to analyze yet."; c.append(e); return c; }
-  if(g==="guess23") c.append(analyzeGuess(teacher,list));
-  else if(g==="pd") c.append(analyzeColor(teacher,list));
-  else if(g==="coord") c.append(analyzeCoord(teacher,list));
-  else if(g==="quatro") c.append(analyzeQuatro(list));
-  else if(g==="redblack") c.append(analyzeRedBlack(list));
-  else c.append(analyzePG(list));
+  c.append(analysisBody(g, list, teacher));
   return c;
+}
+/* Dispatch the per-game analysis for an arbitrary submission list, so both the live
+   reveal (analysisView) and the student hub (historical meetings) share one path. */
+function analysisBody(g, list, teacher){
+  if(g==="guess23") return analyzeGuess(teacher,list);
+  if(g==="pd") return analyzeColor(teacher,list);
+  if(g==="coord") return analyzeCoord(teacher,list);
+  if(g==="quatro") return analyzeQuatro(list);
+  if(g==="redblack") return analyzeRedBlack(list);
+  return analyzePG(list);
 }
 function revealNarr(g){
   if(g==="guess23") return "Where did the class land relative to pure rationality?";
@@ -2497,7 +2648,7 @@ function roundActionBar(){
   const revealed=phase==="revealed";
   const revealBtn=el("button","btn"+(revealed?" neutral":" gold"), revealed?"Hide results":"Reveal results");
   revealBtn.title=revealed?"Hide results from the class (submissions stay closed)":"Show results to the class";
-  revealBtn.onclick=()=>{ if(revealed){ writeControl({phase:"waiting"}); } else { presentMode=false; writeControl({phase:"revealed"}); } };
+  revealBtn.onclick=()=>{ if(revealed){ writeControl({phase:"waiting"}); } else { doReveal(); } };
   const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>writeControl({round:control.round+1,phase:"open"});
   const presentBtn=el("button","ghost-btn","Present ⛶"); presentBtn.title="Show the class the full-screen collection screen (no results)";
   presentBtn.onclick=()=>{ presentMode=true; render(); };
@@ -2563,7 +2714,7 @@ function presentView(){
     const nextR=el("button","btn","Next round →"); nextR.onclick=()=>writeControl({round:control.round+1,phase:"open"});
     ctr.append(hide,nextR);
   } else {
-    const reveal=el("button","btn gold","Reveal results"); reveal.onclick=()=>{ presentMode=false; writeControl({phase:"revealed"}); };
+    const reveal=el("button","btn gold","Reveal results"); reveal.onclick=()=>{ doReveal(); };
     const reopen=el("button","btn","Reopen"); reopen.onclick=()=>writeControl({phase:"open"});
     ctr.append(reveal,reopen);
   }
@@ -2878,6 +3029,21 @@ function teacherConsole(){
   sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
   const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
   sD.append(expB); rail.append(sD);
+
+  // Student page — a personal dashboard students can open between activities. You choose what's on.
+  const sHub=el("div","rail-sec");
+  sHub.append(Object.assign(el("h3"),{textContent:"Student page"}));
+  sHub.append(Object.assign(el("div","sm mut"),{textContent:"A personal dashboard for students — their own submissions plus anything you switch on below. Class results appear only for games you've revealed.",style:"margin:-4px 0 8px"}));
+  const hc=hubCfg();
+  const setHub=(k,v)=>{ const nh=Object.assign({}, control.hub||{}); nh[k]=v; writeControl({hub:nh}); };
+  const toggle=(k,label)=>{ const on=!!hc[k]; const b=el("button","ghost-btn wide"+(on?" hold-on":"")); b.textContent=(on?"✓ ":"")+label; b.style.marginTop="6px"; b.onclick=()=>setHub(k,!on); return b; };
+  sHub.append(toggle("on","Student dashboard"));
+  if(hc.on){
+    sHub.append(toggle("results","Show class results (revealed games)"));
+    sHub.append(toggle("practice","Practice vs bots"));
+    sHub.append(toggle("lessons","Interactive lessons"));
+  }
+  rail.append(sHub);
 
   const sSch=el("div","rail-sec");
   sSch.append(Object.assign(el("h3"),{textContent:"Session schedule"}));

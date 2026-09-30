@@ -81,6 +81,19 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   section opens `?class=sandbox` and copies its link to share with testers (who join as guests with a
   Google sign-in). Real students only ever see their own room, so building/playing in a sandbox is
   invisible to them.
+- **Student hub ("My page")** — a personal student dashboard, gated by the instructor per course
+  via `control.hub = { on, results, practice, lessons }` (all default **off**; a **Student page** card
+  in the console toggles them). When `hub.on`, students get a **Class / My page** tab bar
+  (`studentNav`; `studentRoot`/`curStudentTab` decide the default — the live class when something's
+  open, else the hub; `onCtrl` resets `studentTab` on any activity change so an opening game pulls
+  them back). The hub (`studentHub`) shows: **What you submitted** (`allSubs` filtered to `myId`),
+  **Class results** (`hubResults` — only meetings the instructor has **revealed**; `doReveal` records
+  each into `control.published[roundKey]`; the student sees the student-variant analysis via
+  `analysisBody(game, historicalList, false)`, reused from `analysisView`), **Practice vs a bot**
+  (`hubPractice`/`practiceMatch` → `pairMatch` with `practice:true` — plays locally and **writes
+  nothing**), and **Interactive lessons** (the Pareto lesson, now student-launchable). Reveal-gating
+  + hub toggles live entirely in `control` (instructor-writable, world-readable), so **no Firebase
+  rules change** is needed. `parseRoundKey` inverts `roundKey`.
 - The data layer is a thin adapter over the Firebase compat SDK; the app only uses
   `.ref().on()/.once()/.set()/.update()/.remove()`. Preserve these paths and shapes.
 
