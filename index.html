@@ -515,6 +515,8 @@ const INSTRUCTOR_EMAILS = [
    (no passcode) — matching what the strict rules enforce on the server. */
 const REQUIRE_GOOGLE = true;
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
+/* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
+const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
 /* ═══════════════════════════════════════════════════════════════════════ */
 
 /* Instructor-panel order follows the key order here: Give or Keep (G1) first. */
@@ -1274,9 +1276,11 @@ function hubMySubs(){
 function hubResults(){
   const pick=hubResultKeys();
   // Every meeting the instructor ticked — shown to ALL students (so someone who missed the
-  // class can still learn the concept), not just their own section. The currently-live,
-  // not-yet-revealed round is never shown even if ticked, so an open round can't leak.
-  const curLive=(control && control.activeGame && control.phase!=="revealed") ? roundKey(control.activeGame, control.round) : null;
+  // class can still learn the concept), not just their own section. The one exclusion is the
+  // round that is OPEN for submissions right now (students still answering it), so its live
+  // tally can't leak. Only phase "open" counts — a finished round parked in "waiting" (e.g. a
+  // one-shot game like Coordination) must still appear once ticked.
+  const curLive=(control && control.activeGame && control.phase==="open") ? roundKey(control.activeGame, control.round) : null;
   const done={};
   Object.values(allSubs).forEach(s=>{ if(s && s.roundKey && isDone(s)) done[s.roundKey]=1; });
   const metas=Object.keys(done).filter(rk=> pick[rk] && rk!==curLive && parseRoundKey(rk))
@@ -1780,16 +1784,20 @@ function recordSetup(c, game, mc, R, d){
   const box=el("div","lobby"); box.style.marginTop="14px";
   box.append(tinyLabel("Who did you play against?"));
   const meLc=String(myId).toLowerCase();
-  const others=rosterList.filter(e=> e.email && e.email.toLowerCase()!==meLc);
-  if(others.length){
+  // Candidates: roster classmates, plus the instructor account(s) — so an instructor can
+  // test the picker (and a prof can genuinely partner an odd-one-out student). Self excluded.
+  const cand=[];
+  rosterList.forEach(e=>{ if(e.email && e.email.toLowerCase()!==meLc) cand.push({id:e.email.toLowerCase(), name:e.name, tag:e.section||""}); });
+  INSTRUCTOR_EMAILS.forEach(em=>{ const lc=String(em).toLowerCase(); if(lc!==meLc && !cand.some(x=>x.id===lc)) cand.push({id:lc, name:emailName(em), tag:"instructor"}); });
+  if(cand.length){
     const list=el("div","res-list"); list.style.margin="8px 0 4px";
-    others.forEach(e=>{ const b=el("button","res-btn"); b.type="button"; b.textContent=e.name+(e.section?" · "+e.section:"");
-      b.onclick=()=>recPairWith(mc, e.email.toLowerCase(), e.name, false); list.append(b); });
+    cand.forEach(e=>{ const b=el("button","res-btn"); b.type="button"; b.textContent=e.name+(e.tag?" · "+e.tag:"");
+      b.onclick=()=>recPairWith(mc, e.id, e.name, false); list.append(b); });
     box.append(list);
   }
-  const man=el("div"); man.style.marginTop=others.length?"12px":"8px";
-  man.append(Object.assign(el("div","sm mut"),{textContent: others.length
-    ? "Partner not on the roster? Type their name — you'll record the whole game yourself."
+  const man=el("div"); man.style.marginTop=cand.length?"12px":"8px";
+  man.append(Object.assign(el("div","sm mut"),{textContent: cand.length
+    ? "Partner not listed? Type their name — you'll record the whole game yourself."
     : "Type your partner's name — you'll record the whole game yourself."}));
   const inp=el("input"); inp.type="text"; inp.placeholder="Partner's name";
   inp.style.cssText="width:100%;max-width:320px;margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit";

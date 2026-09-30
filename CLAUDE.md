@@ -96,8 +96,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - **Class results** (`hubResults`) shows the meetings whose roundKey is ticked in
     `hub.resultKeys` (`{<roundKey>:true}`) to **every student** — no per-section/attendance filter, so
     someone who missed the class can still learn from a shared meeting. The only exclusion is the
-    currently-live/not-yet-revealed round (leak guard). Returns `null` (card hidden) when nothing is
-    ticked. The console lists every played meeting from `playedMeetings()` (deduped roundKeys with
+    round that is **open for submissions right now** (`control.phase==="open"` and it matches the
+    current `roundKey`) so its live tally can't leak — a finished round parked in `"waiting"` (e.g. a
+    one-shot game like Coordination) still shows once ticked. Returns `null` (card hidden) when nothing
+    is ticked. The console lists every played meeting from `playedMeetings()` (deduped roundKeys with
     `isDone` subs, across ALL submitters — never restricted to the instructor's own) as tick-chips,
     plus **Select all / Clear**. Both the console chips and the student result buttons order via
     `meetingCmp` (game G1…G6 → session → section → round, so every instance of a game groups
@@ -204,8 +206,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     - **`"record"`** (`pairRecorded`) — the real-cards/Excel workflow: pairs play all `rounds` hands
       with physical Red/Black decks, then record them here. Because it's **asynchronous** (offline
       play, then one person enters), record mode does **NOT** use the live presence lobby — instead
-      `recordSetup` shows a **partner picker**: tap a **roster classmate** (`recPairWith(...,solo=false)`
-      sets `of` pointers for both, so the partner verifies later) or type a **name** to self-record
+      `recordSetup` shows a **partner picker**: tap a **roster classmate** — or an **instructor**
+      account (`INSTRUCTOR_EMAILS`, tagged "instructor", so a prof can test the picker or partner an
+      odd-one-out student; self always excluded) — via `recPairWith(...,solo=false)` (sets `of`
+      pointers for both, so the partner verifies later), or type a **name** to self-record
       (`solo=true`). The recorder then marks who held Red (`rec.redId`) and enters each hand
       (editable `recGrid`, running Red/Black score) into `live/…/pairs/‹pid›/rec`; on Done writes their
       own sub. For a roster partner the other side **verifies once** (soft — the confirm IS their sub);
