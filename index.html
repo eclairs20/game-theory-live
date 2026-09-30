@@ -282,6 +282,25 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .card-stack .cf.mini{filter:drop-shadow(-1px 0 1px rgba(0,0,0,.25))}
 .q-build{display:flex; align-items:center; gap:10px; min-height:44px; flex-wrap:wrap}
 .q-buildlbl{font-size:.72rem; font-weight:700; color:var(--muted)}
+.score.red{background:rgba(210,31,60,.10)}
+.score.black{background:var(--surface-2)}
+/* G6 recorded-mode entry */
+.rec-entry{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px 14px; margin:10px 0; display:flex; flex-direction:column; gap:10px}
+.rec-rail{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.rec-lbl{font-size:.8rem; font-weight:700; width:92px; flex:none}
+.rec-lbl.bad{color:var(--bad)}
+.cardbtn.rec.sel .cf{outline:3px solid var(--accent); outline-offset:1px; border-radius:9px}
+.rec-gridwrap{margin-top:14px}
+.rec-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(74px,1fr)); gap:6px; margin-top:6px}
+.rec-cell{display:flex; flex-direction:column; align-items:center; gap:2px; padding:6px 4px; border:1px solid var(--line); border-radius:8px; background:var(--surface-2)}
+.rec-cell.filled{background:var(--surface)}
+.rec-cell.active{border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-wash)}
+.rec-n{font-family:"IBM Plex Mono",monospace; font-size:.66rem; color:var(--faint)}
+.rec-cards{display:flex; gap:2px}
+.rec-empty{color:var(--faint); font-size:1rem; height:36px; display:flex; align-items:center}
+.rec-w{font-size:.64rem; font-weight:700; padding:1px 6px; border-radius:999px}
+.rec-w.red{background:rgba(210,31,60,.14); color:var(--bad)}
+.rec-w.black{background:var(--surface-2); color:var(--ink-2)}
 /* Full-screen "collection" view projected to the class while submissions are open —
    participation only, never results, so it can't leak the answer. */
 .present{position:fixed; inset:0; z-index:60; background:var(--bg); color:var(--ink);
@@ -509,7 +528,7 @@ const DEFAULT_CONFIG = {
   pd:{ keep:2, give:3 },
   coord:{ pot:100 },
   quatro:{ rounds:5 },
-  redblack:{ rounds:20 },
+  redblack:{ rounds:20, mode:"record" },   // mode: "record" (real cards, one enters + partner verifies) | "live" (real-time on phones)
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -1530,16 +1549,23 @@ function studentPair(c, game){
     const partner = String(pairData.a)===String(myId)? pairData.b : pairData.a;
     const partnerName = (pairData.names&&pairData.names[encodeKey(String(partner))])||"Partner";
     const myColor = pairData.colors ? pairData.colors[encodeKey(String(myId))] : null;
+    const pid=[String(myId),String(partner)].map(encodeKey).sort().join("~");
+    if(game==="redblack" && (cf.mode||"record")==="record"){ pairRecorded(c, R, d, {partner, partnerName, mc, pid}); return; }
     pairMatch(c, game, R, d, {partner, partnerName, myColor, suits:pairData.suits, mc}); return;
   }
   pairLobby(c, game, mc, R, d);
 }
 function pairLobby(c, game, mc, R, d){
-  c.append(pairRules(game==="redblack"?"Red vs Black":"Quatro Uno",[
-    game==="redblack"
-      ? "Pair up, then each hand tap the card you played. We score each hand live."
-      : "Pair up, then each hand tap your pile order. We work out who won, live.",
-    "Playing with real cards at your desk? Still pair up here and record each hand for live scoring."]));
+  const rbRecord = game==="redblack" && (cfg("redblack").mode||"record")==="record";
+  c.append(pairRules(game==="redblack"?"Red vs Black":"Quatro Uno",
+    rbRecord ? [
+      "Play all "+R+" hands with your real cards — one Red deck, one Black.",
+      "Then pair up here: ONE of you enters every hand, the other checks it against the table."
+    ] : [
+      game==="redblack"
+        ? "Pair up, then each hand tap the card you played. We score each hand live."
+        : "Pair up, then each hand tap your pile order. We work out who won, live.",
+      "Playing with real cards at your desk? Still pair up here and record each hand for live scoring."]));
   const wr=el("div","lobby"); wr.style.marginTop="14px";
   if(invIn){
     const inv=el("div","invite-in");
@@ -1673,6 +1699,126 @@ function pairMatch(c, game, R, d, opts){
   // controls
   if(!bot){ const lv=el("button","btn danger","Leave match"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
   else { const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="14px"; lv.onclick=()=>{ d.bot=false; const dk=game+"-"+curKey; delete gameDraft[dk]; render(); }; c.append(lv); }
+}
+async function recSet(mc,pid,patch){ try{ await fb.ref(PAIR_DOC(mc,pid)+"/rec").update(patch); }catch(e){} }
+function recScore(redW,blkW){
+  const box=el("div","scorebar");
+  const mk=(lbl,v,cls)=>{ const t=el("div","score "+cls); t.append(Object.assign(el("div","score-k"),{textContent:lbl})); t.append(Object.assign(el("div","score-v"),{textContent:v})); return t; };
+  box.append(mk("Red ♥",redW,"red"), mk("Black ♠",blkW,"black")); return box;
+}
+/* G6 RECORDED mode — real cards; one partner (the recorder) enters every hand's Red +
+   Black card, the other verifies the whole thing once. Both sides submit (the verify IS
+   the second submission), so the joint-matrix analysis is unchanged. Matches the Excel sheet. */
+function pairRecorded(c, R, d, opts){
+  const {partner, partnerName, mc, pid}=opts, cur=mySub();
+  const rec=(pairData && pairData.rec)||null;
+  c.append(pairRules("Recorded — real cards",[
+    "You played "+R+" hands at the table with your real decks (one Red, one Black).",
+    "One of you enters every hand here; the other checks it against the cards, then confirms."]));
+  // No recorder yet → role chooser
+  if(!rec || !rec.by){
+    const box=el("div","lobby"); box.style.marginTop="14px";
+    box.append(tinyLabel("Who's entering your results?"));
+    const b=el("button","btn gold wide","I'll enter our results"); b.style.marginTop="8px"; b.style.maxWidth="340px";
+    b.onclick=async()=>{ await recSet(mc,pid,{by:String(myId),byName:myName||"Player"}); render(); };
+    box.append(b);
+    box.append(hintLine("If "+esc(partnerName)+" is entering, their results appear here for you to check."));
+    c.append(box);
+    const lv=el("button","btn danger","Leave"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv);
+    return;
+  }
+  const amRecorder=String(rec.by)===String(myId);
+  // sequences: recorder edits a draft copy; verifier reads the live record
+  let red, black;
+  if(amRecorder){
+    if(!Array.isArray(d.recRed)) d.recRed = rec.red? String(rec.red).split(",").map(x=>{x=x.trim();return x||null;}) : [];
+    if(!Array.isArray(d.recBlack)) d.recBlack = rec.black? String(rec.black).split(",").map(x=>{x=x.trim();return x||null;}) : [];
+    d.recRed.length=R; d.recBlack.length=R; red=d.recRed; black=d.recBlack;
+  } else {
+    red=(rec.red?String(rec.red).split(",").map(x=>{x=x.trim();return x||null;}):[]); red.length=R;
+    black=(rec.black?String(rec.black).split(",").map(x=>{x=x.trim();return x||null;}):[]); black.length=R;
+  }
+  const filled=(i)=> red[i]!=null && black[i]!=null;
+  let done=0, redW=0, blkW=0;
+  for(let i=0;i<R;i++){ if(filled(i)){ done++; redBlackWinner(red[i],black[i])==="red"?redW++:blkW++; } }
+  const writeRec=()=>{ recSet(mc,pid,{red:red.map(x=>x||"").join(","), black:black.map(x=>x||"").join(","), verifiedBy:null}); };
+
+  // ── RECORDER ──
+  if(amRecorder){
+    if(!rec.redId){
+      const box=el("div","lobby"); box.style.marginTop="14px";
+      box.append(tinyLabel("Who held the Red cards? (from your coin toss)"));
+      const row=el("div","row"); row.style.gap="8px"; row.style.marginTop="8px";
+      const mk=(id,label)=>{ const b=el("button","colbtn"); b.type="button"; b.textContent=label; b.onclick=async()=>{ await recSet(mc,pid,{redId:String(id)}); render(); }; return b; };
+      row.append(mk(myId,"I was Red ♥"), mk(partner,esc(partnerName)+" was Red ♥"));
+      box.append(row); c.append(box);
+      const lv=el("button","btn danger","Leave"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv);
+      return;
+    }
+    c.append(recScore(redW,blkW));
+    const target=(function(){ if(d._edit!=null && d._edit<R) return d._edit; for(let i=0;i<R;i++) if(!filled(i)) return i; return -1; })();
+    if(target>=0){
+      const ent=el("div","rec-entry");
+      ent.append(tinyLabel("Hand "+(target+1)+" of "+R+(d._edit!=null?" — editing":"")+" — tap the card each colour played"));
+      const rail=(lbl,cls,kind,arr)=>{ const w=el("div","rec-rail"); w.append(Object.assign(el("span","rec-lbl "+cls),{textContent:lbl}));
+        const r=el("div","card-rail small"); RB_CARDS.forEach(rk=> r.append(cardBtn(rk,kind,()=>{ arr[target]=rk; if(d._edit!=null && red[d._edit]!=null && black[d._edit]!=null) d._edit=null; writeRec(); render(); },"rec"+(arr[target]===rk?" sel":"")))); w.append(r); return w; };
+      ent.append(rail("Red played","bad","red",red), rail("Black played","","black",black));
+      c.append(ent);
+    }
+    c.append(recGrid(red,black,R,target,true,(i)=>{ d._edit=i; recSet(mc,pid,{verifiedBy:null}); render(); }));
+    if(done===R){
+      const b=el("button","btn big wide",(cur&&isDone(cur))?"Update & re-send":"Done — send to "+esc(partnerName)+" to check"); b.style.marginTop="14px"; b.style.maxWidth="360px";
+      b.onclick=async()=>{
+        const myColor=String(myId)===String(rec.redId)?"red":"black";
+        const seq=(myColor==="red"?red:black).map(x=>x||"").join(",");
+        await savePair({mode:"record", color:myColor, partner, partnerName, seq}, true);
+        await recSet(mc,pid,{done:true, red:red.join(","), black:black.join(",")});
+        toast("Sent to "+partnerName+" to verify"); render();
+      };
+      c.append(b);
+      if(cur&&isDone(cur)){ if(rec.verifiedBy) c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:12px",innerHTML:"<b>✓ "+esc(partnerName)+" confirmed.</b> Your pair's results are recorded."}));
+        else c.append(hintLine("Sent — waiting for "+esc(partnerName)+" to confirm.")); }
+    } else c.append(hintLine((R-done)+" hand"+(R-done===1?"":"s")+" left to enter."));
+  }
+  // ── VERIFIER ──
+  else {
+    c.append(recScore(redW,blkW));
+    c.append(hintLine((rec.byName||"Your partner")+" is entering your results ("+done+" of "+R+" so far) — check them against the cards on the table."));
+    c.append(recGrid(red,black,R,-1,false,null));
+    if(rec.done && done===R){
+      if(!cur || !isDone(cur)){
+        const b=el("button","btn big wide gold","Confirm — this matches our cards"); b.style.marginTop="14px"; b.style.maxWidth="360px";
+        b.onclick=async()=>{
+          const myColor=String(myId)===String(rec.redId)?"red":"black";
+          const seq=(myColor==="red"?red:black).map(x=>x||"").join(",");
+          await savePair({mode:"record", color:myColor, partner:String(rec.by), partnerName:(rec.byName||"Partner"), seq, verified:true}, true);
+          await recSet(mc,pid,{verifiedBy:String(myId)});
+          toast("Confirmed — recorded"); render();
+        };
+        c.append(b);
+        c.append(hintLine("Something off? Ask "+esc(rec.byName||"your partner")+" to fix it — the numbers update here live."));
+      } else c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:12px",innerHTML:"<b>✓ Confirmed.</b> Your pair's results are recorded."}));
+    } else c.append(hintLine("Waiting for "+esc(rec.byName||"your partner")+" to finish entering…"));
+  }
+  const lv=el("button","btn danger","Leave"); lv.style.marginTop="16px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv);
+}
+/* Grid of recorded hands: Red card, Black card, winner. Tappable to edit if `editable`. */
+function recGrid(red,black,R,active,editable,onEdit){
+  const wrap=el("div","rec-gridwrap"); wrap.append(tinyLabel("Hands recorded"));
+  const grid=el("div","rec-grid");
+  for(let i=0;i<R;i++){
+    const has=red[i]!=null&&black[i]!=null;
+    const cell=el((editable?"button":"div"),"rec-cell"+(has?" filled":"")+(i===active?" active":"")); if(editable) cell.type="button";
+    cell.append(Object.assign(el("span","rec-n"),{textContent:i+1}));
+    if(has){
+      const rm=cardFace(red[i],"red"); rm.setAttribute("class","cf mini"); const bm=cardFace(black[i],"black"); bm.setAttribute("class","cf mini");
+      const cards=el("span","rec-cards"); cards.append(rm,bm); cell.append(cards);
+      const w=redBlackWinner(red[i],black[i]); cell.append(Object.assign(el("span","rec-w "+w),{textContent:w==="red"?"Red":"Black"}));
+    } else cell.append(Object.assign(el("span","rec-empty"),{textContent:"—"}));
+    if(editable && onEdit) cell.onclick=()=>onEdit(i);
+    grid.append(cell);
+  }
+  wrap.append(grid); return wrap;
 }
 /* Tap the number cards in stacking order to build a 4-permutation.
    Calls onChange(arrayOfNums); `kind` is the player's suit (falls back to per-number colour). */
@@ -2942,9 +3088,19 @@ function paramEditor(){
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Question 4 splits this pot; the focal answer is half of it. Just Open → students play all four → Reveal (all four results show together)."})); }
   else if(g==="quatro" || g==="redblack"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played","rounds",cf.rounds)); wrap.append(grid);
-    wrap.append(Object.assign(el("div","sm mut"),{textContent: g==="redblack"
-      ? "Hands each pair plays. Students pair up in a waiting room, are dealt opposite colours, and tap their card each hand for live scoring; the class joint distribution and win split aggregate on reveal."
-      : "Hands each pair plays. Students pair up in a waiting room and tap their pile each hand; winners are computed live and results aggregate on reveal."})); }
+    if(g==="redblack"){
+      const mode=cf.mode||"record";
+      const setMode=(v)=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.mode=v; const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
+      wrap.append(Object.assign(el("div","tinylabel"),{textContent:"Play style",style:"margin-top:10px"}));
+      const row=el("div","row"); row.style.gap="8px"; row.style.marginTop="4px";
+      [["record","Recorded (real cards)"],["live","Live (on phones)"]].forEach(([v,l])=>{ const b=el("button","ghost-btn"+(mode===v?" hold-on":"")); b.textContent=l; b.onclick=()=>{ if(mode!==v) setMode(v); }; row.append(b); });
+      wrap.append(row);
+      wrap.append(Object.assign(el("div","sm mut"),{textContent: mode==="record"
+        ? "Recorded: pairs play the "+cf.rounds+" hands with real Red/Black decks, then one partner enters every hand here and the other verifies it. The class joint distribution and win split aggregate on reveal."
+        : "Live: students pair up in a waiting room, are dealt opposite colours, and tap their own card each hand for live scoring.",style:"margin-top:6px"}));
+    } else {
+      wrap.append(Object.assign(el("div","sm mut"),{textContent:"Hands each pair plays. Students pair up in a waiting room and tap their pile each hand; winners are computed live and results aggregate on reveal."}));
+    } }
   else { const grid=el("div","paramgrid");
     grid.append(mk("Endowment (marks)","E",cf.E),mk("Pot multiplier","mult",cf.mult,"0.1")); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"The pot is ×multiplier then split among all players. Keep multiplier > 1 (socially worth it) but < class size (so each person's share of a given mark, multiplier÷N, stays below 1 — free-riding tempting)."})); }

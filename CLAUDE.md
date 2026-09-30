@@ -164,6 +164,17 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     per number for G5; `cardBtn` taps). Config `{ rounds }` (`paramEditor` "Rounds played"; default
     `quatro:5`, `redblack:20`). The `live` node needs read/write in the Firebase rules (both tiers
     include it: open under stopgap, any signed-in user under lockdown).
+  - **G6 has two play styles** (`config.mode`, chosen in `paramEditor`; **default `"record"`**):
+    - **`"record"`** (`pairRecorded`) — the real-cards/Excel workflow: pairs play all `rounds` hands
+      with physical Red/Black decks, then pair up here and **one partner (the recorder) enters every
+      hand's Red card + Black card**; the other **verifies the whole thing once** (soft — the confirm
+      IS their submission). The recorder taps "I'll enter", marks who held Red (`rec.redId`), and
+      enters each hand (editable grid, running Red/Black score) into `live/…/pairs/‹pid›/rec`; on
+      Done writes their own sub. The verifier watches it live and taps "Confirm" → writes their sub.
+      **Both subs are ordinary per-player `redblack` subs** (`mode:"record"`, `color`+`seq`, mutual
+      `partner`), so `mutualPairs`/`analyzeRedBlack` zip them into the same joint 4×4 matrix — no
+      analysis change. This is the recommended in-class mode (ensures they play with real cards).
+    - **`"live"`** (`pairMatch`) — the real-time on-phones match described above.
   - `quatro` (G5) — 4-card duel (1<2<3<4): stack your four cards into a pile, reveal top cards, lower
     discarded / equal → both discarded / **1 vs 4 → both discarded**; empty your pile first and you
     lose. **Non-transitive** (1 beats 4), like RPS — no dominant ordering. `studentQuatro` records
