@@ -1765,7 +1765,62 @@ function studentPair(c, game){
     if(game==="redblack" && (cf.mode||"record")==="record"){ pairRecorded(c, R, d, {partner, partnerName, mc, pid}); return; }
     pairMatch(c, game, R, d, {partner, partnerName, myColor, suits:pairData.suits, mc}); return;
   }
+  // Recorded mode is asynchronous (real cards played offline, then one person enters), so it
+  // doesn't use the live presence lobby — the recorder just picks who they played with.
+  if(game==="redblack" && (cf.mode||"record")==="record"){ recordSetup(c, game, mc, R, d); return; }
   pairLobby(c, game, mc, R, d);
+}
+/* Recorded G6 — pick your partner (roster classmate, or type a name to record it yourself),
+   then enter the hands. Picking a real classmate lets them verify later; a typed name means
+   you record the whole game (both sides) yourself. */
+function recordSetup(c, game, mc, R, d){
+  c.append(pairRules("Recorded — real cards",[
+    "You played all "+R+" hands at the table with your real decks (one Red, one Black).",
+    "Pick who you played with, then enter every hand. A roster partner can confirm it after."]));
+  const box=el("div","lobby"); box.style.marginTop="14px";
+  box.append(tinyLabel("Who did you play against?"));
+  const meLc=String(myId).toLowerCase();
+  const others=rosterList.filter(e=> e.email && e.email.toLowerCase()!==meLc);
+  if(others.length){
+    const list=el("div","res-list"); list.style.margin="8px 0 4px";
+    others.forEach(e=>{ const b=el("button","res-btn"); b.type="button"; b.textContent=e.name+(e.section?" · "+e.section:"");
+      b.onclick=()=>recPairWith(mc, e.email.toLowerCase(), e.name, false); list.append(b); });
+    box.append(list);
+  }
+  const man=el("div"); man.style.marginTop=others.length?"12px":"8px";
+  man.append(Object.assign(el("div","sm mut"),{textContent: others.length
+    ? "Partner not on the roster? Type their name — you'll record the whole game yourself."
+    : "Type your partner's name — you'll record the whole game yourself."}));
+  const inp=el("input"); inp.type="text"; inp.placeholder="Partner's name";
+  inp.style.cssText="width:100%;max-width:320px;margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit";
+  inp.value=d.recPartnerName||""; inp.oninput=()=>{ d.recPartnerName=inp.value; };
+  const go=el("button","btn wide","Start recording"); go.style.cssText="margin-top:8px;max-width:320px";
+  go.onclick=()=>{ const nm=(inp.value||"").trim(); if(!nm){ toast("Enter a partner's name"); return; } recPairWith(mc, "np:"+Date.now().toString(36), nm, true); };
+  man.append(inp, go); box.append(man);
+  c.append(box);
+}
+/* Create a recorded-mode pair unilaterally: I'm the recorder; a real (roster) partner also gets
+   an `of` pointer so they find it and verify later; a typed name (solo) I record entirely myself. */
+async function recPairWith(mc, partnerId, partnerName, solo){
+  const ids=[String(myId), String(partnerId)].sort();
+  const pid=ids.map(encodeKey).join("~");
+  const names={}; names[encodeKey(String(myId))]=myName||"Player"; names[encodeKey(String(partnerId))]=partnerName||"Partner";
+  try{
+    await fb.ref(PAIR_DOC(mc,pid)).set({a:ids[0], b:ids[1], names, ts:Date.now(), mode:"record",
+      rec:{by:String(myId), byName:myName||"Player", solo:!!solo}});
+    await fb.ref(OF_DOC(mc,myId)).set(pid);
+    if(!solo) await fb.ref(OF_DOC(mc,partnerId)).set(pid);   // real partner finds the pair when they open the game
+    try{ await fb.ref(LOBBY_DOC(mc,myId)).remove(); }catch(e){}
+  }catch(e){ toast("Couldn't start — the Firebase live rules may need publishing"); }
+}
+/* Write the partner's side of a solo (self-recorded) pair, so the joint analysis has both hands. */
+async function saveRecPartner(pid_, name_, payload){
+  const key=roundKey(control.activeGame,control.round);
+  const doc={ roundKey:key, session:curSession(), game:control.activeGame, round:control.round,
+    studentId:String(pid_), name:name_||"Partner", ts:Date.now(), done:true, guest:true };
+  if(curMSection()) doc.msection=curMSection();
+  Object.assign(doc,payload);
+  try{ await fb.ref(SUB_DOC(key,String(pid_))).set(doc); return true; }catch(e){ return false; }
 }
 function pairLobby(c, game, mc, R, d){
   const rbRecord = game==="redblack" && (cfg("redblack").mode||"record")==="record";
@@ -1982,16 +2037,26 @@ function pairRecorded(c, R, d, opts){
     }
     c.append(recGrid(red,black,R,target,true,(i)=>{ d._edit=i; recSet(mc,pid,{verifiedBy:null}); render(); }));
     if(done===R){
-      const b=el("button","btn big wide",(cur&&isDone(cur))?"Update & re-send":"Done — send to "+esc(partnerName)+" to check"); b.style.marginTop="14px"; b.style.maxWidth="360px";
+      const solo=!!rec.solo;
+      const b=el("button","btn big wide",(cur&&isDone(cur))?(solo?"Update":"Update & re-send"):(solo?"Done — record this game":"Done — send to "+esc(partnerName)+" to check")); b.style.marginTop="14px"; b.style.maxWidth="360px";
       b.onclick=async()=>{
         const myColor=String(myId)===String(rec.redId)?"red":"black";
         const seq=(myColor==="red"?red:black).map(x=>x||"").join(",");
         await savePair({mode:"record", color:myColor, partner, partnerName, seq}, true);
-        await recSet(mc,pid,{done:true, red:red.join(","), black:black.join(",")});
-        toast("Sent to "+partnerName+" to verify"); render();
+        if(solo){
+          const oppSeq=(myColor==="red"?black:red).map(x=>x||"").join(",");
+          await saveRecPartner(partner, partnerName, {mode:"record", color:oppColor(myColor), partner:String(myId), partnerName:myName||"You", seq:oppSeq});
+          await recSet(mc,pid,{done:true, red:red.join(","), black:black.join(","), verifiedBy:String(partner)});
+          toast("Recorded"); render();
+        } else {
+          await recSet(mc,pid,{done:true, red:red.join(","), black:black.join(",")});
+          toast("Sent to "+partnerName+" to verify"); render();
+        }
       };
       c.append(b);
-      if(cur&&isDone(cur)){ if(rec.verifiedBy) c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:12px",innerHTML:"<b>✓ "+esc(partnerName)+" confirmed.</b> Your pair's results are recorded."}));
+      if(cur&&isDone(cur)){
+        if(solo) c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:12px",innerHTML:"<b>✓ Recorded.</b> This game's hands are saved for both of you."}));
+        else if(rec.verifiedBy) c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:12px",innerHTML:"<b>✓ "+esc(partnerName)+" confirmed.</b> Your pair's results are recorded."}));
         else c.append(hintLine("Sent — waiting for "+esc(partnerName)+" to confirm.")); }
     } else c.append(hintLine((R-done)+" hand"+(R-done===1?"":"s")+" left to enter."));
   }
@@ -2026,8 +2091,8 @@ function recGrid(red,black,R,active,editable,onEdit){
     const cell=el((editable?"button":"div"),"rec-cell"+(has?" filled":"")+(i===active?" active":"")); if(editable) cell.type="button";
     cell.append(Object.assign(el("span","rec-n"),{textContent:i+1}));
     if(has){
-      const rm=cardFace(red[i],"red"); rm.setAttribute("class","cf mini"); const bm=cardFace(black[i],"black"); bm.setAttribute("class","cf mini");
-      const cards=el("span","rec-cards"); cards.append(rm,bm); cell.append(cards);
+      const slot=(rk,kind)=>{ const s=el("span","mini-slot"); const f=cardFace(rk,kind); f.setAttribute("class","cf mini"); s.append(f); return s; };
+      const cards=el("span","rec-cards"); cards.append(slot(red[i],"red"), slot(black[i],"black")); cell.append(cards);
       const w=redBlackWinner(red[i],black[i]); cell.append(Object.assign(el("span","rec-w "+w),{textContent:w==="red"?"Red":"Black"}));
     } else cell.append(Object.assign(el("span","rec-empty"),{textContent:"—"}));
     if(editable && onEdit) cell.onclick=()=>onEdit(i);

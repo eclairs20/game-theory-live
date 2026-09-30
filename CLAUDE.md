@@ -202,14 +202,19 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     include it: open under stopgap, any signed-in user under lockdown).
   - **G6 has two play styles** (`config.mode`, chosen in `paramEditor`; **default `"record"`**):
     - **`"record"`** (`pairRecorded`) — the real-cards/Excel workflow: pairs play all `rounds` hands
-      with physical Red/Black decks, then pair up here and **one partner (the recorder) enters every
-      hand's Red card + Black card**; the other **verifies the whole thing once** (soft — the confirm
-      IS their submission). The recorder taps "I'll enter", marks who held Red (`rec.redId`), and
-      enters each hand (editable grid, running Red/Black score) into `live/…/pairs/‹pid›/rec`; on
-      Done writes their own sub. The verifier watches it live and taps "Confirm" → writes their sub.
-      **Both subs are ordinary per-player `redblack` subs** (`mode:"record"`, `color`+`seq`, mutual
-      `partner`), so `mutualPairs`/`analyzeRedBlack` zip them into the same joint 4×4 matrix — no
-      analysis change. This is the recommended in-class mode (ensures they play with real cards).
+      with physical Red/Black decks, then record them here. Because it's **asynchronous** (offline
+      play, then one person enters), record mode does **NOT** use the live presence lobby — instead
+      `recordSetup` shows a **partner picker**: tap a **roster classmate** (`recPairWith(...,solo=false)`
+      sets `of` pointers for both, so the partner verifies later) or type a **name** to self-record
+      (`solo=true`). The recorder then marks who held Red (`rec.redId`) and enters each hand
+      (editable `recGrid`, running Red/Black score) into `live/…/pairs/‹pid›/rec`; on Done writes their
+      own sub. For a roster partner the other side **verifies once** (soft — the confirm IS their sub);
+      for a **solo** (typed-name) partner the recorder's Done also writes the partner's side
+      (`saveRecPartner`, `guest:true`) so the pair is complete without a second person — good for an
+      absent partner or sandbox testing. **Both subs are ordinary per-player `redblack` subs**
+      (`mode:"record"`, `color`+`seq`, mutual `partner`), so `mutualPairs`/`analyzeRedBlack` zip them
+      into the same joint 4×4 matrix — no analysis change. `recGrid` renders each recorded hand's two
+      cards in sized `.mini-slot` wrappers so they don't overflow the cell. Recommended in-class mode.
     - **`"live"`** (`pairMatch`) — the real-time on-phones match described above.
   - `quatro` (G5) — 4-card duel (1<2<3<4): stack your four cards into a pile, reveal top cards, lower
     discarded / equal → both discarded / **1 vs 4 → both discarded**; empty your pile first and you
