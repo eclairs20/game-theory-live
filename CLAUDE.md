@@ -86,7 +86,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   Google sign-in). Real students only ever see their own room, so building/playing in a sandbox is
   invisible to them.
 - **Student hub ("My page")** — a personal student dashboard, gated by the instructor per course
-  via `control.hub = { on, results, practice, lessons, resultKeys, lessonKeys }` (all default
+  via `control.hub = { on, results, practice, lessons, resultKeys, lessonKeys, practiceKeys }` (all default
   **off/empty**; a **Student page** card in the console controls them). When `hub.on`, students get a
   **Class / My page** tab bar (`studentNav`; `studentRoot`/`curStudentTab` decide the default — the
   live class when something's open, else the hub; `onCtrl` resets `studentTab` on any activity change
@@ -110,7 +110,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     `launchLesson(id)`; `lessonVisible(id)` gates a student launching one (also enforced in `render()`).
     Add a lesson = one `HUB_LESSONS` entry + a `launchLesson` case.
   - **Practice vs a bot** (`hubPractice`/`practiceMatch` → `pairMatch` with `practice:true`) plays
-    locally and **writes nothing**; gated by the plain `hub.practice` boolean.
+    locally and **writes nothing**; the `hub.practice` master toggle plus per-game `hub.practiceKeys`
+    (`{<id>:true}`) — the instructor ticks which of the practice-capable games (`HUB_PRACTICE`, the two
+    card games quatro/redblack) students may practise. `hubPractice` shows only ticked games and
+    returns `null` when none are ticked.
   All hub state lives in `control` (instructor-writable, world-readable), so **no Firebase rules
   change** is needed. `parseRoundKey` inverts `roundKey`; the student analysis is `analysisBody(game,
   historicalList, false)`, reused from `analysisView`.

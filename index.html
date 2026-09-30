@@ -620,10 +620,14 @@ function publishedMap(){ return (control&&control.published)||{}; }
    and there's no ambiguity about what students can see. */
 function hubResultKeys(){ return hubCfg().resultKeys||{}; }
 function hubLessonKeys(){ return hubCfg().lessonKeys||{}; }
+function hubPracticeKeys(){ return hubCfg().practiceKeys||{}; }
 const lessonVisible = id => !!(hubCfg().lessons && hubLessonKeys()[id]);
 /* Interactive lessons available to expose on the hub. Add a new lesson here + a case in
    launchLesson() and it becomes individually tick-able in the console. */
 const HUB_LESSONS = [ {id:"pareto", name:"Pareto optimality"} ];
+/* Games that have a practice bot (the two-player card games). The instructor ticks which
+   of these students may practise; label uses a short name. */
+const HUB_PRACTICE = [ {id:"quatro", name:"Quatro Uno"}, {id:"redblack", name:"Red vs Black"} ];
 function launchLesson(id){ if(id==="pareto"){ paretoInit("dilemma"); lessonMode="pareto"; render(); } }
 /* Canonical game order (G1…G6) so meeting lists never look randomly shuffled. */
 const GAME_ORDER = Object.keys(GAMES);
@@ -1251,7 +1255,7 @@ function studentHub(){
   c.append(head);
   c.append(hubMySubs());
   if(h.results){ const r=hubResults(); if(r) c.append(r); }
-  if(h.practice) c.append(hubPractice());
+  if(h.practice){ const p=hubPractice(); if(p) c.append(p); }
   if(h.lessons){ const l=hubLessons(); if(l) c.append(l); }
   return c;
 }
@@ -1296,11 +1300,15 @@ function hubResults(){
   return card;
 }
 function hubPractice(){
+  const pick=hubPracticeKeys();
+  const games=HUB_PRACTICE.filter(g=>pick[g.id]);
+  if(!games.length) return null;   // instructor hasn't ticked any practice game → hide the card
+  if(practiceGame && !games.some(g=>g.id===practiceGame)) practiceGame=null;   // one just got unticked
   const card=el("div","card stage");
   card.append(el("div","eyebrow","Practice vs a bot"));
   card.append(Object.assign(el("p","lead"),{textContent:"Play a quick game against a practice bot — just for you, nothing is recorded.",style:"margin:6px 0 10px"}));
   const row=el("div","row"); row.style.gap="10px"; row.style.flexWrap="wrap";
-  [["quatro","Quatro Uno"],["redblack","Red vs Black"]].forEach(([g,label])=>{ const b=el("button","btn neutral"+(practiceGame===g?" on":"")); b.textContent="▶ "+label; b.onclick=()=>{ practiceGame=(practiceGame===g?null:g); if(!practiceGame){ delete gameDraft["practice-"+g]; } render(); }; row.append(b); });
+  games.forEach(g=>{ const b=el("button","btn neutral"+(practiceGame===g.id?" on":"")); b.textContent="▶ "+g.name; b.onclick=()=>{ practiceGame=(practiceGame===g.id?null:g.id); if(!practiceGame){ delete gameDraft["practice-"+g.id]; } render(); }; row.append(b); });
   card.append(row);
   if(practiceGame) card.append(practiceMatch(practiceGame));
   return card;
@@ -3124,7 +3132,17 @@ function teacherConsole(){
       }
       sHub.append(wrap);
     }
+    // Practice vs bots — tick the specific games students may practise against a bot.
     sHub.append(toggle("practice","Practice vs bots"));
+    if(hc.practice){
+      const pwrap=el("div"); pwrap.style.margin="6px 0 2px";
+      const list=el("div","res-list");
+      HUB_PRACTICE.forEach(g=>{ const on=!!(hc.practiceKeys&&hc.practiceKeys[g.id]);
+        list.append(chip(on, g.name, ()=>setHubMap("practiceKeys",g.id,!on))); });
+      pwrap.append(list);
+      pwrap.append(Object.assign(el("div","sm mut"),{textContent:"Only ticked games appear to practise on My page.",style:"margin-top:6px"}));
+      sHub.append(pwrap);
+    }
     // Interactive lessons — tick the specific lessons students may open.
     sHub.append(toggle("lessons","Interactive lessons"));
     if(hc.lessons){
