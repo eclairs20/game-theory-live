@@ -93,16 +93,17 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   so an opening game pulls them back). The hub (`studentHub`) shows: **What you submitted** (`allSubs`
   filtered to `myId`); **Class results** and **Interactive lessons** are **explicit opt-in per item** —
   the instructor ticks exactly which meetings/lessons are visible, so there's no ambiguity:
-  - **Class results** (`hubResults`) shows only the meetings whose roundKey is ticked in
-    `hub.resultKeys` (`{<roundKey>:true}`), further filtered for **real students** to ones they could
-    have attended (`played || !pk.section || pk.section===mySec`); an **instructor previewing their own
-    My page** (`isInstructorEmail(authUser.email)` → `previewAll`) bypasses that section filter and
-    sees every shared meeting (an instructor has no roster section, so otherwise it would collapse to
-    only meetings they personally submitted in). The currently-live/not-yet-revealed round is never
-    shown even if ticked (leak guard). Returns `null` (card hidden) when nothing is visible. The
-    console lists every played meeting from `playedMeetings()` (deduped roundKeys with `isDone` subs,
-    across ALL submitters — never restricted to the instructor's own) as tick-chips, plus **Select all
-    / Clear**. `control.published` (written by `doReveal`) is now used only to sort.
+  - **Class results** (`hubResults`) shows the meetings whose roundKey is ticked in
+    `hub.resultKeys` (`{<roundKey>:true}`) to **every student** — no per-section/attendance filter, so
+    someone who missed the class can still learn from a shared meeting. The only exclusion is the
+    currently-live/not-yet-revealed round (leak guard). Returns `null` (card hidden) when nothing is
+    ticked. The console lists every played meeting from `playedMeetings()` (deduped roundKeys with
+    `isDone` subs, across ALL submitters — never restricted to the instructor's own) as tick-chips,
+    plus **Select all / Clear**. Both the console chips and the student result buttons order via
+    `meetingCmp` (session → section → game G1…G6 → round) and label via `meetingLabels` (round shown
+    only when a game+session+section has more than one round in the list), so nothing looks shuffled
+    and repeated rounds are told apart. `control.published` is still written by `doReveal` but no
+    longer read for display.
   - **Interactive lessons** (`hubLessons`) shows only lessons ticked in `hub.lessonKeys`
     (`{<id>:true}`); available lessons live in the `HUB_LESSONS` registry and launch via
     `launchLesson(id)`; `lessonVisible(id)` gates a student launching one (also enforced in `render()`).

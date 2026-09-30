@@ -625,7 +625,27 @@ const lessonVisible = id => !!(hubCfg().lessons && hubLessonKeys()[id]);
    launchLesson() and it becomes individually tick-able in the console. */
 const HUB_LESSONS = [ {id:"pareto", name:"Pareto optimality"} ];
 function launchLesson(id){ if(id==="pareto"){ paretoInit("dilemma"); lessonMode="pareto"; render(); } }
-/* Every meeting that has completed submissions, newest first — the menu the instructor
+/* Canonical game order (G1…G6) so meeting lists never look randomly shuffled. */
+const GAME_ORDER = Object.keys(GAMES);
+/* Deterministic meeting order: by session, then section, then game (G1…G6), then round —
+   so a game's rounds sit together in order and both consoles agree. Takes anything with
+   {session, section, game, round}. */
+function meetingCmp(a,b){
+  return (a.session-b.session) || (a.section<b.section?-1:a.section>b.section?1:0)
+      || (GAME_ORDER.indexOf(a.game)-GAME_ORDER.indexOf(b.game)) || (a.round-b.round);
+}
+/* Labels for a set of meetings; the round is shown only when the same game+session+section
+   has more than one round in the set (so single-round meetings stay uncluttered but repeated
+   rounds are told apart). Returns { <roundKey>: "Game · S1.A · R2" }. */
+function meetingLabels(list){
+  const groups={};
+  list.forEach(m=>{ const k=m.game+"|"+m.session+"|"+m.section; (groups[k]||(groups[k]={}))[m.round]=1; });
+  const out={};
+  list.forEach(m=>{ const k=m.game+"|"+m.session+"|"+m.section; const multi=Object.keys(groups[k]).length>1;
+    out[m.rk]=((GAMES[m.game]||{}).name||m.game)+" · S"+m.session+(m.section?"."+m.section:"")+(multi?" · R"+m.round:""); });
+  return out;
+}
+/* Every meeting that has completed submissions, in canonical order — the menu the instructor
    ticks from (which results to share) and the source for the student results list. */
 function playedMeetings(){
   const m={};
@@ -634,7 +654,7 @@ function playedMeetings(){
     const e=m[s.roundKey]||(m[s.roundKey]={rk:s.roundKey, game:pk.game, session:pk.session, section:pk.section, round:pk.round, count:0, ts:0});
     e.count++; e.ts=Math.max(e.ts, s.ts||0);
   });
-  return Object.values(m).sort((a,b)=>(b.session-a.session)||(a.section<b.section?1:a.section>b.section?-1:0)||(b.ts-a.ts));
+  return Object.values(m).sort(meetingCmp);
 }
 const CTRL_PATH = ()=> ROOM+"/control";
 const SUBS_PATH = ()=> ROOM+"/subs";
@@ -1248,34 +1268,28 @@ function hubMySubs(){
   return card;
 }
 function hubResults(){
-  const mySec=(roster[String(myId).toLowerCase()]||{}).section||"";
-  const pub=publishedMap(), pick=hubResultKeys();
-  // An instructor previewing their own My page has no roster section, so the per-section
-  // filter would hide every sectioned meeting — show them everything they've shared instead.
-  const previewAll=isInstructorEmail(authUser&&authUser.email);
-  // Only the meetings the instructor has explicitly ticked for students, and (for real
-  // students) only those this student could have attended. The currently-live,
+  const pick=hubResultKeys();
+  // Every meeting the instructor ticked — shown to ALL students (so someone who missed the
+  // class can still learn the concept), not just their own section. The currently-live,
   // not-yet-revealed round is never shown even if ticked, so an open round can't leak.
   const curLive=(control && control.activeGame && control.phase!=="revealed") ? roundKey(control.activeGame, control.round) : null;
-  const seen={};
-  Object.values(allSubs).forEach(s=>{ if(s && s.roundKey && isDone(s)) seen[s.roundKey]=Math.max(seen[s.roundKey]||0, s.ts||0); });
-  const keys=Object.keys(seen).filter(rk=>{ if(!pick[rk] || rk===curLive) return false; const pk=parseRoundKey(rk); if(!pk) return false;
-    if(previewAll) return true;
-    const played=Object.values(allSubs).some(s=>s && s.roundKey===rk && String(s.studentId)===String(myId));
-    return played || !pk.section || pk.section===mySec;      // ones the student could have attended
-  }).sort((a,b)=>((pub[b]||seen[b]||0)-(pub[a]||seen[a]||0)));
-  if(!keys.length) return null;   // nothing shared to this student → don't render the card at all
+  const done={};
+  Object.values(allSubs).forEach(s=>{ if(s && s.roundKey && isDone(s)) done[s.roundKey]=1; });
+  const metas=Object.keys(done).filter(rk=> pick[rk] && rk!==curLive && parseRoundKey(rk))
+    .map(rk=>Object.assign({rk}, parseRoundKey(rk))).sort(meetingCmp);
+  if(!metas.length) return null;   // nothing shared → don't render the card at all
+  const labels=meetingLabels(metas), keys=metas.map(m=>m.rk);
   const card=el("div","card stage");
   card.append(el("div","eyebrow gold","Class results"));
   if(!studentResK || keys.indexOf(studentResK)<0) studentResK=keys[0];
   const list=el("div","res-list"); list.style.margin="8px 0 4px";
-  keys.forEach(rk=>{ const pk=parseRoundKey(rk); const b=el("button","res-btn"+(rk===studentResK?" on":"")); b.type="button";
-    b.textContent=((GAMES[pk.game]||{}).name||pk.game)+" · S"+pk.session+(pk.section?"."+pk.section:""); b.onclick=()=>{ studentResK=rk; render(); }; list.append(b); });
+  metas.forEach(m=>{ const b=el("button","res-btn"+(m.rk===studentResK?" on":"")); b.type="button";
+    b.textContent=labels[m.rk]; b.onclick=()=>{ studentResK=m.rk; render(); }; list.append(b); });
   card.append(list);
   const pk=parseRoundKey(studentResK);
   const list2=Object.values(allSubs).filter(s=>s && s.roundKey===studentResK && isDone(s));
   const body=el("div"); body.style.marginTop="10px";
-  body.append(el("div","eyebrow","Results · "+((GAMES[pk.game]||{}).name||pk.game)+" · S"+pk.session+(pk.section?"."+pk.section:"")));
+  body.append(el("div","eyebrow","Results · "+labels[studentResK]));
   if(!list2.length) body.append(Object.assign(el("p","lead"),{textContent:"No submissions were recorded for this meeting."}));
   else body.append(analysisBody(pk.game, list2, false));
   card.append(body);
@@ -3101,9 +3115,10 @@ function teacherConsole(){
         const selAll=el("button","res-btn","Select all"); selAll.type="button"; selAll.onclick=()=>{ const o={}; meetings.forEach(m=>o[m.rk]=true); setHubMapAll("resultKeys",o); };
         const clr=el("button","res-btn","Clear"); clr.type="button"; clr.onclick=()=>setHubMapAll("resultKeys",{});
         bar.append(selAll,clr); wrap.append(bar);
+        const mlabels=meetingLabels(meetings);
         const list=el("div","res-list");
         meetings.forEach(m=>{ const on=!!(hc.resultKeys&&hc.resultKeys[m.rk]);
-          list.append(chip(on, ((GAMES[m.game]||{}).name||m.game)+" · S"+m.session+(m.section?"."+m.section:"")+" ("+m.count+")", ()=>setHubMap("resultKeys",m.rk,!on))); });
+          list.append(chip(on, mlabels[m.rk]+" ("+m.count+")", ()=>setHubMap("resultKeys",m.rk,!on))); });
         wrap.append(list);
         wrap.append(Object.assign(el("div","sm mut"),{textContent:"Only ticked meetings show on My page. The live round is never shown until you reveal it.",style:"margin-top:6px"}));
       }
