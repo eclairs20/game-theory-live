@@ -210,7 +210,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
       account (`INSTRUCTOR_EMAILS`, tagged "instructor", so a prof can test the picker or partner an
       odd-one-out student; self always excluded) — via `recPairWith(...,solo=false)` (sets `of`
       pointers for both, so the partner verifies later), or type a **name** to self-record
-      (`solo=true`). The recorder then marks who held Red (`rec.redId`) and enters each hand
+      (`solo=true`). For a big class (>8 candidates) a **search box** filters the chips by name or
+      email in place (no full re-render, capped at 12 with a "+N more" hint) so it isn't a wall of
+      names. The recorder then marks who held Red (`rec.redId`) and enters each hand
       (editable `recGrid`, running Red/Black score) into `live/…/pairs/‹pid›/rec`; on Done writes their
       own sub. For a roster partner the other side **verifies once** (soft — the confirm IS their sub);
       for a **solo** (typed-name) partner the recorder's Done also writes the partner's side

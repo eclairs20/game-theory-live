@@ -1791,8 +1791,29 @@ function recordSetup(c, game, mc, R, d){
   INSTRUCTOR_EMAILS.forEach(em=>{ const lc=String(em).toLowerCase(); if(lc!==meLc && !cand.some(x=>x.id===lc)) cand.push({id:lc, name:emailName(em), tag:"instructor"}); });
   if(cand.length){
     const list=el("div","res-list"); list.style.margin="8px 0 4px";
-    cand.forEach(e=>{ const b=el("button","res-btn"); b.type="button"; b.textContent=e.name+(e.tag?" · "+e.tag:"");
-      b.onclick=()=>recPairWith(mc, e.id, e.name, false); list.append(b); });
+    const CAP=12, big=cand.length>8;
+    // A search box appears for a big class so the picker isn't a wall of chips. It filters
+    // in place (no full re-render, so focus/keystrokes are kept) by name or email.
+    let search=null;
+    if(big){
+      search=el("input"); search.type="text"; search.placeholder="Search your partner by name or email";
+      search.style.cssText="width:100%;max-width:340px;margin:8px 0 2px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit";
+      search.value=d.recSearch||"";
+      box.append(search);
+    }
+    const paint=()=>{
+      list.replaceChildren();
+      const q=big?(search.value||"").trim().toLowerCase():"";
+      const hits=cand.filter(e=> !q || e.name.toLowerCase().includes(q) || e.id.toLowerCase().includes(q));
+      hits.slice(0,CAP).forEach(e=>{ const b=el("button","res-btn"); b.type="button"; b.textContent=e.name+(e.tag?" · "+e.tag:"");
+        b.onclick=()=>recPairWith(mc, e.id, e.name, false); list.append(b); });
+      if(big){
+        if(!hits.length) list.append(Object.assign(el("div","sm mut"),{textContent:"No match — type your partner's name below to record it yourself.",style:"padding:2px 0"}));
+        else if(hits.length>CAP) list.append(Object.assign(el("div","sm mut"),{textContent:"+"+(hits.length-CAP)+" more — keep typing to narrow.",style:"padding:2px 0"}));
+      }
+    };
+    if(search) search.oninput=()=>{ d.recSearch=search.value; paint(); };
+    paint();
     box.append(list);
   }
   const man=el("div"); man.style.marginTop=cand.length?"12px":"8px";
