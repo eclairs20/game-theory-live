@@ -627,12 +627,12 @@ const HUB_LESSONS = [ {id:"pareto", name:"Pareto optimality"} ];
 function launchLesson(id){ if(id==="pareto"){ paretoInit("dilemma"); lessonMode="pareto"; render(); } }
 /* Canonical game order (G1…G6) so meeting lists never look randomly shuffled. */
 const GAME_ORDER = Object.keys(GAMES);
-/* Deterministic meeting order: by session, then section, then game (G1…G6), then round —
-   so a game's rounds sit together in order and both consoles agree. Takes anything with
-   {session, section, game, round}. */
+/* Deterministic meeting order: grouped by game (G1…G6), then session, section, round — so
+   every instance of a game sits together (all Give or Keep, then all Guess, …) instead of
+   game names interleaving across meetings. Takes anything with {session, section, game, round}. */
 function meetingCmp(a,b){
-  return (a.session-b.session) || (a.section<b.section?-1:a.section>b.section?1:0)
-      || (GAME_ORDER.indexOf(a.game)-GAME_ORDER.indexOf(b.game)) || (a.round-b.round);
+  return (GAME_ORDER.indexOf(a.game)-GAME_ORDER.indexOf(b.game))
+      || (a.session-b.session) || (a.section<b.section?-1:a.section>b.section?1:0) || (a.round-b.round);
 }
 /* Labels for a set of meetings; the round is shown only when the same game+session+section
    has more than one round in the set (so single-round meetings stay uncluttered but repeated

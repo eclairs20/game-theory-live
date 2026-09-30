@@ -100,7 +100,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     ticked. The console lists every played meeting from `playedMeetings()` (deduped roundKeys with
     `isDone` subs, across ALL submitters — never restricted to the instructor's own) as tick-chips,
     plus **Select all / Clear**. Both the console chips and the student result buttons order via
-    `meetingCmp` (session → section → game G1…G6 → round) and label via `meetingLabels` (round shown
+    `meetingCmp` (game G1…G6 → session → section → round, so every instance of a game groups
+    together) and label via `meetingLabels` (round shown
     only when a game+session+section has more than one round in the list), so nothing looks shuffled
     and repeated rounds are told apart. `control.published` is still written by `doReveal` but no
     longer read for display.
