@@ -68,12 +68,16 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   taps to apply (or `dismiss`). Section-less rows nag only on a session mismatch (the common
   both-sections-same-day case); section rows also nag if the running section isn't scheduled that day.
   Edited via the console's **Session schedule** card (`scheduleEditor`, paste like the roster).
-- **Students on hold** — `control.hold` (boolean). When true, every student in the room sees a
-  neutral "your instructor will start shortly" screen (checked at the top of `studentView`,
-  overriding game/phase/reveal); instructors are unaffected. Toggled from the **Students** control in
-  `sessionTile` ("⏸ Hold" / "On hold — Go live ▶"); the console shows a reminder note while held.
-  `hold` is part of `viewKey()` so flipping it re-renders students immediately. Use it to freeze what
-  the class sees while setting up or testing.
+- **Students on hold** — `control.hold` (boolean). When true it freezes the **live class** only: the
+  Class tab shows a neutral "your instructor will start shortly" screen (checked at the top of
+  `studentView`, overriding game/phase/reveal); instructors are unaffected. When the **hub is on**,
+  hold does *not* freeze the dashboard — `studentRoot` still renders the Class/My page nav, so
+  students can open **My page** (past results, what they submitted, practice) while held, and
+  `curStudentTab` defaults to the hub while held (the live tab is frozen). Without the hub, hold
+  still blanks the whole student screen. Toggled from the **Students** control in `sessionTile`
+  ("⏸ Hold" / "On hold — Go live ▶"); the console shows a reminder note while held. `hold` is part of
+  `viewKey()` so flipping it re-renders students immediately. Use it to freeze the class activity
+  while setting up or testing.
 - **Sandbox / testing rooms** — a room whose id matches `isSandbox()` (`sandbox`, `dev`, `test`, or
   `‹those›-…`) is a throwaway test room: a gold `#sandboxBar` banner shows for everyone in it
   (`syncSandbox()`), and `writeRoster` **skips** the global course/enrollment registration for it, so
@@ -87,8 +91,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   (`studentNav`; `studentRoot`/`curStudentTab` decide the default — the live class when something's
   open, else the hub; `onCtrl` resets `studentTab` on any activity change so an opening game pulls
   them back). The hub (`studentHub`) shows: **What you submitted** (`allSubs` filtered to `myId`),
-  **Class results** (`hubResults` — only meetings the instructor has **revealed**; `doReveal` records
-  each into `control.published[roundKey]`; the student sees the student-variant analysis via
+  **Class results** (`hubResults` — **every meeting played so far** that the student could have
+  attended, derived from `allSubs` roundKeys, *excluding* the currently-live, not-yet-revealed round
+  so an open round never leaks; independent of the old `control.published` map, which `doReveal` still
+  writes and is used only to sort by reveal time; the student sees the student-variant analysis via
   `analysisBody(game, historicalList, false)`, reused from `analysisView`), **Practice vs a bot**
   (`hubPractice`/`practiceMatch` → `pairMatch` with `practice:true` — plays locally and **writes
   nothing**), and **Interactive lessons** (the Pareto lesson, now student-launchable). Reveal-gating

@@ -974,15 +974,19 @@ let _courseSelSig=null;
 function syncCourseSel(){
   const sel=$("#courseSel"); if(!sel) return;
   const ids=Object.keys(courses).sort();
-  const show = isTeacher() && ids.length>0;
+  // Show the switcher for any instructor (even with no registered courses yet) so the
+  // sandbox is always reachable from the top bar.
+  const show = isTeacher();
   sel.hidden=!show;
   if(!show){ _courseSelSig=null; return; }
-  const sig=ids.map(id=>id+":"+((courses[id]&&courses[id].name)||"")).join("|")+"||"+ROOM;
+  const sig=ids.map(id=>id+":"+((courses[id]&&courses[id].name)||"")).join("|")+"||"+ROOM+"||sb";
   if(sig===_courseSelSig) return;
   _courseSelSig=sig;
   sel.innerHTML="";
-  if(!courses[ROOM]){ const o=document.createElement("option"); o.value=ROOM; o.textContent=ROOM+" (current)"; sel.append(o); }
+  if(!courses[ROOM]){ const o=document.createElement("option"); o.value=ROOM; o.textContent=(isSandbox()?"🧪 "+ROOM:ROOM)+" (current)"; sel.append(o); }
   ids.forEach(id=>{ const o=document.createElement("option"); o.value=id; o.textContent=(courses[id].name||id); sel.append(o); });
+  // The sandbox is a throwaway test room, never a registered course — always offer it here.
+  if(!isSandbox() && ids.indexOf(SANDBOX_ID)<0){ const o=document.createElement("option"); o.value=SANDBOX_ID; o.textContent="🧪 Sandbox (test room)"; sel.append(o); }
   sel.value=ROOM;
   sel.onchange=()=>{ if(sel.value && sel.value!==ROOM){ try{location.search="?class="+encodeURIComponent(sel.value);}catch(e){} } };
 }
@@ -1165,14 +1169,22 @@ function joinPanel(){
 /* Routes a student to the live class or their personal hub, with a small tab bar when
    the hub is enabled for the course. Hold still overrides everything. */
 function studentRoot(){
-  if(control && control.hold) return studentView();
-  if(!hubOn()) return (control && control.activeGame) ? studentView() : studentWaiting();
+  // Without the hub, "hold" freezes the whole student screen (the neutral wait card).
+  if(!hubOn()){
+    if(control && control.hold) return studentView();
+    return (control && control.activeGame) ? studentView() : studentWaiting();
+  }
+  // With the hub on, "hold" only freezes the live *class* tab — students can still open
+  // "My page" (their dashboard, past results, practice) while the instructor sets up.
   if(!haveIdentity()){ const c=el("div","card stage"); c.append(el("div","eyebrow gold","Sign in")); const w=el("div"); w.style.marginTop="8px"; w.append(joinPanel()); c.append(w); return c; }
   const tab=curStudentTab();
-  const liveActive = !!(control && control.activeGame && (control.phase==="open"||control.phase==="revealed"));
+  const held=!!(control && control.hold);
+  const liveActive = !!(control && control.activeGame && (control.phase==="open"||control.phase==="revealed") && !held);
   const wrap=el("div","stack");
   wrap.append(studentNav(tab, liveActive));
-  wrap.append(tab==="hub" ? studentHub() : ((control && control.activeGame) ? studentView() : studentWaiting()));
+  // Class tab: the live game, the hold-wait card, or the between-activities waiting screen.
+  const classPane = (control && (control.hold || control.activeGame)) ? studentView() : studentWaiting();
+  wrap.append(tab==="hub" ? studentHub() : classPane);
   return wrap;
 }
 function studentNav(tab, liveActive){
@@ -1219,11 +1231,17 @@ function hubResults(){
   card.append(el("div","eyebrow gold","Class results"));
   const mySec=(roster[String(myId).toLowerCase()]||{}).section||"";
   const pub=publishedMap();
-  const keys=Object.keys(pub).filter(rk=>{ const pk=parseRoundKey(rk); if(!pk) return false;
+  // Every meeting that has completed submissions the student could have attended —
+  // i.e. all games played so far in class. The one exception is the meeting that is
+  // live RIGHT NOW and not yet revealed, so an open round's answers never leak here.
+  const curLive=(control && control.activeGame && control.phase!=="revealed") ? roundKey(control.activeGame, control.round) : null;
+  const seen={};
+  Object.values(allSubs).forEach(s=>{ if(s && s.roundKey && isDone(s)) seen[s.roundKey]=Math.max(seen[s.roundKey]||0, s.ts||0); });
+  const keys=Object.keys(seen).filter(rk=>{ if(rk===curLive) return false; const pk=parseRoundKey(rk); if(!pk) return false;
     const played=Object.values(allSubs).some(s=>s && s.roundKey===rk && String(s.studentId)===String(myId));
     return played || !pk.section || pk.section===mySec;      // ones the student could have attended
-  }).sort((a,b)=>(pub[b]||0)-(pub[a]||0));
-  if(!keys.length){ card.append(Object.assign(el("p","lead"),{textContent:"No results shared yet — they appear here after your instructor reveals a game in class.",style:"margin-top:6px"})); return card; }
+  }).sort((a,b)=>((pub[b]||seen[b]||0)-(pub[a]||seen[a]||0)));
+  if(!keys.length){ card.append(Object.assign(el("p","lead"),{textContent:"No class results yet — they appear here as games are played in class.",style:"margin-top:6px"})); return card; }
   if(!studentResK || keys.indexOf(studentResK)<0) studentResK=keys[0];
   const list=el("div","res-list"); list.style.margin="8px 0 4px";
   keys.forEach(rk=>{ const pk=parseRoundKey(rk); const b=el("button","res-btn"+(rk===studentResK?" on":"")); b.type="button";
@@ -3033,13 +3051,13 @@ function teacherConsole(){
   // Student page — a personal dashboard students can open between activities. You choose what's on.
   const sHub=el("div","rail-sec");
   sHub.append(Object.assign(el("h3"),{textContent:"Student page"}));
-  sHub.append(Object.assign(el("div","sm mut"),{textContent:"A personal dashboard for students — their own submissions plus anything you switch on below. Class results appear only for games you've revealed.",style:"margin:-4px 0 8px"}));
+  sHub.append(Object.assign(el("div","sm mut"),{textContent:"A personal dashboard for students — their own submissions plus anything you switch on below. Class results cover every game played so far this course (the live round stays hidden until you reveal it).",style:"margin:-4px 0 8px"}));
   const hc=hubCfg();
   const setHub=(k,v)=>{ const nh=Object.assign({}, control.hub||{}); nh[k]=v; writeControl({hub:nh}); };
   const toggle=(k,label)=>{ const on=!!hc[k]; const b=el("button","ghost-btn wide"+(on?" hold-on":"")); b.textContent=(on?"✓ ":"")+label; b.style.marginTop="6px"; b.onclick=()=>setHub(k,!on); return b; };
   sHub.append(toggle("on","Student dashboard"));
   if(hc.on){
-    sHub.append(toggle("results","Show class results (revealed games)"));
+    sHub.append(toggle("results","Show class results (all games played)"));
     sHub.append(toggle("practice","Practice vs bots"));
     sHub.append(toggle("lessons","Interactive lessons"));
   }
