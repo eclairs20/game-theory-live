@@ -1250,13 +1250,17 @@ function hubMySubs(){
 function hubResults(){
   const mySec=(roster[String(myId).toLowerCase()]||{}).section||"";
   const pub=publishedMap(), pick=hubResultKeys();
-  // Only the meetings the instructor has explicitly ticked for students, and only those
-  // this student could have attended. The currently-live, not-yet-revealed round is never
-  // shown even if ticked, so an open round's answers can't leak.
+  // An instructor previewing their own My page has no roster section, so the per-section
+  // filter would hide every sectioned meeting — show them everything they've shared instead.
+  const previewAll=isInstructorEmail(authUser&&authUser.email);
+  // Only the meetings the instructor has explicitly ticked for students, and (for real
+  // students) only those this student could have attended. The currently-live,
+  // not-yet-revealed round is never shown even if ticked, so an open round can't leak.
   const curLive=(control && control.activeGame && control.phase!=="revealed") ? roundKey(control.activeGame, control.round) : null;
   const seen={};
   Object.values(allSubs).forEach(s=>{ if(s && s.roundKey && isDone(s)) seen[s.roundKey]=Math.max(seen[s.roundKey]||0, s.ts||0); });
   const keys=Object.keys(seen).filter(rk=>{ if(!pick[rk] || rk===curLive) return false; const pk=parseRoundKey(rk); if(!pk) return false;
+    if(previewAll) return true;
     const played=Object.values(allSubs).some(s=>s && s.roundKey===rk && String(s.studentId)===String(myId));
     return played || !pk.section || pk.section===mySec;      // ones the student could have attended
   }).sort((a,b)=>((pub[b]||seen[b]||0)-(pub[a]||seen[a]||0)));

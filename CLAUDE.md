@@ -94,11 +94,15 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   filtered to `myId`); **Class results** and **Interactive lessons** are **explicit opt-in per item** —
   the instructor ticks exactly which meetings/lessons are visible, so there's no ambiguity:
   - **Class results** (`hubResults`) shows only the meetings whose roundKey is ticked in
-    `hub.resultKeys` (`{<roundKey>:true}`), further filtered to ones this student could have attended,
-    and the currently-live/not-yet-revealed round is never shown even if ticked (leak guard). Returns
-    `null` (card hidden) when nothing is visible to that student. The console lists every played
-    meeting from `playedMeetings()` (deduped roundKeys with `isDone` subs) as tick-chips, plus
-    **Select all / Clear**. `control.published` (written by `doReveal`) is now used only to sort.
+    `hub.resultKeys` (`{<roundKey>:true}`), further filtered for **real students** to ones they could
+    have attended (`played || !pk.section || pk.section===mySec`); an **instructor previewing their own
+    My page** (`isInstructorEmail(authUser.email)` → `previewAll`) bypasses that section filter and
+    sees every shared meeting (an instructor has no roster section, so otherwise it would collapse to
+    only meetings they personally submitted in). The currently-live/not-yet-revealed round is never
+    shown even if ticked (leak guard). Returns `null` (card hidden) when nothing is visible. The
+    console lists every played meeting from `playedMeetings()` (deduped roundKeys with `isDone` subs,
+    across ALL submitters — never restricted to the instructor's own) as tick-chips, plus **Select all
+    / Clear**. `control.published` (written by `doReveal`) is now used only to sort.
   - **Interactive lessons** (`hubLessons`) shows only lessons ticked in `hub.lessonKeys`
     (`{<id>:true}`); available lessons live in the `HUB_LESSONS` registry and launch via
     `launchLesson(id)`; `lessonVisible(id)` gates a student launching one (also enforced in `render()`).
