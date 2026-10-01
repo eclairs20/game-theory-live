@@ -300,16 +300,19 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - **Console layout** (`teacherConsole`) — a `.console` grid with a **full-width top panel**
   (`.console-top`: **Choose exercise** — the G1–G6 game tiles + the IL1 Pareto lesson, laid out as
   horizontal tiles spanning both columns) over a **2-column** body: a **slim left rail** (`.rail`:
-  only per-game Parameters, Student page, This device) and the **main** panel (session/round
-  controls, instructor preview/analysis, attendance card). Grid areas are `"top top" / "rail main"`;
-  under 820px it collapses to a single column ordered top → main → rail.
-- **Top-bar buttons** — **📋 Take roll call** (`#rollBtn`/`syncRollBtn`) and **⚙ Course config**
-  (`#cfgBtn`/`syncCfgBtn`), both instructor-only and hidden while in any full-screen mode.
+  only the live per-game **Parameters**) and the **main** panel (session/round controls, instructor
+  preview/analysis, attendance card). Grid areas are `"top top" / "rail main"`; when no game is
+  picked the rail is empty, so `.console.norail` drops the rail column and the main panel goes
+  full-width. Under 820px it collapses to a single column ordered top → main → rail.
+- **Top-bar buttons** — **📋 Take roll call** (`#rollBtn`/`syncRollBtn`), **⚙ Course config**
+  (`#cfgBtn`/`syncCfgBtn`), both instructor-only and hidden in any full-screen mode, and **Log out**
+  (`#logoutBtn`/`syncLogoutBtn`, instructor-only → `logOut`, replacing the old "This device" card).
 - **Course config page** (`courseConfig`, local `cfgMode`) — a full-screen setup page (opened by the
-  top-bar ⚙) holding the one-time cards moved off the rail: **Course** (`courseCard`), **Course
-  roster** (`rosterEditor`), **Session schedule** (`scheduleEditor`) and **Data** (CSV export),
-  as a responsive `.cfg-grid`. The old **Share with students** and **Testing sandbox** rail cards
-  were removed (the sandbox is still reachable via `?class=sandbox`). Keeps the console focused on
+  top-bar ⚙) holding the one-time cards moved off the rail, **stacked full-width** (`.cfg-grid`,
+  flex column): **Course** (`courseCard`), **Course roster** (`rosterEditor`), **Student page**
+  (`studentPageCard` — the `control.hub` config), **Session schedule** (`scheduleEditor`) and
+  **Data** (CSV export). The old **Share with students** and **Testing sandbox** rail cards were
+  removed (the sandbox is still reachable via `?class=sandbox`). Keeps the console focused on
   running class.
 - **Collection view** (`presentView`, local `presentMode` flag) — a full-screen, class-facing
   screen that auto-opens when the instructor presses **Open submissions** (also via the round

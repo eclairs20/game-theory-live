@@ -167,8 +167,8 @@ code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding
 .gc:hover{outline:2px solid var(--accent); outline-offset:-2px}
 .att-grid .nmcol .aud{font-weight:500; color:var(--muted); font-size:.72rem}
 .att-grid .nmcol .gid{font-family:"IBM Plex Mono",monospace; font-weight:500; color:var(--muted); font-size:.72rem; margin-left:7px}
-/* Course config page — the moved setup cards as a responsive card grid. */
-.cfg-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; align-items:start; margin-top:16px}
+/* Course config page — the moved setup cards stacked full-width, one below the other. */
+.cfg-grid{display:flex; flex-direction:column; gap:16px; margin-top:16px}
 svg{display:block; width:100%; height:auto; overflow:visible}
 
 .note-box{border-left:3px solid var(--gold); background:var(--gold-wash); padding:12px 16px; border-radius:0 var(--radius-sm) var(--radius-sm) 0; font-size:.9rem; color:var(--ink-2)}
@@ -189,6 +189,10 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .console>.console-top{grid-area:top}
 .console>.rail{grid-area:rail}
 .console>.stack{grid-area:main}
+/* When the rail has nothing to show (no game picked → no Parameters), the main panel takes the
+   full width and the empty rail column is dropped. */
+.console.norail{grid-template-columns:1fr; grid-template-areas:"top" "main"}
+.console.norail>.rail{display:none}
 /* Narrow / phone: single column — top panel, then live main, then the setup rail. */
 @media(max-width:820px){
   .console{grid-template-columns:1fr; grid-template-areas:"top" "main" "rail"}
@@ -504,6 +508,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     <button id="cfgBtn" class="ghost-btn" hidden>⚙ Course config</button>
     <select id="courseSel" class="course-sel" title="Switch course" hidden></select>
     <button id="roleBtn" class="ghost-btn">Instructor</button>
+    <button id="logoutBtn" class="ghost-btn" hidden>Log out</button>
     <button id="themeBtn" class="ghost-btn" title="Toggle theme">◐</button>
   </div>
   <div id="sandboxBar" class="sandbox-bar" hidden></div>
@@ -1167,6 +1172,7 @@ function render(){
   syncCourseSel();
   syncRollBtn();
   syncCfgBtn();
+  syncLogoutBtn();
   const app = $("#app");
   // Instructor "collection" view — full-screen, projected to the class. Shows
   // participation only (never results), so it can't leak the answer. Available in any
@@ -3462,11 +3468,111 @@ function teacherConsole(){
     s3.append(paramEditor());
     rail.append(s3);
   }
-  // Course, roster, session schedule and data export now live on the full-screen "Course config"
-  // page (top-bar ⚙ button); the "Share with students" and "Testing sandbox" cards were removed to
-  // keep the console rail focused on running class.
+  // Course, roster, schedule, data export AND the Student-page config now live on the full-screen
+  // "Course config" page (top-bar ⚙). Log out is a top-bar button (#logoutBtn). The console rail
+  // keeps only the live per-game Parameters — when no game is picked it's empty, so collapse it.
+  if(!rail.childElementCount) c.classList.add("norail");
+  c.append(rail);
 
-  // Student page — a personal dashboard students can open between activities. You choose what's on.
+  const main=el("div","stack");
+  if(control&&control.hold){
+    const hn=el("div","note-box"); hn.style.borderColor="var(--gold)"; hn.style.background="var(--gold-wash)";
+    hn.innerHTML="<b>Students are on hold.</b> Everyone in this room sees a waiting screen — pick, open and preview freely. Press <b>Go live</b> (top bar) when you're ready for them to play.";
+    main.append(hn);
+  }
+  const sBan=scheduleBanner(); if(sBan) main.append(sBan);
+  main.append(sessionTile());
+  if(control&&control.activeGame) main.append(roundActionBar());
+  if(control&&control.activeGame && rosterSections().length>1) main.append(sectionScopeBar());
+  if(!control||!control.activeGame){
+    const w=el("div","card stage center"); w.style.padding="60px 30px";
+    w.append(el("div","eyebrow","Ready"),Object.assign(el("h2"),{textContent:"Pick an exercise to begin",style:"font-size:1.6rem;margin:8px 0"}),
+      el("p","lead","Choose a game from the left, open submissions, and share the link. Live responses and the full analysis appear here."));
+    main.append(w);
+  } else if(analysisSubs().length){
+    // Instructor always sees live results — before, during, or after reveal.
+    const nsc=analysisSubs().length;
+    if(control.phase!=="revealed"){
+      const banner=el("div","note-box teal");
+      banner.innerHTML="<b>Instructor preview.</b> "+nsc+" response"+(nsc===1?"":"s")+" in"+(control.phase==="open"?" and counting":"")+" — students still see only their own screen until you press <b>Reveal results</b>.";
+      main.append(banner);
+    }
+    main.append(analysisView(true));
+  } else {
+    const mon=el("div","card stage");
+    mon.append(el("div","eyebrow gold",GAMES[control.activeGame].name+" · Round "+control.round));
+    mon.append(Object.assign(el("h2"),{textContent: control.phase==="open"?"Submissions are open — waiting for responses":"Round set up — not open yet",style:"font-size:1.6rem;margin:6px 0 4px"}));
+    mon.append(Object.assign(el("p","lead"),{textContent: control.phase==="open"?"Share the link and watch responses arrive. Results appear here live — for your eyes only — until you reveal.":"Click “Open submissions” when the class is ready.",style:"margin-top:8px"}));
+    main.append(mon);
+  }
+  if(control&&control.activeGame&&(haveRoster()||analysisSubs().length)) main.append(attendanceCard());
+  c.append(main);
+  return c;
+}
+/* Show/hide the top-bar "Take roll call" button (instructor + roster present, not already in a
+   full-screen mode) and wire it. Mirrors the removed rail card. */
+function syncRollBtn(){
+  const b=$("#rollBtn"); if(!b) return;
+  const show = isTeacher() && haveRoster() && !rollMode && !presentMode && !lessonMode && !cfgMode;
+  b.hidden=!show;
+  if(show) b.onclick=()=>{ rollSection=curMSection(); rollSearch=""; rollMode=true; render(); };
+}
+/* Show/hide the top-bar "Course config" button (instructor, not already in a full-screen mode)
+   and wire it. Opens the full-screen course-setup page (roster/schedule/course/data). */
+function syncCfgBtn(){
+  const b=$("#cfgBtn"); if(!b) return;
+  const show = isTeacher() && !rollMode && !presentMode && !lessonMode && !cfgMode;
+  b.hidden=!show;
+  if(show) b.onclick=()=>{ cfgMode=true; render(); };
+}
+/* Top-bar "Log out" — instructor-only; closes the console (and signs out of Google). Replaces the
+   old "This device" rail card. */
+function syncLogoutBtn(){
+  const b=$("#logoutBtn"); if(!b) return;
+  b.hidden=!isTeacher();
+  b.onclick=logOut;
+}
+/* Full-screen "Course config" page — the one-time setup cards (course, roster, session schedule,
+   data export) moved off the console rail so the main console stays focused on running class. */
+function courseConfig(){
+  const wrap=el("div","stack"); wrap.style.maxWidth="1000px"; wrap.style.margin="0 auto";
+  const head=el("div","card stage");
+  const hr=el("div","row"); hr.style.cssText="justify-content:space-between;align-items:flex-start;gap:10px";
+  const hl=el("div");
+  hl.append(el("div","eyebrow gold","Course config"));
+  hl.append(Object.assign(el("h2"),{textContent:"Set up this course",style:"font-size:1.4rem;margin:2px 0 0"}));
+  hl.append(Object.assign(el("div","sm mut"),{textContent:"One-time setup for the whole course — course, roster, session schedule and data export. Rarely touched once class is running.",style:"margin-top:4px"}));
+  hr.append(hl);
+  const close=el("button","btn neutral","Done"); close.onclick=()=>{ cfgMode=false; render(); }; hr.append(close);
+  head.append(hr); wrap.append(head);
+
+  const grid=el("div","cfg-grid");
+  grid.append(courseCard());
+
+  const sRost=el("div","rail-sec");
+  sRost.append(Object.assign(el("h3"),{textContent:"Course roster"}));
+  sRost.append(Object.assign(el("div","sm mut"),{textContent:"Set once for the whole course — shared across every session and section.",style:"margin:-4px 0 8px"}));
+  sRost.append(rosterEditor()); grid.append(sRost);
+
+  grid.append(studentPageCard());
+
+  const sSch=el("div","rail-sec");
+  sSch.append(Object.assign(el("h3"),{textContent:"Session schedule"}));
+  sSch.append(Object.assign(el("div","sm mut"),{textContent:"Optional — map class dates to a session (and section). On a scheduled day the console offers a one-tap reminder so you never forget to bump the session.",style:"margin:-4px 0 8px"}));
+  sSch.append(scheduleEditor()); grid.append(sSch);
+
+  const sD=el("div","rail-sec");
+  sD.append(Object.assign(el("h3"),{textContent:"Data"}));
+  sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
+  const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
+  sD.append(expB); grid.append(sD);
+
+  wrap.append(grid);
+  return wrap;
+}
+/* The "Student page" config card (what appears on students' My page) — lives on the Course config
+   page. All state is `control.hub`; see the Student hub notes in CLAUDE.md. */
+function studentPageCard(){
   const sHub=el("div","rail-sec");
   sHub.append(Object.assign(el("h3"),{textContent:"Student page"}));
   sHub.append(Object.assign(el("div","sm mut"),{textContent:"A personal dashboard for students — their own submissions, plus anything you switch on below. You pick exactly which past results and which lessons appear, so there's no doubt about what students can see.",style:"margin:-4px 0 8px"}));
@@ -3525,102 +3631,7 @@ function teacherConsole(){
     sHub.append(toggle("attendance","My attendance"));
     if(hc.attendance) sHub.append(Object.assign(el("div","sm mut"),{textContent:"Students see their own present/absent record from the roll calls you've taken.",style:"margin:4px 0 2px"}));
   }
-  rail.append(sHub);
-
-  // Explicit log-out for shared classroom PCs — closes the console and (if signed in) Google.
-  const sOut=el("div","rail-sec");
-  sOut.append(Object.assign(el("h3"),{textContent:"This device"}));
-  sOut.append(Object.assign(el("div","sm mut"),{textContent:"On a shared classroom PC, log out when you're done so the next person starts clean.",style:"margin:-4px 0 8px"}));
-  const outB=el("button","btn danger wide", authUser?"Log out (console + Google)":"Log out of console"); outB.onclick=logOut;
-  sOut.append(outB); rail.append(sOut);
-  c.append(rail);
-
-  const main=el("div","stack");
-  if(control&&control.hold){
-    const hn=el("div","note-box"); hn.style.borderColor="var(--gold)"; hn.style.background="var(--gold-wash)";
-    hn.innerHTML="<b>Students are on hold.</b> Everyone in this room sees a waiting screen — pick, open and preview freely. Press <b>Go live</b> (top bar) when you're ready for them to play.";
-    main.append(hn);
-  }
-  const sBan=scheduleBanner(); if(sBan) main.append(sBan);
-  main.append(sessionTile());
-  if(control&&control.activeGame) main.append(roundActionBar());
-  if(control&&control.activeGame && rosterSections().length>1) main.append(sectionScopeBar());
-  if(!control||!control.activeGame){
-    const w=el("div","card stage center"); w.style.padding="60px 30px";
-    w.append(el("div","eyebrow","Ready"),Object.assign(el("h2"),{textContent:"Pick an exercise to begin",style:"font-size:1.6rem;margin:8px 0"}),
-      el("p","lead","Choose a game from the left, open submissions, and share the link. Live responses and the full analysis appear here."));
-    main.append(w);
-  } else if(analysisSubs().length){
-    // Instructor always sees live results — before, during, or after reveal.
-    const nsc=analysisSubs().length;
-    if(control.phase!=="revealed"){
-      const banner=el("div","note-box teal");
-      banner.innerHTML="<b>Instructor preview.</b> "+nsc+" response"+(nsc===1?"":"s")+" in"+(control.phase==="open"?" and counting":"")+" — students still see only their own screen until you press <b>Reveal results</b>.";
-      main.append(banner);
-    }
-    main.append(analysisView(true));
-  } else {
-    const mon=el("div","card stage");
-    mon.append(el("div","eyebrow gold",GAMES[control.activeGame].name+" · Round "+control.round));
-    mon.append(Object.assign(el("h2"),{textContent: control.phase==="open"?"Submissions are open — waiting for responses":"Round set up — not open yet",style:"font-size:1.6rem;margin:6px 0 4px"}));
-    mon.append(Object.assign(el("p","lead"),{textContent: control.phase==="open"?"Share the link and watch responses arrive. Results appear here live — for your eyes only — until you reveal.":"Click “Open submissions” when the class is ready.",style:"margin-top:8px"}));
-    main.append(mon);
-  }
-  if(control&&control.activeGame&&(haveRoster()||analysisSubs().length)) main.append(attendanceCard());
-  c.append(main);
-  return c;
-}
-/* Show/hide the top-bar "Take roll call" button (instructor + roster present, not already in a
-   full-screen mode) and wire it. Mirrors the removed rail card. */
-function syncRollBtn(){
-  const b=$("#rollBtn"); if(!b) return;
-  const show = isTeacher() && haveRoster() && !rollMode && !presentMode && !lessonMode && !cfgMode;
-  b.hidden=!show;
-  if(show) b.onclick=()=>{ rollSection=curMSection(); rollSearch=""; rollMode=true; render(); };
-}
-/* Show/hide the top-bar "Course config" button (instructor, not already in a full-screen mode)
-   and wire it. Opens the full-screen course-setup page (roster/schedule/course/data). */
-function syncCfgBtn(){
-  const b=$("#cfgBtn"); if(!b) return;
-  const show = isTeacher() && !rollMode && !presentMode && !lessonMode && !cfgMode;
-  b.hidden=!show;
-  if(show) b.onclick=()=>{ cfgMode=true; render(); };
-}
-/* Full-screen "Course config" page — the one-time setup cards (course, roster, session schedule,
-   data export) moved off the console rail so the main console stays focused on running class. */
-function courseConfig(){
-  const wrap=el("div","stack"); wrap.style.maxWidth="1000px"; wrap.style.margin="0 auto";
-  const head=el("div","card stage");
-  const hr=el("div","row"); hr.style.cssText="justify-content:space-between;align-items:flex-start;gap:10px";
-  const hl=el("div");
-  hl.append(el("div","eyebrow gold","Course config"));
-  hl.append(Object.assign(el("h2"),{textContent:"Set up this course",style:"font-size:1.4rem;margin:2px 0 0"}));
-  hl.append(Object.assign(el("div","sm mut"),{textContent:"One-time setup for the whole course — course, roster, session schedule and data export. Rarely touched once class is running.",style:"margin-top:4px"}));
-  hr.append(hl);
-  const close=el("button","btn neutral","Done"); close.onclick=()=>{ cfgMode=false; render(); }; hr.append(close);
-  head.append(hr); wrap.append(head);
-
-  const grid=el("div","cfg-grid");
-  grid.append(courseCard());
-
-  const sRost=el("div","rail-sec");
-  sRost.append(Object.assign(el("h3"),{textContent:"Course roster"}));
-  sRost.append(Object.assign(el("div","sm mut"),{textContent:"Set once for the whole course — shared across every session and section.",style:"margin:-4px 0 8px"}));
-  sRost.append(rosterEditor()); grid.append(sRost);
-
-  const sSch=el("div","rail-sec");
-  sSch.append(Object.assign(el("h3"),{textContent:"Session schedule"}));
-  sSch.append(Object.assign(el("div","sm mut"),{textContent:"Optional — map class dates to a session (and section). On a scheduled day the console offers a one-tap reminder so you never forget to bump the session.",style:"margin:-4px 0 8px"}));
-  sSch.append(scheduleEditor()); grid.append(sSch);
-
-  const sD=el("div","rail-sec");
-  sD.append(Object.assign(el("h3"),{textContent:"Data"}));
-  sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
-  const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
-  sD.append(expB); grid.append(sD);
-
-  wrap.append(grid);
-  return wrap;
+  return sHub;
 }
 function rosterEditor(){
   const wrap=el("div","stack");
