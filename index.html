@@ -137,6 +137,17 @@ code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding
 .chart-card{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius); padding:18px}
 .chart-card h3{font-size:1rem; margin-bottom:4px}
 .chart-card .cap{font-size:.8rem; color:var(--muted); margin-bottom:12px}
+/* Manual roll-call list (instructor) + student attendance chips */
+.roll-list{display:flex; flex-direction:column; gap:6px; max-height:62vh; overflow:auto}
+.roll-row{display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:11px 14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); cursor:pointer; font:inherit}
+.roll-row.here{border-color:var(--good); background:color-mix(in srgb, var(--good) 10%, var(--surface))}
+.roll-tick{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; min-width:26px; border-radius:50%; border:2px solid var(--line); color:#fff; font-weight:700; font-size:.9rem; background:transparent}
+.roll-row.here .roll-tick{background:var(--good); border-color:var(--good)}
+.roll-name{flex:1; font-weight:600; color:var(--ink)}
+.roll-meta{font-family:"IBM Plex Mono",monospace; font-size:.76rem; color:var(--muted); white-space:nowrap}
+.att-pill{display:inline-block; padding:2px 10px; border-radius:999px; font-size:.78rem; font-weight:700}
+.att-pill.here{background:color-mix(in srgb, var(--good) 16%, transparent); color:var(--good)}
+.att-pill.away{background:color-mix(in srgb, var(--bad) 14%, transparent); color:var(--bad)}
 svg{display:block; width:100%; height:auto; overflow:visible}
 
 .note-box{border-left:3px solid var(--gold); background:var(--gold-wash); padding:12px 16px; border-radius:0 var(--radius-sm) var(--radius-sm) 0; font-size:.9rem; color:var(--ink-2)}
@@ -653,6 +664,25 @@ function meetingLabels(list){
     out[m.rk]=((GAMES[m.game]||{}).name||m.game)+" · S"+m.session+(m.section?"."+m.section:"")+(multi?" · R"+m.round:""); });
   return out;
 }
+/* Manual roll-call attendance, stored in control.attend so it's instructor-writable and
+   world-readable like the hub (no Firebase rules change). Shape:
+   control.attend[<meetingKey>][<encodeKey(studentId)>] = timestamp present.
+   meetingKey = "S<session><section>" (e.g. "S1A"). A meeting's roll is "taken" once it has
+   any entry, so a student not listed under a taken meeting counts as absent. */
+function attendMap(){ return (control&&control.attend)||{}; }
+function attendKeyFor(sess, sec){ return "S"+sess+(sec||""); }
+function parseAttendKey(mk){ const m=/^S(\d+)([A-Za-z]*)$/.exec(String(mk||"")); return m?{session:+m[1], section:m[2]||""}:null; }
+function isPresent(mk, id){ const a=attendMap()[mk]; return !!(a && a[encodeKey(String(id))]); }
+async function setAttend(mk, id, present){
+  try{ const r=fb.ref(CTRL_PATH()+"/attend/"+mk+"/"+encodeKey(String(id)));
+    if(present) await r.set(Date.now()); else await r.remove(); }
+  catch(e){ toast("Couldn't save attendance — check your connection"); }
+}
+async function setAttendMany(mk, ids, present){
+  try{ const up={}; ids.forEach(id=>{ up[encodeKey(String(id))]= present? Date.now() : null; });
+    await fb.ref(CTRL_PATH()+"/attend/"+mk).update(up); }
+  catch(e){ toast("Couldn't save attendance"); }
+}
 /* Every meeting that has completed submissions, in canonical order — the menu the instructor
    ticks from (which results to share) and the source for the student results list. */
 function playedMeetings(){
@@ -1066,6 +1096,7 @@ function viewKey(){
     curStudentTab(), practiceGame||"", lessonMode||"", hubOn()?"hub":""].join("|");
 }
 let lastViewKey=null, presentMode=false, lessonMode=null, studentTab=null, practiceGame=null, studentResK=null;
+let rollMode=false, rollSection=null, rollSearch="", _rollScroll=0;   // instructor manual roll-call page
 /* Which student screen is showing: the live class, or the personal hub ("My page").
    Defaults to the class when an activity is live, otherwise the hub (when enabled). */
 function curStudentTab(){
@@ -1093,6 +1124,9 @@ function render(){
   // Interactive lessons — instructor-launched, or student-launched from the hub (Lessons on).
   if(lessonMode && !isTeacher() && !(hubOn() && lessonVisible(lessonMode))) lessonMode=null;
   if(lessonMode==="pareto"){ app.replaceChildren(paretoLesson()); return; }
+  // Instructor manual roll-call page (full-screen).
+  if(rollMode && !isTeacher()) rollMode=false;
+  if(rollMode){ app.replaceChildren(rollCall()); return; }
   // Leave the waiting room / release presence when we're not actively on an open pair game
   // (also when a hub-enabled student is browsing "My page" rather than the live class).
   const wantLive = !isTeacher() && control && control.phase==="open" && (control.activeGame==="quatro"||control.activeGame==="redblack") && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class";
@@ -1273,10 +1307,36 @@ function studentHub(){
     Object.assign(el("p","lead"),{textContent:"Everything you've played, the class results your instructor has shared, and things you can try on your own."}));
   c.append(head);
   c.append(hubMySubs());
+  if(h.attendance){ const at=hubAttendance(); if(at) c.append(at); }
   if(h.results){ const r=hubResults(); if(r) c.append(r); }
   if(h.practice){ const p=hubPractice(); if(p) c.append(p); }
   if(h.lessons){ const l=hubLessons(); if(l) c.append(l); }
   return c;
+}
+/* Student's own roll-call record: for each meeting where the instructor has taken attendance
+   (and that this student could attend), show Present / Absent. Matches on the roster primary
+   email (and email2), so it works whichever address the student signed in with. */
+function hubAttendance(){
+  const rn=roster[String(myId).toLowerCase()];
+  const myIds=rn ? [rn.email, rn.email2].filter(Boolean) : [String(myId)];
+  const mySec=(rn&&rn.section)||"";
+  const att=attendMap();
+  const rows=Object.keys(att).filter(mk=>{ const a=att[mk]; return a && Object.keys(a).length; })  // roll taken
+    .map(mk=>({mk, pk:parseAttendKey(mk)})).filter(x=>x.pk)
+    .filter(({mk,pk})=> myIds.some(id=>isPresent(mk,id)) || !pk.section || pk.section===mySec)  // relevant to me
+    .sort((a,b)=> (a.pk.session-b.pk.session) || (a.pk.section<b.pk.section?-1:1));
+  if(!rows.length) return null;   // no roll calls taken that concern this student
+  const card=el("div","card stage");
+  card.append(el("div","eyebrow","My attendance"));
+  let html="<tr><th style='text-align:left'>Meeting</th><th>Status</th></tr>";
+  let present=0;
+  rows.forEach(({mk,pk})=>{ const here=myIds.some(id=>isPresent(mk,id)); if(here)present++;
+    html+="<tr><td style='text-align:left'>Session S"+pk.session+(pk.section?" · Section "+pk.section:"")+"</td>"+
+      "<td><span class='att-pill "+(here?"here":"away")+"'>"+(here?"Present":"Absent")+"</span></td></tr>"; });
+  card.append(Object.assign(el("p","lead"),{textContent:"You were marked present at "+present+" of "+rows.length+" meetings so far.",style:"margin:6px 0 0"}));
+  const t=el("table","matrix"); t.style.fontSize=".86rem"; t.innerHTML=html;
+  const sc=el("div","tablescroll"); sc.style.marginTop="10px"; sc.append(t); card.append(sc);
+  return card;
 }
 function hubMySubs(){
   const card=el("div","card stage");
@@ -2854,6 +2914,85 @@ function qrFor(url){ if(_qrCache.url!==url){ _qrCache={url, svg:qrSVG(url)}; } r
 function toggleFullscreen(){
   try{ if(document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); }catch(e){}
 }
+/* Instructor manual roll-call page — tick present/absent against the roster, section-wise,
+   per meeting (session + section). Writes control.attend[meetingKey][enc(email)]. */
+function rollCall(){
+  const sec = rollSection!=null ? rollSection : curMSection();
+  const mk = attendKeyFor(curSession(), sec);
+  const inSec = e => sec ? e.section===sec : true;
+  const people = rosterList.filter(inSec);
+  const enrolled = people.filter(e=>!e.audit);
+  const presentOf = e => isPresent(mk, e.email);
+  const presentN = people.filter(presentOf).length;
+  const enrolledPresent = enrolled.filter(presentOf).length;
+
+  const wrap=el("div","stack"); wrap.style.maxWidth="760px"; wrap.style.margin="0 auto";
+  const head=el("div","card stage");
+  const hr=el("div","row"); hr.style.cssText="justify-content:space-between;align-items:flex-start;gap:10px";
+  const hl=el("div");
+  hl.append(el("div","eyebrow gold","Roll call"),
+    Object.assign(el("h2"),{textContent:"Session S"+curSession()+(sec?" · Section "+sec:""),style:"font-size:1.5rem;margin:2px 0 0"}));
+  hr.append(hl);
+  const close=el("button","btn neutral","Done"); close.onclick=()=>{ rollMode=false; rollSearch=""; render(); }; hr.append(close);
+  head.append(hr);
+  // count + progress (enrolled only; audit shown but not in the denominator)
+  const nEnr=enrolled.length;
+  head.append(Object.assign(el("div"),{style:"font-size:1.1rem;font-weight:600;margin-top:10px",
+    textContent: haveRoster()? (enrolledPresent+" of "+nEnr+" "+(sec?"Section "+sec:"enrolled")+" present"+(presentN>enrolledPresent?"  ·  +"+(presentN-enrolledPresent)+" auditing":"")) : "No roster loaded — load the class roster first."}));
+  if(nEnr){ const pr=el("div","present-prog"); pr.style.marginTop="8px"; const bar=el("span"); bar.style.width=Math.round(100*enrolledPresent/nEnr)+"%"; pr.append(bar); head.append(pr); }
+  wrap.append(head);
+
+  if(!haveRoster()) return wrap;
+
+  // controls: section switcher + session nav + mark-all / clear
+  const ctl=el("div","card stage");
+  const secs=rosterSections();
+  if(secs.length>1){
+    const srow=el("div","res-list"); srow.append(el("span","tinylabel","Section"));
+    secs.forEach(s=>{ const b=el("button","res-btn"+(s===sec?" on":"")); b.type="button"; b.textContent=s; b.onclick=()=>{ rollSection=s; render(); }; srow.append(b); });
+    ctl.append(srow);
+  }
+  const srow2=el("div","row"); srow2.style.cssText="gap:8px;margin-top:10px;flex-wrap:wrap";
+  const sess=el("div","res-list");
+  const sm=el("button","ghost-btn","– S"+(curSession()-1>0?curSession()-1:1)); sm.title="Previous session"; sm.onclick=()=>{ const nv=curSession(); if(nv>1) writeControl({session:nv-1, round:1, phase:"waiting"}); };
+  const slab=el("span","tinylabel"); slab.textContent="Session S"+curSession(); slab.style.alignSelf="center";
+  const sp=el("button","ghost-btn","S"+(curSession()+1)+" +"); sp.title="Next session"; sp.onclick=()=>writeControl({session:curSession()+1, round:1, phase:"waiting"});
+  sess.append(slab, sm, sp); srow2.append(sess);
+  const allB=el("button","ghost-btn","Mark all present"); allB.onclick=()=>setAttendMany(mk, people.map(e=>e.email), true);
+  const clrB=el("button","ghost-btn","Clear all"); clrB.onclick=()=>{ if(confirm("Clear attendance for this meeting?")) setAttendMany(mk, people.map(e=>e.email), false); };
+  srow2.append(allB, clrB); ctl.append(srow2);
+  // search
+  if(people.length>8){
+    const inp=el("input"); inp.type="text"; inp.placeholder="Search name, email or ID"; inp.value=rollSearch;
+    inp.style.cssText="width:100%;margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit";
+    inp.oninput=()=>{ rollSearch=inp.value; paintList(); };
+    ctl.append(inp);
+  }
+  wrap.append(ctl);
+
+  // the tappable list — preserve scroll across the re-render each tick triggers
+  const listCard=el("div","card stage");
+  const list=el("div","roll-list"); listCard.append(list); wrap.append(listCard);
+  list.addEventListener("scroll",()=>{ _rollScroll=list.scrollTop; });
+  requestAnimationFrame(()=>{ try{ list.scrollTop=_rollScroll; }catch(e){} });
+  function paintList(){
+    list.replaceChildren();
+    const q=(rollSearch||"").trim().toLowerCase();
+    const rows=people.filter(e=> !q || (e.name||"").toLowerCase().includes(q) || (e.email||"").toLowerCase().includes(q) || (e.sid||"").toLowerCase().includes(q))
+      .sort((a,b)=> (a.name||"").localeCompare(b.name||""));
+    if(!rows.length){ list.append(Object.assign(el("div","sm mut"),{textContent:"No one matches."})); return; }
+    rows.forEach(e=>{ const on=presentOf(e);
+      const b=el("button","roll-row"+(on?" here":"")); b.type="button";
+      const tick=el("span","roll-tick"); tick.textContent=on?"✓":"";
+      const nm=el("span","roll-name"); nm.textContent=e.name+(e.audit?" · audit":"");
+      const meta=el("span","roll-meta"); meta.textContent=(e.sid||"")+(e.section?" · "+e.section:"");
+      b.append(tick, nm, meta);
+      b.onclick=()=>{ setAttend(mk, e.email, !on); };   // control listener re-renders
+      list.append(b); });
+  }
+  paintList();
+  return wrap;
+}
 /* The full-screen collection screen shown to the class while submissions are open.
    Participation only — the count and a join QR — never any result. */
 function presentView(){
@@ -3204,6 +3343,16 @@ function teacherConsole(){
   shareRow.append(copyB);
   s4.append(shareRow); rail.append(s4);
 
+  // Attendance roll call — a manual present/absent sheet per meeting (separate from who
+  // submitted a game). Opens a full-screen tick list, section-wise, from the roster.
+  const sRoll=el("div","rail-sec");
+  sRoll.append(Object.assign(el("h3"),{textContent:"Attendance (roll call)"}));
+  sRoll.append(Object.assign(el("div","sm mut"),{textContent:"Tick who's present for this meeting, by name — a manual register separate from who played a game. Stored per session + section.",style:"margin:-4px 0 8px"}));
+  const rollB=el("button","btn neutral wide", haveRoster()?"Take roll call":"Load a roster first");
+  rollB.disabled=!haveRoster(); if(!haveRoster()) rollB.style.opacity=".55";
+  rollB.onclick=()=>{ if(!haveRoster()){ toast("Load the class roster first"); return; } rollSection=curMSection(); rollSearch=""; rollMode=true; render(); };
+  sRoll.append(rollB); rail.append(sRoll);
+
   const sD=el("div","rail-sec");
   sD.append(Object.assign(el("h3"),{textContent:"Data"}));
   sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
@@ -3265,6 +3414,9 @@ function teacherConsole(){
       lwrap.append(Object.assign(el("div","sm mut"),{textContent:"Only ticked lessons show on My page.",style:"margin-top:6px"}));
       sHub.append(lwrap);
     }
+    // My attendance — let students see their own roll-call record on My page.
+    sHub.append(toggle("attendance","My attendance"));
+    if(hc.attendance) sHub.append(Object.assign(el("div","sm mut"),{textContent:"Students see their own present/absent record from the roll calls you've taken.",style:"margin:4px 0 2px"}));
   }
   rail.append(sHub);
 

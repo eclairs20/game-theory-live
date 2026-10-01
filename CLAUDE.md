@@ -97,8 +97,20 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   section opens `?class=sandbox` and copies its link to share with testers (who join as guests with a
   Google sign-in). Real students only ever see their own room, so building/playing in a sandbox is
   invisible to them.
+- **Manual attendance (roll call)** — a present/absent register the instructor ticks by name,
+  **separate** from who submitted a game. Stored in `control.attend[<meetingKey>][<encodeKey(email)>]`
+  = timestamp (meetingKey = `"S<session><section>"`, e.g. `S1A`) — in `control` so it's
+  instructor-writable / world-readable like the hub, **no Firebase rules change**. The instructor
+  opens a full-screen page (`rollCall()`, local `rollMode`) from the console's **Attendance (roll
+  call)** rail card: a section-wise, searchable tick list built from the roster (`setAttend`/
+  `setAttendMany` write `control/attend/…` directly; audit members are shown but excluded from the
+  "X of N enrolled present" count via `enrolledRoster`). A meeting's roll is "taken" once it has any
+  entry; a listed student without an entry counts **absent**. Helpers: `attendMap`, `attendKeyFor`,
+  `parseAttendKey`, `isPresent`. Each tick re-renders (attendance is in `control`), so `_rollScroll`
+  preserves the list scroll position. Students see their **own** record on My page via
+  `hubAttendance()` (gated by `hub.attendance`), matched on their roster primary **and** `email2`.
 - **Student hub ("My page")** — a personal student dashboard, gated by the instructor per course
-  via `control.hub = { on, results, practice, lessons, resultKeys, lessonKeys, practiceKeys }` (all default
+  via `control.hub = { on, results, practice, lessons, attendance, resultKeys, lessonKeys, practiceKeys }` (all default
   **off/empty**; a **Student page** card in the console controls them). When `hub.on`, students get a
   **Class / My page** tab bar (`studentNav`; `studentRoot`/`curStudentTab` decide the default — the
   live class when something's open, else the hub; `onCtrl` resets `studentTab` on any activity change
