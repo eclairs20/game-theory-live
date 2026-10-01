@@ -2511,7 +2511,7 @@ function analyzeRedBlack(list){
   wrap.append(mrow);
   // joint distribution vs Nash independent product
   const nash=[0.4,0.2,0.2,0.2];
-  const jrow=el("div","grid-analysis");
+  const jrow=el("div","grid-even");   // joint vs equilibrium matrices are the same 4×4 → equal columns
   if(jN){
     const F=joint.map(r=>r.map(v=>v/jN));
     jrow.append(jointMatrixCard("Class joint distribution ("+jN+" hands)", F, "How often each Red-card × Black-card pairing actually happened. Compare with the equilibrium →"));
