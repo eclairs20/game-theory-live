@@ -114,11 +114,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - **This session** — the single-meeting tick list. Each row shows, right after the name, a
     **P/A history string** (`.roll-hist`, e.g. `PPAP` — green P / red A) across every *taken* session
     for that section (`attendSessions(sec)`), so you can see a student's attendance pattern at a glance.
-  - **All sessions** — an **Excel-like grid** (`.att-grid`): students (roster order) × every session
-    `1..N` (`gridSessions(sec)` — covers taken, scheduled and current). Sticky header row + sticky name
-    column. Tap a **cell** to toggle that student present/absent for that session (`setAttend`); tap a
-    **session header** to mark — or clear — the whole column (`setAttendMany`). Its scroll (both axes)
-    is preserved across the per-tick re-render via `_rollGT`/`_rollGL`.
+  - **All sessions** — an **Excel-like grid** (`.att-grid`): students (roster order, name **+ PGP id**
+    `sid`) × every session `1..N` (`gridSessions(sec)` — covers taken, scheduled and current). Sticky
+    header row + sticky name column. Tap a **cell** to toggle that student present/absent for that
+    session (`setAttend`); tap a **session header** to mark — or clear — the whole column
+    (`setAttendMany`). Its scroll (both axes) is preserved across the per-tick re-render via
+    `_rollGT`/`_rollGL`. The roll-call page widens (`maxWidth 1180px`) in grid mode.
   Students see their **own** record on My page via
   `hubAttendance()` (gated by `hub.attendance`), matched on their roster primary **and** `email2`.
 - **Student hub ("My page")** — a personal student dashboard, gated by the instructor per course
@@ -298,11 +299,18 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   reveal, next round, clear round data, edit parameters). First run sets the passcode.
 - **Console layout** (`teacherConsole`) — a `.console` grid with a **full-width top panel**
   (`.console-top`: **Choose exercise** — the G1–G6 game tiles + the IL1 Pareto lesson, laid out as
-  horizontal tiles spanning both columns) over a **2-column** body: a **left rail** (`.rail`:
-  per-game Parameters, Share, Data, Student page, Session schedule, Course, Roster, Testing sandbox,
-  This device) and the **main** panel (session/round controls, instructor preview/analysis,
-  attendance card). Grid areas are `"top top" / "rail main"`; under 820px it collapses to a single
-  column ordered top → main → rail. Roll call is a top-bar button (`#rollBtn`), not in the rail.
+  horizontal tiles spanning both columns) over a **2-column** body: a **slim left rail** (`.rail`:
+  only per-game Parameters, Student page, This device) and the **main** panel (session/round
+  controls, instructor preview/analysis, attendance card). Grid areas are `"top top" / "rail main"`;
+  under 820px it collapses to a single column ordered top → main → rail.
+- **Top-bar buttons** — **📋 Take roll call** (`#rollBtn`/`syncRollBtn`) and **⚙ Course config**
+  (`#cfgBtn`/`syncCfgBtn`), both instructor-only and hidden while in any full-screen mode.
+- **Course config page** (`courseConfig`, local `cfgMode`) — a full-screen setup page (opened by the
+  top-bar ⚙) holding the one-time cards moved off the rail: **Course** (`courseCard`), **Course
+  roster** (`rosterEditor`), **Session schedule** (`scheduleEditor`) and **Data** (CSV export),
+  as a responsive `.cfg-grid`. The old **Share with students** and **Testing sandbox** rail cards
+  were removed (the sandbox is still reachable via `?class=sandbox`). Keeps the console focused on
+  running class.
 - **Collection view** (`presentView`, local `presentMode` flag) — a full-screen, class-facing
   screen that auto-opens when the instructor presses **Open submissions** (also via the round
   bar's **Present** button). It shows participation only — live count, progress vs the section's

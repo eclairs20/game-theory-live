@@ -159,13 +159,16 @@ code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding
 .att-grid thead th{position:sticky; top:0; z-index:3; background:var(--surface-2); padding:7px 9px; text-align:center; white-space:nowrap; color:var(--ink)}
 .att-grid th.sess{cursor:pointer} .att-grid th.sess:hover{background:var(--accent-wash)}
 .att-grid .shd{font-size:.64rem; color:var(--muted); font-weight:500; display:block; margin-top:1px}
-.att-grid .nmcol{position:sticky; left:0; z-index:2; background:var(--surface); text-align:left; padding:8px 12px; min-width:150px; max-width:200px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.att-grid .nmcol{position:sticky; left:0; z-index:2; background:var(--surface); text-align:left; padding:8px 12px; min-width:170px; max-width:280px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .att-grid thead .nmcol{z-index:4; background:var(--surface-2)}
 .att-grid td.gcell{text-align:center; padding:0}
 .gc{display:block; width:100%; min-width:46px; min-height:36px; border:0; background:transparent; cursor:pointer; font-weight:700; font-family:"IBM Plex Mono",monospace; font-size:.85rem; color:var(--muted)}
 .gc.on{background:color-mix(in srgb, var(--good) 15%, transparent); color:var(--good)}
 .gc:hover{outline:2px solid var(--accent); outline-offset:-2px}
 .att-grid .nmcol .aud{font-weight:500; color:var(--muted); font-size:.72rem}
+.att-grid .nmcol .gid{font-family:"IBM Plex Mono",monospace; font-weight:500; color:var(--muted); font-size:.72rem; margin-left:7px}
+/* Course config page — the moved setup cards as a responsive card grid. */
+.cfg-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; align-items:start; margin-top:16px}
 svg{display:block; width:100%; height:auto; overflow:visible}
 
 .note-box{border-left:3px solid var(--gold); background:var(--gold-wash); padding:12px 16px; border-radius:0 var(--radius-sm) var(--radius-sm) 0; font-size:.9rem; color:var(--ink-2)}
@@ -498,6 +501,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     </div>
     <span id="phasePill" class="pill"><span class="dot"></span><span id="phaseTxt">Connecting…</span></span>
     <button id="rollBtn" class="ghost-btn" hidden>📋 Take roll call</button>
+    <button id="cfgBtn" class="ghost-btn" hidden>⚙ Course config</button>
     <select id="courseSel" class="course-sel" title="Switch course" hidden></select>
     <button id="roleBtn" class="ghost-btn">Instructor</button>
     <button id="themeBtn" class="ghost-btn" title="Toggle theme">◐</button>
@@ -1142,6 +1146,7 @@ function viewKey(){
 let lastViewKey=null, presentMode=false, lessonMode=null, studentTab=null, practiceGame=null, studentResK=null;
 let rollMode=false, rollSection=null, rollSearch="", _rollScroll=0;   // instructor manual roll-call page
 let rollGrid=false, _rollGT=0, _rollGL=0;   // all-sessions grid view (toggle) + its scroll offsets
+let cfgMode=false;   // instructor "Course config" full-screen page (roster / schedule / course / data)
 /* Which student screen is showing: the live class, or the personal hub ("My page").
    Defaults to the class when an activity is live, otherwise the hub (when enabled). */
 function curStudentTab(){
@@ -1161,6 +1166,7 @@ function render(){
   syncSandbox();
   syncCourseSel();
   syncRollBtn();
+  syncCfgBtn();
   const app = $("#app");
   // Instructor "collection" view — full-screen, projected to the class. Shows
   // participation only (never results), so it can't leak the answer. Available in any
@@ -1173,6 +1179,9 @@ function render(){
   // Instructor manual roll-call page (full-screen).
   if(rollMode && !isTeacher()) rollMode=false;
   if(rollMode){ app.replaceChildren(rollCall()); return; }
+  // Instructor "Course config" page (full-screen): roster / schedule / course / data.
+  if(cfgMode && !isTeacher()) cfgMode=false;
+  if(cfgMode){ app.replaceChildren(courseConfig()); return; }
   // Leave the waiting room / release presence when we're not actively on an open pair game
   // (also when a hub-enabled student is browsing "My page" rather than the live class).
   const wantLive = !isTeacher() && control && control.phase==="open" && (control.activeGame==="quatro"||control.activeGame==="redblack") && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class";
@@ -2989,7 +2998,7 @@ function rollCall(){
   const enrolledPresent = enrolled.filter(presentOf).length;
   const schedDate = schedDateFor(curSession(), sec);
 
-  const wrap=el("div","stack"); wrap.style.maxWidth="760px"; wrap.style.margin="0 auto";
+  const wrap=el("div","stack"); wrap.style.maxWidth=rollGrid?"1180px":"760px"; wrap.style.margin="0 auto";
   const head=el("div","card stage");
   const hr=el("div","row"); hr.style.cssText="justify-content:space-between;align-items:flex-start;gap:10px";
   const hl=el("div");
@@ -3060,7 +3069,8 @@ function rollCall(){
     thead.append(htr); tbl.append(thead);
     const tb=el("tbody");
     people.forEach(e=>{ const tr=el("tr");
-      const nd=el("td","nmcol"); nd.textContent=e.name; nd.title=e.name+(e.email?" · "+e.email:"");
+      const nd=el("td","nmcol"); nd.append(document.createTextNode(e.name)); nd.title=e.name+(e.sid?" · "+e.sid:"")+(e.email?" · "+e.email:"");
+      if(e.sid) nd.append(Object.assign(el("span","gid"),{textContent:e.sid}));
       if(e.audit) nd.append(Object.assign(el("span","aud"),{textContent:" · audit"}));
       tr.append(nd);
       sess.forEach(s=>{ const smk=attendKeyFor(s, sec); const on=isPresent(smk, e.email);
@@ -3452,21 +3462,9 @@ function teacherConsole(){
     s3.append(paramEditor());
     rail.append(s3);
   }
-  const s4=el("div","rail-sec");
-  const shareRow=el("div","stack");
-  shareRow.append(el("div","tinylabel","Share with students"));
-  shareRow.append(Object.assign(el("div","sm mut"),{textContent: haveRoster()?"Send them this page's link. Enrolled students tap “Continue with Google”; anyone else can still join with a name (flagged as a guest).":"Send them this page's link. They sign in with Google, or just enter a name."}));
-  const copyB=el("button","ghost-btn","Copy link");
-  copyB.onclick=()=>{ try{navigator.clipboard.writeText(location.href); toast("Link copied");}catch(e){toast(location.href);} };
-  shareRow.append(copyB);
-  s4.append(shareRow); rail.append(s4);
-
-  // ── everything below goes in the left rail (setup / admin) ──
-  const sD=el("div","rail-sec");
-  sD.append(Object.assign(el("h3"),{textContent:"Data"}));
-  sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
-  const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
-  sD.append(expB); rail.append(sD);
+  // Course, roster, session schedule and data export now live on the full-screen "Course config"
+  // page (top-bar ⚙ button); the "Share with students" and "Testing sandbox" cards were removed to
+  // keep the console rail focused on running class.
 
   // Student page — a personal dashboard students can open between activities. You choose what's on.
   const sHub=el("div","rail-sec");
@@ -3529,37 +3527,6 @@ function teacherConsole(){
   }
   rail.append(sHub);
 
-  const sSch=el("div","rail-sec");
-  sSch.append(Object.assign(el("h3"),{textContent:"Session schedule"}));
-  sSch.append(Object.assign(el("div","sm mut"),{textContent:"Optional — map class dates to a session (and section). On a scheduled day the console offers a one-tap reminder so you never forget to bump the session.",style:"margin:-4px 0 8px"}));
-  sSch.append(scheduleEditor());
-  rail.append(sSch);
-
-  // Course picker + roster live at the bottom — one-time setup, rarely touched once the
-  // course is running.
-  rail.append(courseCard());
-  const sRost=el("div","rail-sec");
-  sRost.append(Object.assign(el("h3"),{textContent:"Course roster"}));
-  sRost.append(Object.assign(el("div","sm mut"),{textContent:"Set once for the whole course — shared across every session and section.",style:"margin:-4px 0 8px"}));
-  sRost.append(rosterEditor());
-  rail.append(sRost);
-
-  // Testing sandbox — a throwaway room real students never land in.
-  const sTest=el("div","rail-sec");
-  sTest.append(Object.assign(el("h3"),{textContent:"Testing sandbox"}));
-  const sandLink=location.origin+location.pathname+"?class="+SANDBOX_ID;
-  if(isSandbox()){
-    sTest.append(Object.assign(el("div","sm mut"),{textContent:"You're in the sandbox — a safe test room. Share its link with anyone you want to help test; real students never see it.",style:"margin:-4px 0 8px"}));
-    const cp=el("button","ghost-btn wide","Copy sandbox link to share"); cp.onclick=()=>{ try{navigator.clipboard.writeText(sandLink); toast("Sandbox link copied");}catch(e){toast(sandLink);} };
-    sTest.append(cp);
-  } else {
-    sTest.append(Object.assign(el("div","sm mut"),{textContent:"Try new games or run a rehearsal in a throwaway room. It's isolated — real students never land there, and its data never mixes with this class.",style:"margin:-4px 0 8px"}));
-    const open=el("button","ghost-btn wide","Open the sandbox room"); open.onclick=()=>{ try{ location.search="?class="+SANDBOX_ID; }catch(e){} };
-    const cp=el("button","ghost-btn wide","Copy sandbox link"); cp.style.marginTop="6px"; cp.onclick=()=>{ try{navigator.clipboard.writeText(sandLink); toast("Sandbox link copied");}catch(e){toast(sandLink);} };
-    sTest.append(open, cp);
-  }
-  rail.append(sTest);
-
   // Explicit log-out for shared classroom PCs — closes the console and (if signed in) Google.
   const sOut=el("div","rail-sec");
   sOut.append(Object.assign(el("h3"),{textContent:"This device"}));
@@ -3607,9 +3574,53 @@ function teacherConsole(){
    full-screen mode) and wire it. Mirrors the removed rail card. */
 function syncRollBtn(){
   const b=$("#rollBtn"); if(!b) return;
-  const show = isTeacher() && haveRoster() && !rollMode && !presentMode && !lessonMode;
+  const show = isTeacher() && haveRoster() && !rollMode && !presentMode && !lessonMode && !cfgMode;
   b.hidden=!show;
   if(show) b.onclick=()=>{ rollSection=curMSection(); rollSearch=""; rollMode=true; render(); };
+}
+/* Show/hide the top-bar "Course config" button (instructor, not already in a full-screen mode)
+   and wire it. Opens the full-screen course-setup page (roster/schedule/course/data). */
+function syncCfgBtn(){
+  const b=$("#cfgBtn"); if(!b) return;
+  const show = isTeacher() && !rollMode && !presentMode && !lessonMode && !cfgMode;
+  b.hidden=!show;
+  if(show) b.onclick=()=>{ cfgMode=true; render(); };
+}
+/* Full-screen "Course config" page — the one-time setup cards (course, roster, session schedule,
+   data export) moved off the console rail so the main console stays focused on running class. */
+function courseConfig(){
+  const wrap=el("div","stack"); wrap.style.maxWidth="1000px"; wrap.style.margin="0 auto";
+  const head=el("div","card stage");
+  const hr=el("div","row"); hr.style.cssText="justify-content:space-between;align-items:flex-start;gap:10px";
+  const hl=el("div");
+  hl.append(el("div","eyebrow gold","Course config"));
+  hl.append(Object.assign(el("h2"),{textContent:"Set up this course",style:"font-size:1.4rem;margin:2px 0 0"}));
+  hl.append(Object.assign(el("div","sm mut"),{textContent:"One-time setup for the whole course — course, roster, session schedule and data export. Rarely touched once class is running.",style:"margin-top:4px"}));
+  hr.append(hl);
+  const close=el("button","btn neutral","Done"); close.onclick=()=>{ cfgMode=false; render(); }; hr.append(close);
+  head.append(hr); wrap.append(head);
+
+  const grid=el("div","cfg-grid");
+  grid.append(courseCard());
+
+  const sRost=el("div","rail-sec");
+  sRost.append(Object.assign(el("h3"),{textContent:"Course roster"}));
+  sRost.append(Object.assign(el("div","sm mut"),{textContent:"Set once for the whole course — shared across every session and section.",style:"margin:-4px 0 8px"}));
+  sRost.append(rosterEditor()); grid.append(sRost);
+
+  const sSch=el("div","rail-sec");
+  sSch.append(Object.assign(el("h3"),{textContent:"Session schedule"}));
+  sSch.append(Object.assign(el("div","sm mut"),{textContent:"Optional — map class dates to a session (and section). On a scheduled day the console offers a one-tap reminder so you never forget to bump the session.",style:"margin:-4px 0 8px"}));
+  sSch.append(scheduleEditor()); grid.append(sSch);
+
+  const sD=el("div","rail-sec");
+  sD.append(Object.assign(el("h3"),{textContent:"Data"}));
+  sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
+  const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
+  sD.append(expB); grid.append(sD);
+
+  wrap.append(grid);
+  return wrap;
 }
 function rosterEditor(){
   const wrap=el("div","stack");
