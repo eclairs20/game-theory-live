@@ -527,12 +527,12 @@ const GAMES = {
     blurb:"Pick a number; target is a fraction of the class mean." },
   coord: { name:"Coordination", short:"G3", icon:"G3",
     blurb:"Match the class without talking — 4 quick focal-point questions." },
-  publicgoods: { name:"Public Goods", short:"G4", icon:"G4",
-    blurb:"Contribute to a shared fund that pays everyone." },
-  quatro: { name:"Simultaneous Quatro Uno", short:"G5", icon:"G5",
+  quatro: { name:"Simultaneous Quatro Uno", short:"G4", icon:"G4",
     blurb:"Card duel with your neighbour — tap your own pile each hand." },
-  redblack: { name:"Red vs Black", short:"G6", icon:"G6",
-    blurb:"Card duel with your neighbour — tap the card you played each hand." }
+  redblack: { name:"Red vs Black", short:"G5", icon:"G5",
+    blurb:"Card duel with your neighbour — tap the card you played each hand." },
+  publicgoods: { name:"Public Goods", short:"G10", icon:"G10",
+    blurb:"Contribute to a shared fund that pays everyone." }
 };
 const DEFAULT_CONFIG = {
   guess23:{ frac:1/2, min:0, max:100, step:0.5 },
@@ -632,9 +632,9 @@ const HUB_LESSONS = [ {id:"pareto", name:"Pareto optimality"} ];
    of these students may practise; label uses a short name. */
 const HUB_PRACTICE = [ {id:"quatro", name:"Quatro Uno"}, {id:"redblack", name:"Red vs Black"} ];
 function launchLesson(id){ if(id==="pareto"){ paretoInit("dilemma"); lessonMode="pareto"; render(); } }
-/* Canonical game order (G1…G6) so meeting lists never look randomly shuffled. */
+/* Canonical game order (the GAMES key order) so meeting lists never look randomly shuffled. */
 const GAME_ORDER = Object.keys(GAMES);
-/* Deterministic meeting order: grouped by game (G1…G6), then session, section, round — so
+/* Deterministic meeting order: grouped by game (GAMES key order), then session, section, round — so
    every instance of a game sits together (all Give or Keep, then all Guess, …) instead of
    game names interleaving across meetings. Takes anything with {session, section, game, round}. */
 function meetingCmp(a,b){
