@@ -297,16 +297,19 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   a count. Aggregates are hidden until the instructor reveals.
 - Instructor: click "Instructor" → passcode → console (pick game, open/close submissions,
   reveal, next round, clear round data, edit parameters). First run sets the passcode.
-- **Console layout** (`teacherConsole`) — a `.console` grid with a **full-width top panel**
-  (`.console-top`: **Choose exercise** — the G1–G6 game tiles + the IL1 Pareto lesson, laid out as
-  horizontal tiles spanning both columns) over a **2-column** body: a **slim left rail** (`.rail`:
-  only the live per-game **Parameters**) and the **main** panel (session/round controls, instructor
-  preview/analysis, attendance card). Grid areas are `"top top" / "rail main"`; when no game is
-  picked the rail is empty, so `.console.norail` drops the rail column and the main panel goes
-  full-width. Under 820px it collapses to a single column ordered top → main → rail.
-- **Top-bar buttons** — **📋 Take roll call** (`#rollBtn`/`syncRollBtn`), **⚙ Course config**
-  (`#cfgBtn`/`syncCfgBtn`), both instructor-only and hidden in any full-screen mode, and **Log out**
-  (`#logoutBtn`/`syncLogoutBtn`, instructor-only → `logOut`, replacing the old "This device" card).
+- **Console layout** (`teacherConsole`) — a **single full-width column** (`.console`,
+  `grid-template-areas:"top" "main"`, **no side rail**): a **top panel** over the **main** panel
+  (session/round controls, instructor preview/analysis, attendance card). The top panel is itself a
+  **split** (`.exercise-split`): **Choose exercise** (the G1–G6 game tiles + the IL1 Pareto lesson,
+  `~3/4` width) on the left, and the chosen game's **Parameters** card (`~1/4`) on the right. When no
+  game is picked the split adds `.nogame` so the picker spans the full row (no Parameters card).
+  Under 900px the split stacks to one column. Removing the rail gives the main panel the whole width.
+- **Top bar** (`.topbar`) — the brand on the left; all controls grouped in `.topbar-actions`
+  (flex-wrap, right-aligned), so when they don't fit on one row they stack neatly into two rows
+  without overflowing. Buttons: phase pill, **📋 Take roll call** (`#rollBtn`/`syncRollBtn`),
+  **⚙ Course config** (`#cfgBtn`/`syncCfgBtn`) — both instructor-only, hidden in any full-screen
+  mode — the **course picker** `<select>`, role toggle, **Log out** (`#logoutBtn`/`syncLogoutBtn`,
+  instructor-only → `logOut`, replacing the old "This device" card), and the theme toggle.
 - **Course config page** (`courseConfig`, local `cfgMode`) — a full-screen setup page (opened by the
   top-bar ⚙) holding the one-time cards moved off the rail, **stacked full-width** (`.cfg-grid`,
   flex column): **Course** (`courseCard`), **Course roster** (`rosterEditor`), **Student page**
