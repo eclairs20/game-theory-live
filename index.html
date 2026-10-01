@@ -2914,6 +2914,22 @@ function qrFor(url){ if(_qrCache.url!==url){ _qrCache={url, svg:qrSVG(url)}; } r
 function toggleFullscreen(){
   try{ if(document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); }catch(e){}
 }
+/* Pretty-print an ISO schedule date (YYYY-MM-DD) → "Sat, 3 Oct 2026" (UTC, no TZ shift). */
+function fmtSchedDate(iso){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso||"")); if(!m) return "";
+  const dt=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]));
+  const wd=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dt.getUTCDay()];
+  const mo=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m[2]-1];
+  return wd+", "+(+m[3])+" "+mo+" "+m[1];
+}
+/* The scheduled date for a (session, section) from the session schedule — prefers a row that
+   names this section, else a section-less row, else any row for that session. */
+function schedDateFor(sess, sec){
+  const r = schedule.find(x=>x.session===sess && x.section===sec)
+    || schedule.find(x=>x.session===sess && !x.section)
+    || schedule.find(x=>x.session===sess);
+  return r ? fmtSchedDate(r.date) : "";
+}
 /* Instructor manual roll-call page — tick present/absent against the roster, section-wise,
    per meeting (session + section). Writes control.attend[meetingKey][enc(email)]. */
 function rollCall(){
@@ -2925,13 +2941,20 @@ function rollCall(){
   const presentOf = e => isPresent(mk, e.email);
   const presentN = people.filter(presentOf).length;
   const enrolledPresent = enrolled.filter(presentOf).length;
+  const schedDate = schedDateFor(curSession(), sec);
 
   const wrap=el("div","stack"); wrap.style.maxWidth="760px"; wrap.style.margin="0 auto";
   const head=el("div","card stage");
   const hr=el("div","row"); hr.style.cssText="justify-content:space-between;align-items:flex-start;gap:10px";
   const hl=el("div");
-  hl.append(el("div","eyebrow gold","Roll call"),
-    Object.assign(el("h2"),{textContent:"Session S"+curSession()+(sec?" · Section "+sec:""),style:"font-size:1.5rem;margin:2px 0 0"}));
+  hl.append(el("div","eyebrow gold","Roll call"));
+  // session stepper sits right next to the session header
+  const trow=el("div"); trow.style.cssText="display:flex;align-items:center;gap:8px;margin-top:2px;flex-wrap:wrap";
+  const sm=el("button","ghost-btn","–"); sm.title="Previous session"; sm.onclick=()=>{ const nv=curSession(); if(nv>1) writeControl({session:nv-1, round:1, phase:"waiting"}); };
+  const h2=Object.assign(el("h2"),{textContent:"Session S"+curSession()+(sec?" · Section "+sec:""),style:"font-size:1.4rem;margin:0"});
+  const sp=el("button","ghost-btn","+"); sp.title="Next session"; sp.onclick=()=>writeControl({session:curSession()+1, round:1, phase:"waiting"});
+  trow.append(sm, h2, sp); hl.append(trow);
+  hl.append(Object.assign(el("div","sm mut"),{textContent: schedDate ? ("📅 "+schedDate) : "No date in the schedule for this session.", style:"margin-top:4px"}));
   hr.append(hl);
   const close=el("button","btn neutral","Done"); close.onclick=()=>{ rollMode=false; rollSearch=""; render(); }; hr.append(close);
   head.append(hr);
@@ -2953,11 +2976,6 @@ function rollCall(){
     ctl.append(srow);
   }
   const srow2=el("div","row"); srow2.style.cssText="gap:8px;margin-top:10px;flex-wrap:wrap";
-  const sess=el("div","res-list");
-  const sm=el("button","ghost-btn","– S"+(curSession()-1>0?curSession()-1:1)); sm.title="Previous session"; sm.onclick=()=>{ const nv=curSession(); if(nv>1) writeControl({session:nv-1, round:1, phase:"waiting"}); };
-  const slab=el("span","tinylabel"); slab.textContent="Session S"+curSession(); slab.style.alignSelf="center";
-  const sp=el("button","ghost-btn","S"+(curSession()+1)+" +"); sp.title="Next session"; sp.onclick=()=>writeControl({session:curSession()+1, round:1, phase:"waiting"});
-  sess.append(slab, sm, sp); srow2.append(sess);
   const allB=el("button","ghost-btn","Mark all present"); allB.onclick=()=>setAttendMany(mk, people.map(e=>e.email), true);
   const clrB=el("button","ghost-btn","Clear all"); clrB.onclick=()=>{ if(confirm("Clear attendance for this meeting?")) setAttendMany(mk, people.map(e=>e.email), false); };
   srow2.append(allB, clrB); ctl.append(srow2);

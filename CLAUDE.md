@@ -104,8 +104,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   opens a full-screen page (`rollCall()`, local `rollMode`) from the console's **Attendance (roll
   call)** rail card: a section-wise, searchable tick list built from the roster (`setAttend`/
   `setAttendMany` write `control/attend/…` directly; audit members are shown but excluded from the
-  "X of N enrolled present" count via `enrolledRoster`). A meeting's roll is "taken" once it has any
-  entry; a listed student without an entry counts **absent**. Helpers: `attendMap`, `attendKeyFor`,
+  "X of N enrolled present" count via `enrolledRoster`). The header carries the session −/+ stepper
+  inline and shows the meeting's **date** from the session schedule (`schedDateFor`/`fmtSchedDate`,
+  matched on session+section). A meeting's roll is "taken" once it has any entry; a listed student
+  without an entry counts **absent**. Helpers: `attendMap`, `attendKeyFor`,
   `parseAttendKey`, `isPresent`. Each tick re-renders (attendance is in `control`), so `_rollScroll`
   preserves the list scroll position. Students see their **own** record on My page via
   `hubAttendance()` (gated by `hub.attendance`), matched on their roster primary **and** `email2`.
