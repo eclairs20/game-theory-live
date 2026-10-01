@@ -110,7 +110,16 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   matched on session+section). A meeting's roll is "taken" once it has any entry; a listed student
   without an entry counts **absent**. Helpers: `attendMap`, `attendKeyFor`,
   `parseAttendKey`, `isPresent`. Each tick re-renders (attendance is in `control`), so `_rollScroll`
-  preserves the list scroll position. Students see their **own** record on My page via
+  preserves the list scroll position. A **View** toggle (`rollGrid`) switches between two layouts:
+  - **This session** — the single-meeting tick list. Each row shows, right after the name, a
+    **P/A history string** (`.roll-hist`, e.g. `PPAP` — green P / red A) across every *taken* session
+    for that section (`attendSessions(sec)`), so you can see a student's attendance pattern at a glance.
+  - **All sessions** — an **Excel-like grid** (`.att-grid`): students (roster order) × every session
+    `1..N` (`gridSessions(sec)` — covers taken, scheduled and current). Sticky header row + sticky name
+    column. Tap a **cell** to toggle that student present/absent for that session (`setAttend`); tap a
+    **session header** to mark — or clear — the whole column (`setAttendMany`). Its scroll (both axes)
+    is preserved across the per-tick re-render via `_rollGT`/`_rollGL`.
+  Students see their **own** record on My page via
   `hubAttendance()` (gated by `hub.attendance`), matched on their roster primary **and** `email2`.
 - **Student hub ("My page")** — a personal student dashboard, gated by the instructor per course
   via `control.hub = { on, results, practice, lessons, attendance, resultKeys, lessonKeys, practiceKeys }` (all default
