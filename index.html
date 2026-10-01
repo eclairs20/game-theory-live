@@ -131,7 +131,8 @@ code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding
 
 .grid2{display:grid; grid-template-columns:1fr 1fr; gap:18px}
 .grid-analysis{display:grid; grid-template-columns:1.15fr .85fr; gap:20px; align-items:start}
-@media(max-width:800px){.grid2,.grid-analysis{grid-template-columns:1fr}}
+.grid-even{display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start}
+@media(max-width:800px){.grid2,.grid-analysis,.grid-even{grid-template-columns:1fr}}
 
 .chart-card{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius); padding:18px}
 .chart-card h3{font-size:1rem; margin-bottom:4px}
@@ -2505,7 +2506,7 @@ function analyzeRedBlack(list){
   const mkBar=(title,T,tot,col)=>{ const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:title}));
     card.append(barChart(RB_CARDS.map(k=>({label:k,value:tot?Math.round(1000*T[k]/tot)/10:0,color:col})), Math.max(40,...RB_CARDS.map(k=>tot?100*T[k]/tot:0)), false, "%"));
     card.append(Object.assign(el("div","cap"),{textContent:"Nash mix: K 40%, and A / 2 / 3 at 20% each."})); return card; };
-  const mrow=el("div","grid-analysis");
+  const mrow=el("div","grid-even");   // two identical bar charts → equal columns (else the wider one looks bigger)
   mrow.append(mkBar("Red's card mix ("+RM.n+" plays)",RM.m,RM.n,"var(--bad)"), mkBar("Black's card mix ("+BM.n+" plays)",BM.m,BM.n,"var(--ink)"));
   wrap.append(mrow);
   // joint distribution vs Nash independent product
