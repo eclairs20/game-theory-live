@@ -63,11 +63,15 @@ a{color:var(--accent-ink)}
 code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding:1px 5px; border-radius:5px; font-size:.85em; border:1px solid var(--line)}
 
 .shell{max-width:1120px; margin:0 auto; padding:20px clamp(14px,3vw,30px) 72px}
-.topbar{display:flex; align-items:center; gap:16px 20px; flex-wrap:wrap; padding:14px 4px 20px}
-/* The controls group sits to the right of the brand and wraps as a unit — so when there isn't
-   room for one row, the pill + buttons + course picker stack neatly into two right-aligned rows
-   instead of overflowing. */
-.topbar-actions{display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; margin-left:auto}
+/* Two explicit rows. Row 1: brand (left) + phase pill, Log out, theme (right). Row 2: the course
+   picker (left) + Take roll call, Course config, role toggle (right). Each row's actions wrap and
+   stay right-aligned, so nothing overflows. */
+.topbar{display:flex; flex-direction:column; gap:10px; padding:14px 4px 20px}
+.tb-row{display:flex; align-items:center; gap:10px 16px; flex-wrap:wrap}
+.tb-actions{display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; margin-left:auto}
+/* Row 2 hides itself when it has nothing to show (student with no course picker + only the role
+   toggle still needs to render, so keep it; it simply holds the role button). */
+.tb-sub .course-sel[hidden]{display:none}
 .course-sel{font:inherit; font-size:.85rem; font-weight:600; color:var(--ink-2); background:var(--surface-2);
   border:1px solid var(--line); border-radius:var(--radius-sm); padding:7px 10px; max-width:min(46vw,220px)}
 .brand{display:flex; align-items:center; gap:12px; margin-right:auto}
@@ -186,15 +190,11 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .matrix .nash{background:var(--bad-wash)} .matrix .pareto{background:var(--good-wash)}
 .matrix .played{outline:2px solid var(--accent); outline-offset:-2px}
 
-/* The console is a single full-width column: a TOP panel, then the live main panel. There's no
-   side rail — the top panel itself splits into the exercise picker (left ~3/4) and the chosen
-   game's Parameters (right ~1/4), so the main panel below gets the whole width. */
+/* The console is a single full-width column: a full-width exercise picker (TOP), then the live
+   main panel (Parameters stacks at its top when a game is chosen). No side rail. */
 .console{display:grid; grid-template-columns:1fr; grid-template-areas:"top" "main"; gap:20px; align-items:start}
 .console>.console-top{grid-area:top}
 .console>.stack{grid-area:main}
-.exercise-split{display:grid; grid-template-columns:minmax(0,3fr) minmax(0,1fr); gap:16px; align-items:start}
-.exercise-split.nogame{grid-template-columns:1fr}   /* no game picked → picker spans the whole row */
-@media(max-width:900px){ .exercise-split{grid-template-columns:1fr} }
 /* In the picker card the exercise tiles lay out as a responsive grid. */
 .console-top .game-pick{display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:8px}
 .console-top .gp-div{grid-column:1 / -1}
@@ -492,21 +492,27 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
 <div class="shell">
   <div class="topbar">
-    <div class="brand">
-      <div class="glyph" aria-hidden="true"></div>
-      <div>
-        <h1>Game Theory Live</h1>
-        <div class="sub" id="brandSub">Strategic Interaction Lab</div>
+    <div class="tb-row">
+      <div class="brand">
+        <div class="glyph" aria-hidden="true"></div>
+        <div>
+          <h1>Game Theory Live</h1>
+          <div class="sub" id="brandSub">Strategic Interaction Lab</div>
+        </div>
+      </div>
+      <div class="tb-actions">
+        <span id="phasePill" class="pill"><span class="dot"></span><span id="phaseTxt">Connecting…</span></span>
+        <button id="logoutBtn" class="ghost-btn" hidden>Log out</button>
+        <button id="themeBtn" class="ghost-btn" title="Toggle theme">◐</button>
       </div>
     </div>
-    <div class="topbar-actions">
-      <span id="phasePill" class="pill"><span class="dot"></span><span id="phaseTxt">Connecting…</span></span>
-      <button id="rollBtn" class="ghost-btn" hidden>📋 Take roll call</button>
-      <button id="cfgBtn" class="ghost-btn" hidden>⚙ Course config</button>
+    <div class="tb-row tb-sub">
       <select id="courseSel" class="course-sel" title="Switch course" hidden></select>
-      <button id="roleBtn" class="ghost-btn">Instructor</button>
-      <button id="logoutBtn" class="ghost-btn" hidden>Log out</button>
-      <button id="themeBtn" class="ghost-btn" title="Toggle theme">◐</button>
+      <div class="tb-actions">
+        <button id="rollBtn" class="ghost-btn" hidden>📋 Take roll call</button>
+        <button id="cfgBtn" class="ghost-btn" hidden>⚙ Course config</button>
+        <button id="roleBtn" class="ghost-btn">Instructor</button>
+      </div>
     </div>
   </div>
   <div id="sandboxBar" class="sandbox-bar" hidden></div>
@@ -3437,12 +3443,9 @@ function teacherConsole(){
   const c=el("div","console");
   const hasGame = !!(control&&control.activeGame);
 
-  // TOP panel: a split — the exercise picker (left ~3/4) and the chosen game's Parameters
-  // (right ~1/4). No side rail; the main panel below gets the full console width.
-  const top=el("div","console-top");
-  const split=el("div","exercise-split"+(hasGame?"":" nogame"));
-
-  const s1=el("div","rail-sec");
+  // TOP panel: the full-width exercise picker. No side rail — the chosen game's Parameters card
+  // stacks below it, at the top of the centre panel.
+  const s1=el("div","rail-sec console-top");
   s1.append(Object.assign(el("h3"),{textContent:"Choose exercise"}));
   const gp=el("div","game-pick");
   Object.keys(GAMES).forEach(k=>{
@@ -3459,21 +3462,19 @@ function teacherConsole(){
   const iltx=el("div"); iltx.append(el("div","n","Pareto optimality"),el("div","d","Interactive visual — check which outcomes are Pareto optimal, step by step.")); il1.append(iltx);
   il1.onclick=()=>{ paretoInit("dilemma"); lessonMode="pareto"; render(); };
   gp.append(il1);
-  s1.append(gp); split.append(s1);
-
-  if(hasGame){
-    // Round flow (round ±, open/close, reveal, next round, clear) lives in the action bar at
-    // the top of the main panel (see roundActionBar); this card keeps only per-game parameters.
-    const s3=el("div","rail-sec");
-    s3.append(Object.assign(el("h3"),{textContent:"Parameters"}));
-    s3.append(paramEditor());
-    split.append(s3);
-  }
-  top.append(split); c.append(top);
+  s1.append(gp); c.append(s1);
   // Course, roster, schedule, data export and the Student-page config live on the full-screen
   // "Course config" page (top-bar ⚙); Log out is a top-bar button (#logoutBtn).
 
   const main=el("div","stack");
+  if(hasGame){
+    // Parameters stacks directly below Choose exercise, at the top of the centre panel. Round flow
+    // (round ±, open/close, reveal, next round, clear) lives in the action bar further down.
+    const s3=el("div","rail-sec");
+    s3.append(Object.assign(el("h3"),{textContent:"Parameters"}));
+    s3.append(paramEditor());
+    main.append(s3);
+  }
   if(control&&control.hold){
     const hn=el("div","note-box"); hn.style.borderColor="var(--gold)"; hn.style.background="var(--gold-wash)";
     hn.innerHTML="<b>Students are on hold.</b> Everyone in this room sees a waiting screen — pick, open and preview freely. Press <b>Go live</b> (top bar) when you're ready for them to play.";
