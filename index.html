@@ -2430,7 +2430,7 @@ function coordLabel(rd,v){
 }
 function coordFocalNote(focalLbl){
   const nb=el("div","note-box");
-  nb.innerHTML="<b>Teaching point — focal points.</b> With no way to talk, players still gravitate to the <i>salient</i> answer — here, <b>"+esc(focalLbl)+"</b>. That shared sense of the “obvious” choice is a <b>focal (Schelling) point</b>: it isn't the only equilibrium, but its prominence lets strangers coordinate. The tighter the class clustered on one answer, the stronger the focal pull.";
+  nb.innerHTML="<b>Remark — focal points.</b> With no way to talk, players still gravitate to the <i>salient</i> answer — here, <b>"+esc(focalLbl)+"</b>. That shared sense of the “obvious” choice is a <b>focal (Schelling) point</b>: it isn't the only equilibrium, but its prominence lets strangers coordinate. The tighter the class clustered on one answer, the stronger the focal pull.";
   return nb;
 }
 /* 2×2 square heatmap coloured by how many picked each; the odd square is ringed. */
@@ -2528,7 +2528,7 @@ function analyzeRedBlack(list){
     statTile("Complete pairs", String(pairs.length), reds.length+blacks.length+" players recorded"));
   wrap.append(st);
   const nb=el("div","note-box");
-  nb.innerHTML="<b>Teaching point.</b> A zero-sum game with a <b>mixed-strategy equilibrium</b>: play <b>K 40%</b> and each number 20%. Even played perfectly, <b>Black wins ~60%</b>, so the colour coin-toss isn't a fair start. The two matrices are the real lesson: marginals alone can't show it, but the <b>joint</b> distribution reveals whether the class actually mixed independently (like the equilibrium on the right) or <b>best-responded</b> and correlated their cards.";
+  nb.innerHTML="<b>Remark.</b> A zero-sum game with a <b>mixed-strategy equilibrium</b>: play <b>K 40%</b> and each number 20%. Even played perfectly, <b>Black wins ~60%</b>, so the colour coin-toss isn't a fair start. The two matrices are the real lesson: marginals alone can't show it, but the <b>joint</b> distribution reveals whether the class actually mixed independently (like the equilibrium on the right) or <b>best-responded</b> and correlated their cards.";
   wrap.append(nb);
   if(pairs.length) wrap.append(pairingsCard(pairs, ([r,b])=> (r.name||"?")+" (Red) ↔ "+(b.name||"?")+" (Black)"));
   return wrap;
@@ -2577,7 +2577,7 @@ function analyzeQuatro(list){
     statTile("Hands scored",String(rounds),pairs.length+" complete pairs · "+pct(rounds?ties/rounds:0)+" ties",true));
   wrap.append(st);
   const nb=el("div","note-box");
-  nb.innerHTML="<b>Teaching point.</b> The “1 beats 4” twist makes Quatro Uno <b>non-transitive</b> — like rock-paper-scissors, no single ordering dominates, so the equilibrium is to <b>mix</b>. If the class clustered on one “obvious” pile, a counter-ordering beats it — watch the win-rates flip as different orderings meet.";
+  nb.innerHTML="<b>Remark.</b> The “1 beats 4” twist makes Quatro Uno <b>non-transitive</b> — like rock-paper-scissors, no single ordering dominates, so the equilibrium is to <b>mix</b>. If the class clustered on one “obvious” pile, a counter-ordering beats it — watch the win-rates flip as different orderings meet.";
   wrap.append(nb);
   if(pairs.length) wrap.append(pairingsCard(pairs, ([a,b])=> (a.name||"?")+" ↔ "+(b.name||"?")));
   return wrap;
@@ -2618,7 +2618,7 @@ function analyzePG(list){
     statTile("Full contributors",fullCoop,"gave everything","good"));
   right.append(st);
   const nb=el("div","note-box");
-  nb.innerHTML="<b>Teaching point:</b> each mark you keep is worth 1 to you; each mark you contribute comes back to you as only <b>"+fmt(perMark,2)+"</b> (the pot is ×"+M+", then split among "+n+") — so the private incentive is to give nothing (Nash). Yet every contributed mark creates <b>"+fmt(M,1)+"</b> marks for the group, so the group optimum is for everyone to give everything. In a bigger class your own share shrinks (M÷N), making free-riding even more tempting. The class captured <b>"+pct(efficiency)+"</b> of the possible surplus — the gap is the cost of free-riding.";
+  nb.innerHTML="<b>Remark:</b> each mark you keep is worth 1 to you; each mark you contribute comes back to you as only <b>"+fmt(perMark,2)+"</b> (the pot is ×"+M+", then split among "+n+") — so the private incentive is to give nothing (Nash). Yet every contributed mark creates <b>"+fmt(M,1)+"</b> marks for the group, so the group optimum is for everyone to give everything. In a bigger class your own share shrinks (M÷N), making free-riding even more tempting. The class captured <b>"+pct(efficiency)+"</b> of the possible surplus — the gap is the cost of free-riding.";
   right.append(nb);
   const nb2=el("div","note-box teal");
   nb2.innerHTML="Pot: <b>"+fmt(total,0)+"</b> marks → ×"+M+" = <b>"+fmt(boosted,0)+"</b>, split among "+n+" → each gets <b>"+fmt(perHead,1)+"</b> back. Everyone-gives would pay each "+fmt(M*cf.E,1)+" ("+M+"×"+cf.E+").";
