@@ -287,12 +287,13 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   a count. Aggregates are hidden until the instructor reveals.
 - Instructor: click "Instructor" → passcode → console (pick game, open/close submissions,
   reveal, next round, clear round data, edit parameters). First run sets the passcode.
-- **Console layout** (`teacherConsole`) — a responsive 3-column grid (`.console`): a **left rail**
-  (`.rail`: Choose exercise + per-game Parameters + Share), the **main** panel (session/round
-  controls, instructor preview/analysis, attendance card), and a **right rail** (`.rail-r`: Data,
-  Student page, Session schedule, Course, Roster, Testing sandbox, This device). It collapses to
-  2 columns (right rail becomes a full-width card grid below) under 1180px, and to a single column
-  (main first) under 820px. Roll call moved from the rail to the top-bar button.
+- **Console layout** (`teacherConsole`) — a `.console` grid with a **full-width top panel**
+  (`.console-top`: **Choose exercise** — the G1–G6 game tiles + the IL1 Pareto lesson, laid out as
+  horizontal tiles spanning both columns) over a **2-column** body: a **left rail** (`.rail`:
+  per-game Parameters, Share, Data, Student page, Session schedule, Course, Roster, Testing sandbox,
+  This device) and the **main** panel (session/round controls, instructor preview/analysis,
+  attendance card). Grid areas are `"top top" / "rail main"`; under 820px it collapses to a single
+  column ordered top → main → rail. Roll call is a top-bar button (`#rollBtn`), not in the rail.
 - **Collection view** (`presentView`, local `presentMode` flag) — a full-screen, class-facing
   screen that auto-opens when the instructor presses **Open submissions** (also via the round
   bar's **Present** button). It shows participation only — live count, progress vs the section's
