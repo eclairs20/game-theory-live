@@ -54,11 +54,23 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   the raw `studentId`. `guest:true` marks a non-roster submission; `sid/area/section` are stamped
   from the roster at submit time (denormalized for export/analysis). Instructor **CSV export**
   (`exportCSV`) dumps every sub in the room across all sessions.
-- `‹room›/roster` — array of `{ email, name, sid, area, section }` for the enrolled class
-  (optional). Parser (`parseRoster`) is header-aware (ID/Name/Email/Area/Section in any order,
-  tab/comma/2-space separated) and also accepts a plain `email, name` list. When present,
-  the student join screen prefers Google sign-in; a Google email matching the roster joins
-  under that name, a non-matching email joins as a flagged `guest`. Name-join is the fallback.
+- `‹room›/roster` — array of `{ email, email2?, name, sid, area, section, audit? }` for the
+  enrolled class (optional). Parser (`parseRoster`) is header-aware (ID/Name/Email/**Email2**/Area/
+  Section/**Audit** in any order, tab/comma/2-space separated) and also accepts a plain `email, name`
+  list. When present, the student join screen prefers Google sign-in; a Google email matching the
+  roster (by **either** `email` or `email2`) joins under that name, a non-matching email joins as a
+  flagged `guest`. Name-join is the fallback.
+  - **`email2`** — an optional second address (e.g. a personal Gmail) that signs the **same** student
+    in. `setRoster` indexes both addresses to one entry (`roster[email]` and `roster[email2]` → same
+    object), so every existing `roster[<signed-in email>]` lookup matches either, and the student's
+    past/future submissions stay linked whichever they use. `writeRoster` also indexes both in the
+    global `enroll` map for auto-routing.
+  - **`audit`** — marks a visitor/auditor who attends but isn't counted as enrolled. They still match
+    the roster (name resolved, not a guest) and their subs are stamped `audit:true` (`meAudit` drives
+    the stamp), but `enrolledRoster()` excludes them from the "X of N enrolled" denominators
+    (attendance card, present view) and they're shown as **Audit** (not Enrolled/Guest) in the
+    submitted table; CSV `enrolled` column is `yes`/`no`/`audit`. Attendance lists auditors and guests
+    separately ("Also submitted: N auditing, M guests").
 - `‹room›/schedule` — optional array of `{ date:"YYYY-MM-DD", session, section? }` mapping class
   dates to a meeting. `parseSchedule` accepts ISO or day-first (DD/MM/YYYY) dates, optional `S`
   prefix on the session, and an optional single-letter section (header row and junk lines skipped).

@@ -573,6 +573,7 @@ if(!manualId){ manualId = "s_"+Math.random().toString(36).slice(2,9); ls("gtl_id
 let myId = manualId;
 let myName = ls("gtl_name") || "";
 let meGuest = false;
+let meAudit = false;
 /* Firebase keys can't contain . # $ [ ] / — percent-encode them so an email
    works as a path segment. Random ids and roll numbers pass through unchanged. */
 function encodeKey(s){ return String(s).replace(/[.#$\[\]\/]/g, c=>"%"+c.charCodeAt(0).toString(16)); }
@@ -673,12 +674,17 @@ function setRoster(val){
   rosterList=[]; roster={};
   if(val){ (Array.isArray(val)?val:Object.values(val)).forEach(e=>{
     if(!e||!e.email) return; const em=String(e.email).toLowerCase().trim(); if(!em) return;
-    const entry={ email:em, name:(e.name&&String(e.name).trim())||em,
+    const e2=(e.email2?String(e.email2).toLowerCase().trim():""); const email2=(e2&&e2.includes("@")&&e2!==em)?e2:"";
+    const entry={ email:em, email2, name:(e.name&&String(e.name).trim())||em,
       sid:(e.sid&&String(e.sid).trim())||"", area:(e.area&&String(e.area).trim())||"",
-      section:(e.section?String(e.section).trim().toUpperCase():"") };
-    roster[em]=entry; rosterList.push(entry);
+      section:(e.section?String(e.section).trim().toUpperCase():""), audit:!!e.audit };
+    // Index BOTH addresses to the same person, so a student who signs in with either their
+    // institute email or a personal one still matches the roster (and isn't treated as a guest).
+    roster[em]=entry; if(email2) roster[email2]=entry; rosterList.push(entry);
   }); }
 }
+/* Enrolled roster members (audit/visitor rows excluded) — the denominator for "X of N". */
+function enrolledRoster(){ return rosterList.filter(e=>!e.audit); }
 function rosterSections(){ const s={}; rosterList.forEach(e=>{ if(e.section) s[e.section]=1; }); return Object.keys(s).sort(); }
 /* Optional session schedule: date → session (+ optional section), so the console can
    remind the instructor which meeting today is (tap-to-apply). Stored at ‹room›/schedule. */
@@ -738,9 +744,10 @@ function applyIdentity(){
     const email=(authUser.email||"").toLowerCase();
     const rn=roster[email];
     myId=email; myName=(rn&&rn.name)||authUser.displayName||email;
-    meGuest = !rn;                       // enrolled only if the email is on the roster
+    meGuest = !rn;                       // enrolled only if the email (or alt email) is on the roster
+    meAudit = !!(rn&&rn.audit);          // on the roster but attending as an auditor/visitor
   } else {
-    myId=manualId; myName=ls("gtl_name")||""; meGuest = !!myName;  // a typed name is always a guest
+    myId=manualId; myName=ls("gtl_name")||""; meGuest = !!myName; meAudit=false;  // a typed name is always a guest
   }
 }
 function haveIdentity(){ return !!authUser || !!myName; }
@@ -852,7 +859,7 @@ async function submit(payload){
   if(authUser&&authUser.email) doc.email=authUser.email.toLowerCase();
   if(curMSection()) doc.msection=curMSection();   // the section this meeting is running
   const rn=roster[String(myId).toLowerCase()];    // stamp roster fields for later analysis/export
-  if(rn){ if(rn.sid)doc.sid=rn.sid; if(rn.area)doc.area=rn.area; if(rn.section)doc.section=rn.section; }
+  if(rn){ if(rn.sid)doc.sid=rn.sid; if(rn.area)doc.area=rn.area; if(rn.section)doc.section=rn.section; if(rn.audit)doc.audit=true; }
   Object.assign(doc,payload);
   try{ await fb.ref(SUB_DOC(key,myId)).set(doc); }
   catch(e){ toast("Submit failed — check connection"); return; }
@@ -876,7 +883,7 @@ function pairDoc(payload, done){
   if(meGuest) doc.guest=true;
   if(authUser&&authUser.email) doc.email=authUser.email.toLowerCase();
   if(curMSection()) doc.msection=curMSection();
-  const rn=roster[String(myId).toLowerCase()]; if(rn){ if(rn.sid)doc.sid=rn.sid; if(rn.area)doc.area=rn.area; if(rn.section)doc.section=rn.section; }
+  const rn=roster[String(myId).toLowerCase()]; if(rn){ if(rn.sid)doc.sid=rn.sid; if(rn.area)doc.area=rn.area; if(rn.section)doc.section=rn.section; if(rn.audit)doc.audit=true; }
   return Object.assign(doc,payload);
 }
 async function savePair(payload, done){
@@ -911,7 +918,7 @@ async function writeRoster(list){
     // Sandbox rooms are deliberately NOT registered, so no one is ever auto-routed into a test room.
     if(!isSandbox()){
       try{ if(!courses[ROOM]) await fb.ref(COURSES_PATH+"/"+ROOM).update({name:(courses[ROOM]&&courses[ROOM].name)||ROOM, createdAt:Date.now()}); }catch(e){}
-      try{ const up={}; list.forEach(e=>{ if(e.email) up[encodeKey(String(e.email).toLowerCase())+"/"+ROOM]=true; }); if(Object.keys(up).length) await fb.ref("enroll").update(up); }catch(e){}
+      try{ const up={}; list.forEach(e=>{ [e.email,e.email2].forEach(a=>{ if(a&&String(a).includes("@")) up[encodeKey(String(a).toLowerCase())+"/"+ROOM]=true; }); }); if(Object.keys(up).length) await fb.ref("enroll").update(up); }catch(e){}
     }
     return true;
   }catch(e){ toast("Couldn't save roster"); return false; }
@@ -932,29 +939,38 @@ function parseRoster(text){
   if(!lines.length) return [];
   const split=l=> l.split(/\t|,|;|\s{2,}/).map(x=>x.trim());
   let cols=null, start=0;
-  if(!lines[0].includes("@") && /email|name|section|\bid\b|area/i.test(lines[0])){
+  if(!lines[0].includes("@") && /email|name|section|\bid\b|area|audit/i.test(lines[0])){
     cols={}; split(lines[0]).forEach((h,i)=>{ const k=h.toLowerCase();
-      if(/e-?mail/.test(k)) cols.email=i; else if(/name/.test(k)) cols.name=i;
+      // Check the more specific headers first (email2 / audit) so they don't get swallowed by email/id.
+      if(/e-?mail\s*2|alt|second|personal|other\s*mail|2nd/.test(k)) cols.email2=i;
+      else if(/e-?mail/.test(k)) cols.email=i;
+      else if(/audit|visitor|^type$|^role$|^status$/.test(k)) cols.audit=i;
+      else if(/name/.test(k)) cols.name=i;
       else if(/section/.test(k)) cols.section=i; else if(/area/.test(k)) cols.area=i;
       else if(/id/.test(k)) cols.sid=i; });
     start=1;
   }
+  const isAudit = v => /^\s*(audit|auditor|visitor|visiting|guest|y|yes|true|1)\s*$/i.test(String(v||""));
   const out=[], seen={};
   for(let li=start; li<lines.length; li++){
     const p=split(lines[li]); if(!p.length) continue;
-    let email="", name="", sid="", area="", section="";
+    let email="", email2="", name="", sid="", area="", section="", audit=false;
     if(cols && cols.email!=null){
       email=(p[cols.email]||""); name=cols.name!=null?p[cols.name]:"";
       sid=cols.sid!=null?p[cols.sid]:""; area=cols.area!=null?p[cols.area]:""; section=cols.section!=null?p[cols.section]:"";
+      email2=cols.email2!=null?p[cols.email2]:""; audit=cols.audit!=null?isAudit(p[cols.audit]):false;
     } else {
-      const ei=p.findIndex(x=>x.includes("@")); if(ei<0) continue;
-      email=p[ei];
-      if(p.length>=5){ sid=p[0]; name=p[1]; area=p[3]||""; section=p[4]||""; }
-      else { name=p.filter((x,i)=>i!==ei).join(" "); }
+      // headerless: first @ token = email, a second @ token = alt email, an "audit"/"guest" word = audit flag
+      const ats=p.map((x,i)=>x.includes("@")?i:-1).filter(i=>i>=0); if(!ats.length) continue;
+      email=p[ats[0]]; if(ats.length>1) email2=p[ats[1]];
+      audit=p.some(x=>/^(audit|auditor|visitor|visiting)$/i.test(x));
+      const rest=p.filter((x,i)=>!ats.includes(i) && !/^(audit|auditor|visitor|visiting)$/i.test(x));
+      if(p.length>=5 && ats[0]>=2){ sid=p[0]; name=p[1]; area=p[3]||""; section=p[4]||""; }
+      else { name=rest.join(" "); }
     }
     email=(email||"").trim().toLowerCase(); if(!email.includes("@")) continue;
     if(seen[email]) continue; seen[email]=1;
-    out.push({ email, name:(name||"").trim()||email, sid:(sid||"").trim(), area:(area||"").trim(), section:(section||"").trim().toUpperCase() });
+    out.push({ email, email2:(email2||"").trim().toLowerCase(), name:(name||"").trim()||email, sid:(sid||"").trim(), area:(area||"").trim(), section:(section||"").trim().toUpperCase(), audit:!!audit });
   }
   return out;
 }
@@ -2854,7 +2870,7 @@ function presentView(){
   const status=el("div","present-status"+(open?" live":"")); status.append(el("span","dot"), document.createTextNode(statusTxt));
   cnt.append(status);
   const n=subs.filter(s=>isDone(s)&&!s.bot).length;
-  const rl = curMSection() ? rosterList.filter(e=>e.section===curMSection()) : rosterList;
+  const rl = curMSection() ? enrolledRoster().filter(e=>e.section===curMSection()) : enrolledRoster();
   const num=el("div","present-num"); num.textContent=n; cnt.append(num);
   cnt.append(el("div","present-numlabel", haveRoster() ? ("of "+rl.length+" "+(curMSection()?"in Section "+curMSection():"enrolled")+" submitted") : (n===1?"response in":"responses in")));
   if(haveRoster() && rl.length){ const pr=el("div","present-prog"); const bar=el("span"); bar.style.width=Math.min(100,Math.round(100*n/rl.length))+"%"; pr.append(bar); cnt.append(pr); }
@@ -3328,12 +3344,12 @@ function teacherConsole(){
 function rosterEditor(){
   const wrap=el("div","stack");
   const ta=el("textarea","input mono"); ta.rows=5; ta.style.fontSize=".78rem";
-  ta.placeholder="Paste the class list with a header row, e.g.\nID  Name  Email  Area  Section\nPGP41028  Pavan B S  pgp41028@iiml.ac.in  PGP  A";
-  ta.value=rosterList.length ? ("id, name, email, area, section\n"+rosterList.map(e=>[e.sid,e.name,e.email,e.area,e.section].join(", ")).join("\n")) : "";
-  wrap.append(Object.assign(el("div","sm mut"),{textContent:"Paste the roster with a header row — columns in any order (ID, Name, Email, Area, Section). A plain 'email, name' list also works."}));
+  ta.placeholder="Paste the class list with a header row, e.g.\nID  Name  Email  Email2  Area  Section  Audit\nPGP41028  Pavan B S  pgp41028@iiml.ac.in    PGP  A";
+  ta.value=rosterList.length ? ("id, name, email, email2, area, section, audit\n"+rosterList.map(e=>[e.sid,e.name,e.email,e.email2||"",e.area,e.section,e.audit?"audit":""].join(", ")).join("\n")) : "";
+  wrap.append(Object.assign(el("div","sm mut"),{innerHTML:"Paste the roster with a header row — columns in any order (ID, Name, Email, <b>Email2</b>, Area, Section, <b>Audit</b>). <b>Email2</b> = a second address (e.g. personal Gmail) that also signs the student in. Put <b>audit</b> (or yes) in the Audit column for visitors who attend but aren't counted as enrolled. A plain 'email, name' list also works."}));
   wrap.append(ta);
-  const secs=rosterSections();
-  const info=el("div","sm mut"); info.textContent = haveRoster()? (rosterList.length+" enrolled"+(secs.length?" · sections "+secs.join(", "):"")) : "No roster yet — anyone can join.";
+  const secs=rosterSections(), nAudit=rosterList.length-enrolledRoster().length;
+  const info=el("div","sm mut"); info.textContent = haveRoster()? (enrolledRoster().length+" enrolled"+(nAudit?" · "+nAudit+" audit":"")+(secs.length?" · sections "+secs.join(", "):"")) : "No roster yet — anyone can join.";
   wrap.append(info);
   const save=el("button","btn wide","Save roster"); save.style.marginTop="2px";
   save.onclick=async()=>{ const list=parseRoster(ta.value);
@@ -3353,7 +3369,7 @@ function exportCSV(){
   const head=["room","session","game","round","roundKey","email","name","id","area","section","enrolled","response","timestamp"];
   const out=[head.join(",")];
   rows.forEach(s=>{
-    const email=subEmail(s); const enrolled = email && roster[email.toLowerCase()] ? "yes" : "no";
+    const email=subEmail(s); const rn=email?roster[email.toLowerCase()]:null; const enrolled = rn ? (rn.audit?"audit":"yes") : "no";
     const resp = subValue(s);
     out.push([ROOM, (s.session!=null?"S"+s.session:""), s.game||"", (s.round!=null?s.round:""), s.roundKey||"", email, s.name||"", s.sid||"", s.area||"", secOf(s), enrolled, resp, (s.ts?new Date(s.ts).toISOString():"")].map(csvCell).join(","));
   });
@@ -3397,12 +3413,15 @@ function submittedTable(list){
   const showStatus=haveRoster(), showSec=rosterSections().length>0;
   let html="<tr><th>#</th><th>Player</th>"+(showSec?"<th>Sec</th>":"")+"<th>Response</th>"+(showStatus?"<th>Status</th>":"")+"</tr>";
   rows.forEach((s,i)=>{
-    const em=subEmail(s), enrolled=!!roster[String(s.studentId).toLowerCase()];
+    const em=subEmail(s), rn=roster[String(s.studentId).toLowerCase()];
+    const stat = !rn ? "<span style='color:var(--gold);font-weight:600'>Guest</span>"
+      : rn.audit ? "<span style='color:var(--teal,#2a9d8f);font-weight:600'>Audit</span>"
+      : "<span style='color:var(--good);font-weight:600'>Enrolled</span>";
     html+="<tr><td>"+(i+1)+"</td>"+
       "<td style='text-align:left'>"+esc(s.name)+(em?"<div class='submail'>"+esc(em)+"</div>":"")+"</td>"+
       (showSec?("<td>"+esc(secOf(s)||"—")+"</td>"):"")+
       "<td class='cell'>"+esc(subValue(s))+"</td>"+
-      (showStatus?("<td>"+(enrolled?"<span style='color:var(--good);font-weight:600'>Enrolled</span>":"<span style='color:var(--gold);font-weight:600'>Guest</span>")+"</td>"):"")+
+      (showStatus?("<td>"+stat+"</td>"):"")+
       "</tr>";
   });
   const t=el("table","matrix"); t.style.fontSize=".86rem"; t.innerHTML=html;
@@ -3412,16 +3431,19 @@ function attendanceCard(){
   const card=el("div","card stage");
   const sc=effScope();
   const sv=analysisSubs().filter(s=>isDone(s)&&!s.bot);
-  const rl = (sc==="BOTH"||!sc) ? rosterList : rosterList.filter(e=>e.section===sc);
+  const inScope = e => (sc==="BOTH"||!sc) ? true : e.section===sc;
+  const rl = enrolledRoster().filter(inScope);          // enrolled only — the "X of N" denominator
   const subByEmail={}; sv.forEach(s=>{ subByEmail[String(s.studentId).toLowerCase()]=s; });
   const done=[], todo=[];
-  rl.forEach(e=>{ (subByEmail[e.email]?done:todo).push(e); });
+  rl.forEach(e=>{ (subByEmail[e.email]||(e.email2&&subByEmail[e.email2])?done:todo).push(e); });
   const guests=sv.filter(s=>!roster[String(s.studentId).toLowerCase()]);
+  const audits=sv.filter(s=>{ const r=roster[String(s.studentId).toLowerCase()]; return r&&r.audit; });
   const secLbl = (sc==="BOTH"||!sc)?"":" · Section "+sc;
   if(haveRoster()){
     card.append(el("div","eyebrow","Attendance"+secLbl),
       Object.assign(el("h3"),{textContent:done.length+" of "+rl.length+" "+((sc==="BOTH"||!sc)?"enrolled":"in Section "+sc)+" have submitted this round",style:"margin:4px 0 2px"}));
-    if(guests.length) card.append(Object.assign(el("div","sm mut"),{textContent:guests.length+" guest"+(guests.length===1?"":"s")+" not on the class list also submitted.",style:"margin-bottom:2px"}));
+    const extra=[]; if(audits.length) extra.push(audits.length+" auditing"); if(guests.length) extra.push(guests.length+" guest"+(guests.length===1?"":"s")+" not on the list");
+    if(extra.length) card.append(Object.assign(el("div","sm mut"),{textContent:"Also submitted: "+extra.join(", ")+".",style:"margin-bottom:2px"}));
   } else {
     card.append(el("div","eyebrow","Who's here"),
       Object.assign(el("h3"),{textContent:sv.length+" submitted this round",style:"margin:4px 0 2px"}),
