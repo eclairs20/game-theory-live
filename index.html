@@ -146,7 +146,9 @@ code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding
 .chart-card h3{font-size:1rem; margin-bottom:4px}
 .chart-card .cap{font-size:.8rem; color:var(--muted); margin-bottom:12px}
 /* Manual roll-call list (instructor) + student attendance chips */
-.roll-list{display:flex; flex-direction:column; gap:6px; max-height:62vh; overflow:auto}
+/* Responsive multi-column grid so the tick list fills the full page width (one column on a phone,
+   up to three on a wide projector) instead of a single narrow stripe. */
+.roll-list{display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:6px 10px; align-content:start; max-height:62vh; overflow:auto}
 .roll-row{display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:11px 14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); cursor:pointer; font:inherit}
 .roll-row.here{border-color:var(--good); background:color-mix(in srgb, var(--good) 10%, var(--surface))}
 .roll-tick{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; min-width:26px; border-radius:50%; border:2px solid var(--line); color:#fff; font-weight:700; font-size:.9rem; background:transparent}
@@ -3008,7 +3010,7 @@ function rollCall(){
   const enrolledPresent = enrolled.filter(presentOf).length;
   const schedDate = schedDateFor(curSession(), sec);
 
-  const wrap=el("div","stack"); wrap.style.maxWidth=rollGrid?"1180px":"760px"; wrap.style.margin="0 auto";
+  const wrap=el("div","stack"); wrap.style.maxWidth="1180px"; wrap.style.margin="0 auto";
   const head=el("div","card stage");
   const hr=el("div","row"); hr.style.cssText="justify-content:space-between;align-items:flex-start;gap:10px";
   const hl=el("div");
