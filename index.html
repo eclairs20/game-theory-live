@@ -2996,8 +2996,9 @@ function rollCall(){
   function paintList(){
     list.replaceChildren();
     const q=(rollSearch||"").trim().toLowerCase();
-    const rows=people.filter(e=> !q || (e.name||"").toLowerCase().includes(q) || (e.email||"").toLowerCase().includes(q) || (e.sid||"").toLowerCase().includes(q))
-      .sort((a,b)=> (a.name||"").localeCompare(b.name||""));
+    // Keep the roster's saved order (the order it was pasted in — e.g. the Excel S.No order),
+    // so roll call matches the attendance sheet. Search filters without reordering.
+    const rows=people.filter(e=> !q || (e.name||"").toLowerCase().includes(q) || (e.email||"").toLowerCase().includes(q) || (e.sid||"").toLowerCase().includes(q));
     if(!rows.length){ list.append(Object.assign(el("div","sm mut"),{textContent:"No one matches."})); return; }
     rows.forEach(e=>{ const on=presentOf(e);
       const b=el("button","roll-row"+(on?" here":"")); b.type="button";
