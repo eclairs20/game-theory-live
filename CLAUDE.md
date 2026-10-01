@@ -101,8 +101,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   **separate** from who submitted a game. Stored in `control.attend[<meetingKey>][<encodeKey(email)>]`
   = timestamp (meetingKey = `"S<session><section>"`, e.g. `S1A`) — in `control` so it's
   instructor-writable / world-readable like the hub, **no Firebase rules change**. The instructor
-  opens a full-screen page (`rollCall()`, local `rollMode`) from the console's **Attendance (roll
-  call)** rail card: a section-wise, searchable tick list built from the roster (`setAttend`/
+  opens a full-screen page (`rollCall()`, local `rollMode`) from the **top-bar "📋 Take roll call"**
+  button (`#rollBtn`, shown/wired by `syncRollBtn()` for an instructor with a roster): a section-wise,
+  searchable tick list built from the roster, in the roster's **saved order** (`setAttend`/
   `setAttendMany` write `control/attend/…` directly; audit members are shown but excluded from the
   "X of N enrolled present" count via `enrolledRoster`). The header carries the session −/+ stepper
   inline and shows the meeting's **date** from the session schedule (`schedDateFor`/`fmtSchedDate`,
@@ -286,6 +287,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   a count. Aggregates are hidden until the instructor reveals.
 - Instructor: click "Instructor" → passcode → console (pick game, open/close submissions,
   reveal, next round, clear round data, edit parameters). First run sets the passcode.
+- **Console layout** (`teacherConsole`) — a responsive 3-column grid (`.console`): a **left rail**
+  (`.rail`: Choose exercise + per-game Parameters + Share), the **main** panel (session/round
+  controls, instructor preview/analysis, attendance card), and a **right rail** (`.rail-r`: Data,
+  Student page, Session schedule, Course, Roster, Testing sandbox, This device). It collapses to
+  2 columns (right rail becomes a full-width card grid below) under 1180px, and to a single column
+  (main first) under 820px. Roll call moved from the rail to the top-bar button.
 - **Collection view** (`presentView`, local `presentMode` flag) — a full-screen, class-facing
   screen that auto-opens when the instructor presses **Open submissions** (also via the round
   bar's **Present** button). It shows participation only — live count, progress vs the section's

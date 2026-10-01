@@ -161,14 +161,24 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .matrix .nash{background:var(--bad-wash)} .matrix .pareto{background:var(--good-wash)}
 .matrix .played{outline:2px solid var(--accent); outline-offset:-2px}
 
-.console{display:grid; grid-template-columns:290px 1fr; gap:20px; align-items:start}
+/* Three columns on a wide screen: primary rail (exercise/share) · live main panel · setup
+   rail (data/roster/schedule/…). Balances what used to be one very long left column. */
+.console{display:grid; grid-template-columns:270px minmax(0,1fr) 290px; gap:20px; align-items:start}
+/* Medium: two columns, the setup rail drops full-width below as a horizontal card grid. */
+@media(max-width:1180px) and (min-width:821px){
+  .console{grid-template-columns:270px minmax(0,1fr)}
+  .console>.rail-r{grid-column:1 / -1; position:static; display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:14px}
+}
+/* Narrow / phone: single column — live main panel first, then the two rails. */
 @media(max-width:820px){
   .console{grid-template-columns:1fr}
-  /* On phones the setup rail is long; show the live main panel (Session/Round/results)
-     first and let the rail follow. Sticky is pointless in one column. */
-  .console>.rail{position:static; order:2}
+  .console>.rail,.console>.rail-r{position:static}
+  .console>.stack{order:1}
+  .console>.rail{order:2}
+  .console>.rail-r{order:3; display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:14px}
 }
-.rail{position:sticky; top:16px; display:flex; flex-direction:column; gap:14px}
+.rail,.rail-r{position:sticky; top:16px; display:flex; flex-direction:column; gap:14px}
 .rail-sec{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow)}
 .rail-sec h3{font-size:.8rem; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); font-weight:600; margin-bottom:12px}
 .game-pick{display:flex; flex-direction:column; gap:8px}
@@ -471,6 +481,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       </div>
     </div>
     <span id="phasePill" class="pill"><span class="dot"></span><span id="phaseTxt">Connecting…</span></span>
+    <button id="rollBtn" class="ghost-btn" hidden>📋 Take roll call</button>
     <select id="courseSel" class="course-sel" title="Switch course" hidden></select>
     <button id="roleBtn" class="ghost-btn">Instructor</button>
     <button id="themeBtn" class="ghost-btn" title="Toggle theme">◐</button>
@@ -1115,6 +1126,7 @@ function render(){
   syncBrand();
   syncSandbox();
   syncCourseSel();
+  syncRollBtn();
   const app = $("#app");
   // Instructor "collection" view — full-screen, projected to the class. Shows
   // participation only (never results), so it can't leak the answer. Available in any
@@ -3323,7 +3335,8 @@ function paretoMiniMap(stats){
 function teacherConsole(){
   refreshRoleBtn();
   const c=el("div","console");
-  const rail=el("div","rail");
+  const rail=el("div","rail");      // left: primary teaching controls
+  const railR=el("div","rail-r");   // right: setup / admin cards
 
   const s1=el("div","rail-sec");
   s1.append(Object.assign(el("h3"),{textContent:"Choose exercise"}));
@@ -3362,21 +3375,12 @@ function teacherConsole(){
   shareRow.append(copyB);
   s4.append(shareRow); rail.append(s4);
 
-  // Attendance roll call — a manual present/absent sheet per meeting (separate from who
-  // submitted a game). Opens a full-screen tick list, section-wise, from the roster.
-  const sRoll=el("div","rail-sec");
-  sRoll.append(Object.assign(el("h3"),{textContent:"Attendance (roll call)"}));
-  sRoll.append(Object.assign(el("div","sm mut"),{textContent:"Tick who's present for this meeting, by name — a manual register separate from who played a game. Stored per session + section.",style:"margin:-4px 0 8px"}));
-  const rollB=el("button","btn neutral wide", haveRoster()?"Take roll call":"Load a roster first");
-  rollB.disabled=!haveRoster(); if(!haveRoster()) rollB.style.opacity=".55";
-  rollB.onclick=()=>{ if(!haveRoster()){ toast("Load the class roster first"); return; } rollSection=curMSection(); rollSearch=""; rollMode=true; render(); };
-  sRoll.append(rollB); rail.append(sRoll);
-
+  // ── everything below goes in the RIGHT rail (setup / admin) ──
   const sD=el("div","rail-sec");
   sD.append(Object.assign(el("h3"),{textContent:"Data"}));
   sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
   const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
-  sD.append(expB); rail.append(sD);
+  sD.append(expB); railR.append(sD);
 
   // Student page — a personal dashboard students can open between activities. You choose what's on.
   const sHub=el("div","rail-sec");
@@ -3437,22 +3441,22 @@ function teacherConsole(){
     sHub.append(toggle("attendance","My attendance"));
     if(hc.attendance) sHub.append(Object.assign(el("div","sm mut"),{textContent:"Students see their own present/absent record from the roll calls you've taken.",style:"margin:4px 0 2px"}));
   }
-  rail.append(sHub);
+  railR.append(sHub);
 
   const sSch=el("div","rail-sec");
   sSch.append(Object.assign(el("h3"),{textContent:"Session schedule"}));
   sSch.append(Object.assign(el("div","sm mut"),{textContent:"Optional — map class dates to a session (and section). On a scheduled day the console offers a one-tap reminder so you never forget to bump the session.",style:"margin:-4px 0 8px"}));
   sSch.append(scheduleEditor());
-  rail.append(sSch);
+  railR.append(sSch);
 
   // Course picker + roster live at the bottom — one-time setup, rarely touched once the
   // course is running.
-  rail.append(courseCard());
+  railR.append(courseCard());
   const sRost=el("div","rail-sec");
   sRost.append(Object.assign(el("h3"),{textContent:"Course roster"}));
   sRost.append(Object.assign(el("div","sm mut"),{textContent:"Set once for the whole course — shared across every session and section.",style:"margin:-4px 0 8px"}));
   sRost.append(rosterEditor());
-  rail.append(sRost);
+  railR.append(sRost);
 
   // Testing sandbox — a throwaway room real students never land in.
   const sTest=el("div","rail-sec");
@@ -3468,14 +3472,14 @@ function teacherConsole(){
     const cp=el("button","ghost-btn wide","Copy sandbox link"); cp.style.marginTop="6px"; cp.onclick=()=>{ try{navigator.clipboard.writeText(sandLink); toast("Sandbox link copied");}catch(e){toast(sandLink);} };
     sTest.append(open, cp);
   }
-  rail.append(sTest);
+  railR.append(sTest);
 
   // Explicit log-out for shared classroom PCs — closes the console and (if signed in) Google.
   const sOut=el("div","rail-sec");
   sOut.append(Object.assign(el("h3"),{textContent:"This device"}));
   sOut.append(Object.assign(el("div","sm mut"),{textContent:"On a shared classroom PC, log out when you're done so the next person starts clean.",style:"margin:-4px 0 8px"}));
   const outB=el("button","btn danger wide", authUser?"Log out (console + Google)":"Log out of console"); outB.onclick=logOut;
-  sOut.append(outB); rail.append(sOut);
+  sOut.append(outB); railR.append(sOut);
   c.append(rail);
 
   const main=el("div","stack");
@@ -3511,7 +3515,16 @@ function teacherConsole(){
   }
   if(control&&control.activeGame&&(haveRoster()||analysisSubs().length)) main.append(attendanceCard());
   c.append(main);
+  c.append(railR);
   return c;
+}
+/* Show/hide the top-bar "Take roll call" button (instructor + roster present, not already in a
+   full-screen mode) and wire it. Mirrors the removed rail card. */
+function syncRollBtn(){
+  const b=$("#rollBtn"); if(!b) return;
+  const show = isTeacher() && haveRoster() && !rollMode && !presentMode && !lessonMode;
+  b.hidden=!show;
+  if(show) b.onclick=()=>{ rollSection=curMSection(); rollSearch=""; rollMode=true; render(); };
 }
 function rosterEditor(){
   const wrap=el("div","stack");
