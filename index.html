@@ -1882,7 +1882,7 @@ async function liveAccept(mc,fromId,fromName){
 }
 async function liveDecline(mc){ try{ await fb.ref(INVITE_DOC(mc,myId)).remove(); }catch(e){} }
 async function liveLeaveMatch(mc){
-  if(!confirm("Leave this match? Your recorded hands are cleared and you return to the waiting room.")) return;
+  if(!confirm("Restart this match? The hands you've entered are cleared and you go back to set up the match again.")) return;
   const pid=myPairId;
   try{ if(pid) await fb.ref(PAIR_DOC(mc,pid)+"/ended").set(String(myId)); }catch(e){}
   try{ await fb.ref(OF_DOC(mc,myId)).remove(); }catch(e){}
@@ -2167,7 +2167,7 @@ function pairMatch(c, game, R, d, opts){
   }
   // controls
   if(practice){ const lv=el("button","ghost-btn","Stop practice"); lv.style.marginTop="14px"; lv.onclick=()=> onExit ? onExit() : render(); c.append(lv); }
-  else if(!bot){ const lv=el("button","btn danger","Leave match"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
+  else if(!bot){ const lv=el("button","btn danger","Restart"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
   else { const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="14px"; lv.onclick=()=>{ d.bot=false; const dk=game+"-"+curKey; delete gameDraft[dk]; render(); }; c.append(lv); }
 }
 async function recSet(mc,pid,patch){ try{ await fb.ref(PAIR_DOC(mc,pid)+"/rec").update(patch); }catch(e){} }
@@ -2194,7 +2194,7 @@ function pairRecorded(c, R, d, opts){
     box.append(b);
     box.append(hintLine("If "+esc(partnerName)+" is entering, their results appear here for you to check."));
     c.append(box);
-    const lv=el("button","btn danger","Leave"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv);
+    const lv=el("button","btn danger","Restart"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv);
     return;
   }
   const amRecorder=String(rec.by)===String(myId);
@@ -2222,7 +2222,7 @@ function pairRecorded(c, R, d, opts){
       const mk=(id,label)=>{ const b=el("button","colbtn"); b.type="button"; b.textContent=label; b.onclick=async()=>{ await recSet(mc,pid,{redId:String(id)}); render(); }; return b; };
       row.append(mk(myId,"I was Red ♥"), mk(partner,esc(partnerName)+" was Red ♥"));
       box.append(row); c.append(box);
-      const lv=el("button","btn danger","Leave"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv);
+      const lv=el("button","btn danger","Restart"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv);
       return;
     }
     c.append(recScore(redW,blkW));
@@ -2280,7 +2280,7 @@ function pairRecorded(c, R, d, opts){
       } else c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:12px",innerHTML:"<b>✓ Confirmed.</b> Your pair's results are recorded."}));
     } else c.append(hintLine("Waiting for "+esc(rec.byName||"your partner")+" to finish entering…"));
   }
-  const lv=el("button","btn danger","Leave"); lv.style.marginTop="16px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv);
+  const lv=el("button","btn danger","Restart"); lv.style.marginTop="16px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv);
 }
 /* Grid of recorded hands: Red card, Black card, winner. Tappable to edit if `editable`. */
 function recGrid(red,black,R,active,editable,onEdit){
