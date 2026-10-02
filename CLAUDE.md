@@ -122,7 +122,11 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     session (`setAttend`); tap a **session header** to mark — or clear — the whole column
     (`setAttendMany`). Its scroll (both axes) is preserved across the per-tick re-render via
     `_rollGT`/`_rollGL`. The roll-call page is `maxWidth 1180px` for both views.
-  Students see their **own** record on My page via
+  A **read-only "played" overlay** (`playedMap`/`playedIn`) marks students who *submitted a game* in a
+  meeting — a faint **played** chip in the single-session list and a faint **·** in the grid (a cell
+  that is ticked present shows **P** instead). It **never writes** to `control.attend`: the
+  instructor's manual ticks remain the single source of truth. (Matches on either address;
+  excludes bots.) Students see their **own** record on My page via
   `hubAttendance()` (gated by `hub.attendance`), matched on their roster primary **and** `email2`.
 - **Student hub ("My page")** — a personal student dashboard, gated by the instructor per course
   via `control.hub = { on, results, practice, lessons, attendance, resultKeys, lessonKeys, practiceKeys }` (all default

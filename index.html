@@ -174,7 +174,10 @@ code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding
 .att-grid td.gcell{text-align:center; padding:0}
 .gc{display:block; width:100%; min-width:46px; min-height:36px; border:0; background:transparent; cursor:pointer; font-weight:700; font-family:"IBM Plex Mono",monospace; font-size:.85rem; color:var(--muted)}
 .gc.on{background:color-mix(in srgb, var(--good) 15%, transparent); color:var(--good)}
+.gc.played{color:var(--muted); font-size:1.3rem; line-height:1; opacity:.6}   /* faint "played a game" dot */
 .gc:hover{outline:2px solid var(--accent); outline-offset:-2px}
+/* faint "played" marker in the single-session list — informational, never a tick */
+.roll-played{font-size:.68rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); opacity:.75; border:1px solid var(--line); border-radius:999px; padding:1px 7px; white-space:nowrap}
 .att-grid .nmcol .aud{font-weight:500; color:var(--muted); font-size:.72rem}
 .att-grid .nmcol .gid{font-family:"IBM Plex Mono",monospace; font-weight:500; color:var(--muted); font-size:.72rem; margin-left:7px}
 /* Course config page — the moved setup cards stacked full-width, one below the other. */
@@ -742,6 +745,19 @@ function gridSessions(sec){
   schedule.forEach(x=>{ if((!x.section||x.section===sec) && x.session>mx) mx=x.session; });
   const out=[]; for(let s=1;s<=mx;s++) out.push(s); return out;
 }
+/* Who *submitted a game* in each meeting — a read-only overlay for roll call. It NEVER writes to
+   the register; the instructor's ticks stay the single source of truth. Maps meetingKey
+   ("S<session><section>") → Set of studentIds with a real (done, non-bot) submission there. */
+function playedMap(){
+  const m={};
+  for(const k in allSubs){ const s=allSubs[k]; if(!s || !isDone(s) || s.bot) continue;
+    const mk="S"+s.session+(s.msection||"");
+    (m[mk] || (m[mk]=new Set())).add(String(s.studentId));
+  }
+  return m;
+}
+/* Did this roster person play in meeting `mk`? Matches either of their addresses (email/email2). */
+function playedIn(pm, mk, e){ const set=pm[mk]; return !!set && (set.has(e.email) || (e.email2 && set.has(e.email2))); }
 /* Every meeting that has completed submissions, in canonical order — the menu the instructor
    ticks from (which results to share) and the source for the student results list. */
 function playedMeetings(){
@@ -3010,6 +3026,7 @@ function rollCall(){
   const enrolledPresent = enrolled.filter(presentOf).length;
   const schedDate = schedDateFor(curSession(), sec);
 
+  const pm=playedMap();   // read-only "played a game" overlay (never written to the register)
   const wrap=el("div","stack"); wrap.style.maxWidth="1180px"; wrap.style.margin="0 auto";
   const head=el("div","card stage");
   const hr=el("div","row"); hr.style.cssText="justify-content:space-between;align-items:flex-start;gap:10px";
@@ -3060,7 +3077,7 @@ function rollCall(){
       ctl.append(inp);
     }
   } else {
-    ctl.append(Object.assign(el("div","sm mut"),{textContent:"Tap any cell to toggle a student present (P) or absent for that session. Tap a session header to mark — or clear — that whole column.", style:"margin-top:10px"}));
+    ctl.append(Object.assign(el("div","sm mut"),{textContent:"Tap any cell to toggle a student present (P) or absent. Tap a session header to mark — or clear — the whole column. A faint · means they submitted a game that session but aren't ticked present — a reminder only; your ticks are the record.", style:"margin-top:10px"}));
   }
   wrap.append(ctl);
 
@@ -3085,9 +3102,11 @@ function rollCall(){
       if(e.sid) nd.append(Object.assign(el("span","gid"),{textContent:e.sid}));
       if(e.audit) nd.append(Object.assign(el("span","aud"),{textContent:" · audit"}));
       tr.append(nd);
-      sess.forEach(s=>{ const smk=attendKeyFor(s, sec); const on=isPresent(smk, e.email);
+      sess.forEach(s=>{ const smk=attendKeyFor(s, sec); const on=isPresent(smk, e.email); const played=playedIn(pm, smk, e);
         const td=el("td","gcell");
-        const b=el("button","gc"+(on?" on":"")); b.type="button"; b.textContent=on?"P":""; b.title=e.name+" · S"+s+" · "+(on?"present":"absent");
+        const b=el("button","gc"+(on?" on":"")+(!on&&played?" played":"")); b.type="button";
+        b.textContent=on?"P":(played?"·":"");
+        b.title=e.name+" · S"+s+" · "+(on?"present":(played?"absent — played a game (not ticked)":"absent"));
         b.onclick=()=>{ setAttend(smk, e.email, !on); };   // control listener re-renders
         td.append(b); tr.append(td);
       });
@@ -3124,6 +3143,8 @@ function rollCall(){
         histSess.forEach(s=>{ const p=isPresent(attendKeyFor(s, sec), e.email); h.append(Object.assign(el("span",p?"ph":"pa"),{textContent:p?"P":"A"})); });
         left.append(h);
       }
+      // faint read-only marker: this student submitted a game in THIS meeting (doesn't tick them)
+      if(playedIn(pm, mk, e)) left.append(Object.assign(el("span","roll-played"),{textContent:"played", title:"Submitted a game this meeting — not marked present unless you tick them"}));
       const meta=el("span","roll-meta"); meta.textContent=(e.sid||"")+(e.section?" · "+e.section:"");
       b.append(tick, left, meta);
       b.onclick=()=>{ setAttend(mk, e.email, !on); };   // control listener re-renders
