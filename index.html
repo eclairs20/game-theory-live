@@ -2020,6 +2020,11 @@ async function saveRecPartner(pid_, name_, payload){
   if(authUser&&authUser.email) doc.email=authUser.email.toLowerCase();
   if(curMSection()) doc.msection=curMSection();
   Object.assign(doc,payload);
+  // A roster partner (recorded on their behalf) is a real enrolled student, not a guest — stamp
+  // their roster fields and drop the guest flag. A typed-name/solo partner stays a guest.
+  const rp=roster[String(pid_).toLowerCase()];
+  if(rp){ doc.guest=false; if(rp.sid)doc.sid=rp.sid; if(rp.area)doc.area=rp.area; if(rp.section)doc.section=rp.section; if(rp.audit)doc.audit=true; }
+  doc.proxy=true;   // recorded on their behalf — shown "(unconfirmed)" until they self-confirm
   try{ await fb.ref(SUB_DOC(key,String(pid_))).set(doc); return true; }catch(e){ return false; }
 }
 function pairLobby(c, game, mc, R, d){
@@ -2238,26 +2243,23 @@ function pairRecorded(c, R, d, opts){
     c.append(recGrid(red,black,R,target,true,(i)=>{ d._edit=i; recSet(mc,pid,{verifiedBy:null}); render(); }));
     if(done===R){
       const solo=!!rec.solo;
-      const b=el("button","btn big wide",(cur&&isDone(cur))?(solo?"Update":"Update & re-send"):(solo?"Done — record this game":"Done — send to "+esc(partnerName)+" to check")); b.style.marginTop="14px"; b.style.maxWidth="360px";
+      const b=el("button","btn big wide",(cur&&isDone(cur))?"Update":"Done — record this game"); b.style.marginTop="14px"; b.style.maxWidth="360px";
       b.onclick=async()=>{
         const myColor=String(myId)===String(rec.redId)?"red":"black";
         const seq=(myColor==="red"?red:black).map(x=>x||"").join(",");
+        const oppSeq=(myColor==="red"?black:red).map(x=>x||"").join(",");
         await savePair({mode:"record", color:myColor, partner, partnerName, seq}, true);
-        if(solo){
-          const oppSeq=(myColor==="red"?black:red).map(x=>x||"").join(",");
-          await saveRecPartner(partner, partnerName, {mode:"record", color:oppColor(myColor), partner:String(myId), partnerName:myName||"You", seq:oppSeq});
-          await recSet(mc,pid,{done:true, red:red.join(","), black:black.join(","), verifiedBy:String(partner)});
-          toast("Recorded"); render();
-        } else {
-          await recSet(mc,pid,{done:true, red:red.join(","), black:black.join(",")});
-          toast("Sent to "+partnerName+" to verify"); render();
-        }
+        // Record the partner's side immediately (marked proxy → "unconfirmed") so the pair shows on
+        // the instructor page right away. A roster partner's confirm is optional hygiene, not required.
+        await saveRecPartner(partner, partnerName, {mode:"record", color:oppColor(myColor), partner:String(myId), partnerName:myName||"You", seq:oppSeq});
+        await recSet(mc,pid,{done:true, red:red.join(","), black:black.join(","), verifiedBy: solo?String(partner):null});
+        toast(solo?"Recorded":"Recorded — "+partnerName+" can confirm (optional)"); render();
       };
       c.append(b);
       if(cur&&isDone(cur)){
         if(solo) c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:12px",innerHTML:"<b>✓ Recorded.</b> This game's hands are saved for both of you."}));
         else if(rec.verifiedBy) c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:12px",innerHTML:"<b>✓ "+esc(partnerName)+" confirmed.</b> Your pair's results are recorded."}));
-        else c.append(hintLine("Sent — waiting for "+esc(partnerName)+" to confirm.")); }
+        else c.append(hintLine("Recorded. "+esc(partnerName)+" can open the game to confirm (optional) — your results already count.")); }
     } else c.append(hintLine((R-done)+" hand"+(R-done===1?"":"s")+" left to enter."));
   }
   // ── VERIFIER ──
@@ -2266,7 +2268,7 @@ function pairRecorded(c, R, d, opts){
     c.append(hintLine((rec.byName||"Your partner")+" is entering your results ("+done+" of "+R+" so far) — check them against the cards on the table."));
     c.append(recGrid(red,black,R,-1,false,null));
     if(rec.done && done===R){
-      if(!cur || !isDone(cur)){
+      if(!rec.verifiedBy){   // their side is already recorded (proxy); confirming is optional and just clears the "unconfirmed" tag
         const b=el("button","btn big wide gold","Confirm — this matches our cards"); b.style.marginTop="14px"; b.style.maxWidth="360px";
         b.onclick=async()=>{
           const myColor=String(myId)===String(rec.redId)?"red":"black";
@@ -2622,6 +2624,9 @@ function jointMatrixCard(title, F, caption){
   if(caption) card.append(Object.assign(el("div","cap"),{textContent:caption}));
   return card;
 }
+/* A player's display name, tagged "(unconfirmed)" when their hands were recorded on their behalf
+   and they haven't self-confirmed yet (proxy sub). */
+function pairName(s){ return (s&&s.name||"?")+(s&&s.proxy?" (unconfirmed)":""); }
 /* Compact "who played whom" list for the matched pairs (instructor-facing). */
 function pairingsCard(pairs, fmtPair){
   const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Who played whom ("+pairs.length+" pairs)"}));
@@ -2685,7 +2690,7 @@ function analyzeRedBlack(list){
   const nb=el("div","note-box");
   nb.innerHTML="<b>Remark.</b> A zero-sum game with a <b>mixed-strategy equilibrium</b>: play <b>K 40%</b> and each number 20%. Even played perfectly, <b>Black wins ~60%</b>, so the colour coin-toss isn't a fair start. The two matrices are the real lesson: marginals alone can't show it, but the <b>joint</b> distribution reveals whether the class actually mixed independently (like the equilibrium on the right) or <b>best-responded</b> and correlated their cards.";
   wrap.append(nb);
-  if(pairs.length) wrap.append(pairingsCard(pairs, ([r,b])=> (r.name||"?")+" (Red) ↔ "+(b.name||"?")+" (Black)"));
+  if(pairs.length) wrap.append(pairingsCard(pairs, ([r,b])=> pairName(r)+" (Red) ↔ "+pairName(b)+" (Black)"));
   return wrap;
 }
 /* Quatro Uno win outcome for a pile matchup (both piles top→bottom, arrays of 1..4). */
@@ -2734,7 +2739,7 @@ function analyzeQuatro(list){
   const nb=el("div","note-box");
   nb.innerHTML="<b>Remark.</b> The “1 beats 4” twist makes Quatro Uno <b>non-transitive</b> — like rock-paper-scissors, no single ordering dominates, so the equilibrium is to <b>mix</b>. If the class clustered on one “obvious” pile, a counter-ordering beats it — watch the win-rates flip as different orderings meet.";
   wrap.append(nb);
-  if(pairs.length) wrap.append(pairingsCard(pairs, ([a,b])=> (a.name||"?")+" ↔ "+(b.name||"?")));
+  if(pairs.length) wrap.append(pairingsCard(pairs, ([a,b])=> pairName(a)+" ↔ "+pairName(b)));
   return wrap;
 }
 function analyzePG(list){

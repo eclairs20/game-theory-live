@@ -265,13 +265,18 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
       email in place (no full re-render, capped at 12 with a "+N more" hint) so it isn't a wall of
       names. The recorder then marks who held Red (`rec.redId`) and enters each hand
       (editable `recGrid`, running Red/Black score) into `live/…/pairs/‹pid›/rec`; on Done writes their
-      own sub. For a roster partner the other side **verifies once** (soft — the confirm IS their sub);
-      for a **solo** (typed-name) partner the recorder's Done also writes the partner's side
-      (`saveRecPartner`, `guest:true`) so the pair is complete without a second person — good for an
-      absent partner or sandbox testing. **Both subs are ordinary per-player `redblack` subs**
-      (`mode:"record"`, `color`+`seq`, mutual `partner`), so `mutualPairs`/`analyzeRedBlack` zip them
-      into the same joint 4×4 matrix — no analysis change. `recGrid` renders each recorded hand's two
-      cards in sized `.mini-slot` wrappers so they don't overflow the cell. Recommended in-class mode.
+      own sub. **On Done the recorder ALSO writes the partner's side** (`saveRecPartner`) — for every
+      partner, roster or solo — so the pair is complete and shows on the instructor page immediately.
+      That proxy sub is stamped **`proxy:true`**, and the instructor pairings label (`pairName`) tags
+      such a player **"(unconfirmed)"** until they self-confirm. A roster partner's confirmation is an
+      **optional hygiene step**, not required: they keep their `of` pointer and can open the game to
+      **Confirm** (overwrites their sub without `proxy`, sets `rec.verifiedBy`) or correct — gated on
+      `!rec.verifiedBy`, not on whether their sub exists. `saveRecPartner` stamps a roster partner's
+      roster fields and `guest:false` (a solo typed-name partner stays `guest:true`). **Both subs are
+      ordinary per-player `redblack` subs** (`mode:"record"`, `color`+`seq`, mutual `partner`), so
+      `mutualPairs`/`analyzeRedBlack` zip them into the same joint 4×4 matrix — no analysis change.
+      `recGrid` renders each recorded hand's two cards in sized `.mini-slot` wrappers so they don't
+      overflow the cell. Recommended in-class mode.
     - **`"live"`** (`pairMatch`) — the real-time on-phones match described above.
   - `quatro` (G5) — 4-card duel (1<2<3<4): stack your four cards into a pile, reveal top cards, lower
     discarded / equal → both discarded / **1 vs 4 → both discarded**; empty your pile first and you
