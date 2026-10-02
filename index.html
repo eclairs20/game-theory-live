@@ -1002,6 +1002,7 @@ function schedulePairSave(payload){ if(_pairSaveT) clearTimeout(_pairSaveT); _pa
 async function saveBot(payload){
   const key=roundKey(control.activeGame,control.round), botId="bot:"+myId;
   const doc={ roundKey:key, session:curSession(), game:control.activeGame, round:control.round, studentId:botId, name:"Practice bot", ts:Date.now(), done:true, guest:true, bot:true, partner:myId, partnerName:myName||"You" };
+  if(authUser&&authUser.email) doc.email=authUser.email.toLowerCase();   // lockdown rules require email == signed-in writer
   if(curMSection()) doc.msection=curMSection();
   Object.assign(doc,payload);
   try{ await fb.ref(SUB_DOC(key,botId)).set(doc); return true; }catch(e){ return false; }
@@ -2007,6 +2008,10 @@ async function saveRecPartner(pid_, name_, payload){
   const key=roundKey(control.activeGame,control.round);
   const doc={ roundKey:key, session:curSession(), game:control.activeGame, round:control.round,
     studentId:String(pid_), name:name_||"Partner", ts:Date.now(), done:true, guest:true };
+  // The lockdown rules require every sub to carry an `email` == the signed-in writer's email
+  // (the recorder vouches for this synthetic partner). Without it the write is permission-denied
+  // and the dummy's hands silently vanish from analysis/export.
+  if(authUser&&authUser.email) doc.email=authUser.email.toLowerCase();
   if(curMSection()) doc.msection=curMSection();
   Object.assign(doc,payload);
   try{ await fb.ref(SUB_DOC(key,String(pid_))).set(doc); return true; }catch(e){ return false; }
@@ -3684,9 +3689,14 @@ function exportCSV(){
   const head=["room","session","game","round","roundKey","email","name","id","area","section","enrolled","response","timestamp"];
   const out=[head.join(",")];
   rows.forEach(s=>{
-    const email=subEmail(s); const rn=email?roster[email.toLowerCase()]:null; const enrolled = rn ? (rn.audit?"audit":"yes") : "no";
+    // Identity is the per-record studentId (a real student's email, or a synthetic s_/np:/bot: id);
+    // the doc's `email` field is just the write-rule stamp (the recorder, for synthetic partners),
+    // so don't use it to classify. A guest/dummy is never "enrolled".
+    const sid=String(s.studentId||""); const idEmail = sid.includes("@") ? sid : "";
+    const rn = roster[sid.toLowerCase()];
+    const enrolled = s.guest ? "no" : (rn ? (rn.audit?"audit":"yes") : "no");
     const resp = subValue(s);
-    out.push([ROOM, (s.session!=null?"S"+s.session:""), s.game||"", (s.round!=null?s.round:""), s.roundKey||"", email, s.name||"", s.sid||"", s.area||"", secOf(s), enrolled, resp, (s.ts?new Date(s.ts).toISOString():"")].map(csvCell).join(","));
+    out.push([ROOM, (s.session!=null?"S"+s.session:""), s.game||"", (s.round!=null?s.round:""), s.roundKey||"", idEmail, s.name||"", s.sid||"", s.area||"", secOf(s), enrolled, resp, (s.ts?new Date(s.ts).toISOString():"")].map(csvCell).join(","));
   });
   try{
     const blob=new Blob([out.join("\r\n")],{type:"text/csv;charset=utf-8"});

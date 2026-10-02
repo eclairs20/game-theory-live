@@ -241,6 +241,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     into a match against a locally-generated ~Nash opponent (`botRBSeq`/`botPiles`), revealed hand
     by hand as you play; on completion `saveBot()` writes a synthetic `"bot:<myId>"` opponent sub so
     the analysis sees a full pair. Bot docs are `bot:true`/`guest:true`, excluded from counts.
+    **Both synthetic-partner writers (`saveBot` and `saveRecPartner`) stamp `email` = the signed-in
+    recorder's address** — the lockdown rules reject any sub whose `email` ≠ the writer's, so without
+    it these opponent subs silently fail to save and the pair never zips. The `email` field is only a
+    write-rule stamp; identity/enrollment is always classified by `studentId` (CSV export too).
   - Cards are inline-SVG faces (`cardFace(rank,kind)` — `"red"/"black"` suited for G6, a hex colour
     per number for G5; `cardBtn` taps). Config `{ rounds }` (`paramEditor` "Rounds played"; default
     `quatro:5`, `redblack:20`). The `live` node needs read/write in the Firebase rules (both tiers
