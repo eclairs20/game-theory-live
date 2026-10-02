@@ -248,7 +248,11 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - Cards are inline-SVG faces (`cardFace(rank,kind)` — `"red"/"black"` suited for G6, a hex colour
     per number for G5; `cardBtn` taps). Config `{ rounds }` (`paramEditor` "Rounds played"; default
     `quatro:5`, `redblack:20`). The `live` node needs read/write in the Firebase rules (both tiers
-    include it: open under stopgap, any signed-in user under lockdown).
+    include it: open under stopgap, any signed-in user under lockdown). **`clearRound` ("Clear")
+    removes the meeting's `subs` AND its whole `live/<mc>` node** — in record mode the entered hands
+    live under `live/.../pairs/.../rec` until Done, so clearing subs alone would leave a half-recorded
+    match in place (the student's `of` pointer drops them straight back into it, and the console shows
+    no submission because none was saved). Clearing the live node makes Clear a real reset.
   - **G6 has two play styles** (`config.mode`, chosen in `paramEditor`; **default `"record"`**):
     - **`"record"`** (`pairRecorded`) — the real-cards/Excel workflow: pairs play all `rounds` hands
       with physical Red/Black decks, then record them here. Because it's **asynchronous** (offline

@@ -1013,8 +1013,14 @@ function botPiles(R){ const out=[]; for(let i=0;i<R;i++){ const a=[1,2,3,4]; for
 async function clearRound(){
   if(!control||!control.activeGame) return;
   const key=roundKey(control.activeGame,control.round);
-  for(const s of subs.slice()){ try{ await fb.ref(SUB_DOC(key,s.studentId)).remove(); }catch(e){} }
-  toast("Round data cleared");
+  let n=0;
+  for(const s of subs.slice()){ try{ await fb.ref(SUB_DOC(key,s.studentId)).remove(); n++; }catch(e){} }
+  // Pair games (quatro/redblack) keep in-progress match state in the ephemeral live node
+  // (lobby/invite/pairs/of/rec) — in record mode the entered hands live there until the student
+  // presses Done. Clearing only the subs leaves that half-recorded match in place, so the student
+  // is dropped straight back into it. Wipe the whole meeting's live node too, so Clear is a real reset.
+  try{ await fb.ref(LIVE_ROOT(key)).remove(); }catch(e){}
+  toast(n ? ("Cleared "+n+" submission"+(n===1?"":"s")) : "Cleared this meeting (no saved submissions)");
 }
 
 /* ─── roster (instructor) ─── */
@@ -2980,8 +2986,9 @@ function roundActionBar(){
   const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>writeControl({round:control.round+1,phase:"open"});
   const presentBtn=el("button","ghost-btn","Present ⛶"); presentBtn.title="Show the class the full-screen collection screen (no results)";
   presentBtn.onclick=()=>{ presentMode=true; render(); };
-  const clr=el("button","ghost-btn ab-clear","Clear"); clr.title="Clear this round's submissions";
-  clr.onclick=()=>{ if(confirm("Clear all submissions for Round "+control.round+"? This can't be undone.")) clearRound(); };
+  const clr=el("button","ghost-btn ab-clear","Clear"); clr.title="Clear this meeting's submissions";
+  clr.onclick=()=>{ const mtg=(GAMES[control.activeGame]||{}).name+" · S"+curSession()+(curMSection()?"."+curMSection():"")+" · Round "+control.round;
+    if(confirm("Clear all submissions for “"+mtg+"”? This also resets any in-progress card match and can't be undone.")) clearRound(); };
   bar.append(openBtn,revealBtn,nextR,presentBtn,clr);
   return bar;
 }
