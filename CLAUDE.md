@@ -169,8 +169,26 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   All hub state lives in `control` (instructor-writable, world-readable), so **no Firebase rules
   change** is needed. `parseRoundKey` inverts `roundKey`; the student analysis is `analysisBody(game,
   historicalList, false)`, reused from `analysisView`.
-- The data layer is a thin adapter over the Firebase compat SDK; the app only uses
-  `.ref().on()/.once()/.set()/.update()/.remove()`. Preserve these paths and shapes.
+- The data layer is a thin adapter over the Firebase compat SDK; the app uses
+  `.ref().on()/.once()/.set()/.update()/.remove()` plus **per-child subs listeners**. Preserve
+  these paths and shapes.
+- **Subs sync is incremental, not whole-node.** `attachData` listens to `subs` with
+  `child_added`/`child_changed`/`child_removed` (`onSubChild`/`onSubGone`), maintaining `allSubs`
+  one row at a time and coalescing re-renders (`scheduleSubsRender`, ~60ms). A `.on("value")` on
+  the whole `subs` node re-sends **every** submission to **every** connected client on **every**
+  write — O(students × submissions) database Load that saturated RTDB with a big class (≈90% Load
+  at ~50 students). Child listeners send only the one changed row, turning that O(N²) per-write
+  fan-out into O(N). `allSubs` semantics are unchanged for all downstream readers. Don't revert to
+  a whole-node `subs` value listener.
+- **Version banner** (`APP_VERSION`, `maybePublishVersion`/`syncVersionBanner`, `control.appVersion`)
+  — GitHub Pages/browsers cache `index.html`, so a returning student can run a stale copy. Each
+  deploy **bumps `APP_VERSION`** (string-sortable: ISO date + zero-padded suffix, e.g.
+  `2026-10-03.002`). An instructor loading a newer build writes it to `control.appVersion`
+  (instructor-only; merges, keeps other fields); any client whose embedded `APP_VERSION` is older
+  then shows a dismissible bottom banner with a **Refresh** button (`location.reload()`). It
+  **never auto-reloads** (that would wipe an in-progress record-mode entry) and is per-viewer
+  dismissible. The banner only helps for transitions *from this version onward* (older cached pages
+  predate the banner code).
 
 ## Student identity (Google sign-in + roster)
 - Firebase Auth (compat) provides "Continue with Google". `applyIdentity()` recomputes the
@@ -385,7 +403,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 1. Edit `index.html`.
 2. Test locally: open `index.html` in a browser (it connects to the real Firebase), or
    `python -m http.server` and visit http://localhost:8000.
-3. `git add index.html && git commit -m "..." && git push`.
+3. **Bump `APP_VERSION`** (near the top of `index.html`) so returning students get the "new version
+   — Refresh" banner, then `git add index.html && git commit -m "..." && git push`.
 4. Wait ~1 min for Pages, then hard-refresh (Ctrl+F5) — Pages/browser can cache the old file.
 
 ## Likely next tasks

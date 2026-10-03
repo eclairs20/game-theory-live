@@ -571,6 +571,11 @@ const INSTRUCTOR_EMAILS = [
    Google-only (no anonymous name-join) and instructor access allowlist-only
    (no passcode) — matching what the strict rules enforce on the server. */
 const REQUIRE_GOOGLE = true;
+/* Build tag — BUMP THIS on every deploy (keep it string-sortable: ISO date + zero-padded suffix,
+   e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
+   client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
+   returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
+const APP_VERSION = "2026-10-03.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -938,7 +943,15 @@ function onCtrl(snap){
   if(sig!==_ctrlSig){ studentTab=null; _ctrlSig=sig; }
   recompute(); render();
 }
-function onSubs(snap){ allSubs = snap.val()||{}; recompute(); render(); }
+/* Subs sync is per-CHILD, not whole-node. A `.on("value")` on the whole `subs` node re-delivers
+   EVERY submission to EVERY connected client on every single write — O(students × submissions)
+   work that drove database Load to its ceiling with a big class. Child listeners deliver only the
+   one row that changed, so a write costs one small delta per client instead of the entire node.
+   `allSubs` is maintained incrementally and keeps identical semantics for all downstream code. */
+function onSubChild(snap){ if(snap&&snap.key){ allSubs[snap.key]=snap.val(); scheduleSubsRender(); } }
+function onSubGone(snap){ if(snap&&snap.key){ delete allSubs[snap.key]; scheduleSubsRender(); } }
+let _subsRenderT=null;
+function scheduleSubsRender(){ if(_subsRenderT) return; _subsRenderT=setTimeout(()=>{ _subsRenderT=null; recompute(); render(); }, 60); }   // coalesce the initial burst + live changes into one render per frame
 function onRoster(snap){ setRoster(snap.val()); render(); }
 function onSchedule(snap){ setSchedule(snap.val()); render(); }
 function onCourses(snap){ courses = snap.val()||{}; render(); }
@@ -946,7 +959,11 @@ function onEnroll(snap){ enroll = snap.val()||{}; maybeAutoRoute(); render(); }
 function attachData(){
   if(listenersOn) return; listenersOn=true;
   fb.ref(CTRL_PATH()).on("value", onCtrl, err=>{ console.warn("control",err); renderRulesError(); });
-  fb.ref(SUBS_PATH()).on("value", onSubs, err=>{ console.warn("subs",err); });
+  const subErr=err=>{ console.warn("subs",err); };
+  allSubs={};   // rebuilt from child events below
+  fb.ref(SUBS_PATH()).on("child_added", onSubChild, subErr);
+  fb.ref(SUBS_PATH()).on("child_changed", onSubChild, subErr);
+  fb.ref(SUBS_PATH()).on("child_removed", onSubGone, subErr);
   fb.ref(ROSTER_PATH()).on("value", onRoster, err=>{ console.warn("roster",err); });
   fb.ref(SCHEDULE_PATH()).on("value", onSchedule, err=>{ console.warn("schedule",err); });
   fb.ref(COURSES_PATH).on("value", onCourses, err=>{ console.warn("courses",err); });
@@ -955,6 +972,7 @@ function attachData(){
 function detachData(){
   if(!listenersOn) return; listenersOn=false;
   try{ fb.ref(CTRL_PATH()).off(); fb.ref(SUBS_PATH()).off(); fb.ref(ROSTER_PATH()).off(); fb.ref(SCHEDULE_PATH()).off(); fb.ref(COURSES_PATH).off(); }catch(e){}
+  if(_subsRenderT){ clearTimeout(_subsRenderT); _subsRenderT=null; }
   control=null; controlLoaded=false; allSubs={}; roster={}; rosterList=[]; schedule=[]; courses={}; enroll={}; recompute();
 }
 /* My enrolled course ids, from the enrollment index (signed-in students only). */
@@ -1185,6 +1203,33 @@ function syncSandbox(){
   if(isSandbox()){ b.hidden=false; b.textContent="🧪 SANDBOX — test room “"+ROOM+"”. Real students never see this."; }
   else b.hidden=true;
 }
+/* When an instructor loads a build newer than what's recorded, publish it so other clients
+   (returning students on a cached copy) learn a new version exists. Instructor-only; students
+   can't write control, and the merge keeps control's other fields intact. */
+function maybePublishVersion(){
+  if(!control || !(authUser && isInstructorEmail(authUser.email))) return;
+  if(APP_VERSION > String(control.appVersion||"")) writeControl({appVersion:APP_VERSION});
+}
+/* Non-intrusive "new version available" banner. Shows when the recorded appVersion is newer than
+   this page's embedded one; tapping Refresh reloads. NEVER auto-reloads (would wipe an in-progress
+   record-mode entry), and is dismissible per viewer. */
+let _verDismissed=false;
+function syncVersionBanner(){
+  const stale = control && control.appVersion && String(control.appVersion) > APP_VERSION;
+  let bar=document.getElementById("versionBar");
+  if(stale && !_verDismissed){
+    if(!bar){
+      bar=document.createElement("div"); bar.id="versionBar";
+      bar.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:9999;background:var(--gold,#c9a84c);color:#1a1405;padding:10px 14px;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;font:inherit;box-shadow:0 -2px 12px rgba(0,0,0,.25)";
+      const msg=document.createElement("span"); msg.textContent="A new version is available."; msg.style.fontWeight="600";
+      const rb=document.createElement("button"); rb.textContent="Refresh"; rb.style.cssText="padding:5px 14px;border:0;border-radius:8px;background:#1a1405;color:#fff;cursor:pointer;font:inherit";
+      rb.onclick=()=>{ try{location.reload();}catch(e){} };
+      const dx=document.createElement("button"); dx.textContent="✕"; dx.title="Dismiss"; dx.setAttribute("aria-label","Dismiss"); dx.style.cssText="background:transparent;border:0;color:#1a1405;cursor:pointer;font-size:1.15rem;line-height:1";
+      dx.onclick=()=>{ _verDismissed=true; bar.remove(); };
+      bar.append(msg,rb,dx); document.body.appendChild(bar);
+    }
+  } else if(bar){ bar.remove(); }
+}
 /* Instructor-only course switcher in the top bar. Rebuilt only when the course set
    changes, so it doesn't reset (or close) while live counts tick during a round. */
 let _courseSelSig=null;
@@ -1236,6 +1281,8 @@ let gameDraft={};
 function draftFor(k){ if(!gameDraft[k]) gameDraft[k]={}; return gameDraft[k]; }
 function render(){
   applyIdentity();
+  maybePublishVersion();
+  syncVersionBanner();
   syncPhasePill();
   syncBrand();
   syncSandbox();
