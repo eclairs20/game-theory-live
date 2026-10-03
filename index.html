@@ -2256,15 +2256,22 @@ function pairRecorded(c, R, d, opts){
       const solo=!!rec.solo;
       const b=el("button","btn big wide",(cur&&isDone(cur))?"Update":"Done — record this game"); b.style.marginTop="14px"; b.style.maxWidth="360px";
       b.onclick=async()=>{
+        b.disabled=true;
         const myColor=String(myId)===String(rec.redId)?"red":"black";
         const seq=(myColor==="red"?red:black).map(x=>x||"").join(",");
         const oppSeq=(myColor==="red"?black:red).map(x=>x||"").join(",");
-        await savePair({mode:"record", color:myColor, partner, partnerName, seq}, true);
+        const okMine = await savePair({mode:"record", color:myColor, partner, partnerName, seq}, true);
         // Record the partner's side immediately (marked proxy → "unconfirmed") so the pair shows on
-        // the instructor page right away. A roster partner's confirm is optional hygiene, not required.
-        await saveRecPartner(partner, partnerName, {mode:"record", color:oppColor(myColor), partner:String(myId), partnerName:myName||"You", seq:oppSeq});
+        // the instructor page right away. VERIFY both writes actually landed — a silent failure of the
+        // partner write is exactly how a one-sided pair (recorder's hands only) used to slip through.
+        const okPartner = await saveRecPartner(partner, partnerName, {mode:"record", color:oppColor(myColor), partner:String(myId), partnerName:myName||"You", seq:oppSeq});
+        if(!okMine || !okPartner){
+          b.disabled=false;
+          toast("Couldn't save "+(!okMine?"your hands":("your partner’s side ("+(partnerName||"partner")+")"))+" — check your connection and tap Done again.");
+          return;   // don't mark the pair done; let them retry so a half-saved pair can't happen
+        }
         await recSet(mc,pid,{done:true, red:red.join(","), black:black.join(","), verifiedBy: solo?String(partner):null});
-        toast(solo?"Recorded":"Recorded — "+partnerName+" can confirm (optional)"); render();
+        toast("Recorded — both sides saved"); render();
       };
       c.append(b);
       if(cur&&isDone(cur)){
@@ -2282,9 +2289,11 @@ function pairRecorded(c, R, d, opts){
       if(!rec.verifiedBy){   // their side is already recorded (proxy); confirming is optional and just clears the "unconfirmed" tag
         const b=el("button","btn big wide gold","Confirm — this matches our cards"); b.style.marginTop="14px"; b.style.maxWidth="360px";
         b.onclick=async()=>{
+          b.disabled=true;
           const myColor=String(myId)===String(rec.redId)?"red":"black";
           const seq=(myColor==="red"?red:black).map(x=>x||"").join(",");
-          await savePair({mode:"record", color:myColor, partner:String(rec.by), partnerName:(rec.byName||"Partner"), seq, verified:true}, true);
+          const ok = await savePair({mode:"record", color:myColor, partner:String(rec.by), partnerName:(rec.byName||"Partner"), seq, verified:true}, true);
+          if(!ok){ b.disabled=false; toast("Couldn't save — check your connection and tap Confirm again."); return; }
           await recSet(mc,pid,{verifiedBy:String(myId)});
           toast("Confirmed — recorded"); render();
         };
@@ -2638,6 +2647,21 @@ function jointMatrixCard(title, F, caption){
 /* A player's display name, tagged "(unconfirmed)" when their hands were recorded on their behalf
    and they haven't self-confirmed yet (proxy sub). */
 function pairName(s){ return (s&&s.name||"?")+(s&&s.proxy?" (unconfirmed)":""); }
+/* Instructor warning: subs that couldn't be matched into a pair because the partner they named has
+   no submission (the failure mode that silently dropped a partner's side). Returns null if all paired. */
+function orphanWarning(list, pairs){
+  const paired=new Set(); pairs.forEach(p=>{ paired.add(String(p[0].studentId)); paired.add(String(p[1].studentId)); });
+  const byId={}; list.forEach(s=>{ byId[String(s.studentId)]=s; });
+  const orphans=list.filter(s=> s && !s.bot && !paired.has(String(s.studentId)));
+  if(!orphans.length) return null;
+  const warn=el("div","note-box"); warn.style.cssText="border-color:var(--bad); background:color-mix(in srgb, var(--bad) 8%, transparent); margin-top:4px";
+  let html="<b>⚠ "+orphans.length+" unpaired — partner not recorded.</b> Their hands still count in the mixes above, but they can't form a pair because the partner they named has no submission. Have each re-record with their partner so both sides save.<ul style='margin:6px 0 0 18px'>";
+  orphans.forEach(s=>{ const p=byId[String(s.partner)];
+    const why = !s.partner ? "no partner chosen" : !p ? "partner never submitted" : String(p.partner)!==String(s.studentId) ? "partner recorded someone else" : (s.color&&p.color&&p.color===s.color) ? "both chose the same colour" : "unmatched";
+    html+="<li><b>"+esc(s.name||"?")+"</b>"+(s.color?" ("+esc(s.color)+")":"")+" → named <b>"+esc(s.partnerName||s.partner||"?")+"</b> — "+why+"</li>"; });
+  warn.innerHTML=html+"</ul>";
+  return warn;
+}
 /* Compact "who played whom" list for the matched pairs (instructor-facing). */
 function pairingsCard(pairs, fmtPair){
   const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Who played whom ("+pairs.length+" pairs)"}));
@@ -2698,6 +2722,7 @@ function analyzeRedBlack(list){
     statTile("Nash win split","Red 40% · Black 60%","the structure favours Black","gold"),
     statTile("Complete pairs", String(pairs.length), reds.length+blacks.length+" players recorded"));
   wrap.append(st);
+  const ow=orphanWarning(list, pairs); if(ow) wrap.append(ow);
   const nb=el("div","note-box");
   nb.innerHTML="<b>Remark.</b> A zero-sum game with a <b>mixed-strategy equilibrium</b>: play <b>K 40%</b> and each number 20%. Even played perfectly, <b>Black wins ~60%</b>, so the colour coin-toss isn't a fair start. The two matrices are the real lesson: marginals alone can't show it, but the <b>joint</b> distribution reveals whether the class actually mixed independently (like the equilibrium on the right) or <b>best-responded</b> and correlated their cards.";
   wrap.append(nb);
@@ -2747,6 +2772,7 @@ function analyzeQuatro(list){
     statTile("Weakest ordering",worst&&worst!==best?worst[0]:"—",worst&&worst!==best?("won "+pct(worst[1].w/worst[1].g)+" of "+worst[1].g):"need more data","bad"),
     statTile("Hands scored",String(rounds),pairs.length+" complete pairs · "+pct(rounds?ties/rounds:0)+" ties",true));
   wrap.append(st);
+  const ow=orphanWarning(list, pairs); if(ow) wrap.append(ow);
   const nb=el("div","note-box");
   nb.innerHTML="<b>Remark.</b> The “1 beats 4” twist makes Quatro Uno <b>non-transitive</b> — like rock-paper-scissors, no single ordering dominates, so the equilibrium is to <b>mix</b>. If the class clustered on one “obvious” pile, a counter-ordering beats it — watch the win-rates flip as different orderings meet.";
   wrap.append(nb);

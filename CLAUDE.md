@@ -278,7 +278,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
       such a player **"(unconfirmed)"** until they self-confirm. A roster partner's confirmation is an
       **optional hygiene step**, not required: they keep their `of` pointer and can open the game to
       **Confirm** (overwrites their sub without `proxy`, sets `rec.verifiedBy`) or correct — gated on
-      `!rec.verifiedBy`, not on whether their sub exists. `saveRecPartner` stamps a roster partner's
+      `!rec.verifiedBy`, not on whether their sub exists. **Done VERIFIES both writes landed**: it
+      checks the return of `savePair` AND `saveRecPartner` and, if either failed, shows an error and
+      does NOT mark the pair done (so a silent partner-write failure can't leave a one-sided pair —
+      the student just taps Done again). The verifier's Confirm checks its `savePair` the same way.
+      Any sub whose named partner has no submission is surfaced to the instructor by `orphanWarning`
+      in `analyzeRedBlack`/`analyzeQuatro` ("⚠ N unpaired — partner not recorded", with the reason). `saveRecPartner` stamps a roster partner's
       roster fields and `guest:false` (a solo typed-name partner stays `guest:true`). **Both subs are
       ordinary per-player `redblack` subs** (`mode:"record"`, `color`+`seq`, mutual `partner`), so
       `mutualPairs`/`analyzeRedBlack` zip them into the same joint 4×4 matrix — no analysis change.
