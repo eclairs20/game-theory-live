@@ -54,7 +54,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   the raw `studentId`. `guest:true` marks a non-roster submission; `sid/area/section` are stamped
   from the roster at submit time (denormalized for export/analysis). Instructor **CSV export**
   (`exportCSV`) dumps every sub in the room across all sessions.
-- `‹room›/roster` — array of `{ email, email2?, name, sid, area, section, audit? }` for the
+- `‹room›/roster` — array of `{ email, email2?, name, sid, area, section, audit?, drop? }` for the
   enrolled class (optional). Parser (`parseRoster`) is header-aware (ID/Name/Email/**Email2**/Area/
   Section/**Audit** in any order, tab/comma/2-space separated) and also accepts a plain `email, name`
   list. When present, the student join screen prefers Google sign-in; a Google email matching the
@@ -69,8 +69,15 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     the roster (name resolved, not a guest) and their subs are stamped `audit:true` (`meAudit` drives
     the stamp), but `enrolledRoster()` excludes them from the "X of N enrolled" denominators
     (attendance card, present view) and they're shown as **Audit** (not Enrolled/Guest) in the
-    submitted table; CSV `enrolled` column is `yes`/`no`/`audit`. Attendance lists auditors and guests
-    separately ("Also submitted: N auditing, M guests").
+    submitted table; CSV `enrolled` column is `yes`/`no`/`audit`/`drop`. Attendance lists auditors,
+    dropped and guests separately ("Also submitted: N auditing, M dropped, K guests").
+  - **`drop`** — marks a student who **dropped the course**. Mirrors `audit` exactly (parsed from a
+    header-aware **Drop** column — `drop`/`yes`, or `"dropped"`/`"withdrawn"` in a Status column —
+    subs stamped `drop:true` via `meDrop`, excluded from `enrolledRoster()`), but is labelled
+    **Dropped** (red) in the submitted table and **"· dropped"** in roll call. The point: a dropped
+    student **stays on the roster** so they're still recognised by name (not a guest) if they drop
+    into an in-between session and can be ticked in roll call — they just don't count as enrolled.
+    `drop` takes precedence over `audit` in labels/counts.
 - `‹room›/schedule` — optional array of `{ date:"YYYY-MM-DD", session, section? }` mapping class
   dates to a meeting. `parseSchedule` accepts ISO or day-first (DD/MM/YYYY) dates, optional `S`
   prefix on the session, and an optional single-letter section (header row and junk lines skipped).
