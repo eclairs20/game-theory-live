@@ -648,6 +648,11 @@ function encodeKey(s){ return String(s).replace(/[.#$\[\]\/]/g, c=>"%"+c.charCod
 
 /* ═══════════════════════ state + data layer (Firebase) ═══════════════════════ */
 let fb=null, fbAuth=null, authUser=null, control=null, controlLoaded=false, allSubs={}, subs=[], curKey=null;
+/* Instructor "View as student" diagnostic: when diagAsId is set, the instructor sees the app
+   exactly as that student does (read-only). Every write is suppressed at the fb layer below,
+   so nothing in the impersonated view can ever touch the database. */
+let diagAsId=null;
+const diagOn = ()=> diagAsId!=null;
 let roster={}, rosterList=[];
 let courses={}, enroll={}, routed=false;   // global course registry + per-email enrollment index
 let authResolved=false, listenersOn=false, authSlow=false;
@@ -858,6 +863,12 @@ function applyIdentity(){
   } else {
     myId=manualId; myName=ls("gtl_name")||""; meGuest = !!myName; meAudit=false; meDrop=false;  // a typed name is always a guest
   }
+  // "View as student" diagnostic — impersonate the chosen student so the render shows exactly
+  // their view. Writes are already blocked at the fb layer, so this only affects what's shown.
+  if(diagAsId!=null){
+    const did=String(diagAsId).toLowerCase(); const rn=roster[did];
+    myId=did; myName=(rn&&rn.name)||did; meGuest=!rn; meAudit=!!(rn&&rn.audit); meDrop=!!(rn&&rn.drop);
+  }
 }
 function haveIdentity(){ return !!authUser || !!myName; }
 
@@ -868,11 +879,29 @@ function recompute(){
   subs = curKey ? Object.values(allSubs).filter(s=>s && s.roundKey===curKey) : [];
 }
 
+/* Thin wrapper over the Firebase database: passes reads through untouched, but turns every
+   write (set/update/remove, incl. onDisconnect) into a no-op while the "View as student"
+   diagnostic is active. A single choke point, so the read-only guarantee can't be bypassed
+   no matter what the impersonated student view tries to write. */
+function guardDb(db){
+  const noop = ()=>Promise.resolve();
+  const blocked = ()=>{ if(diagOn()){ try{console.warn("[view-as-student] write blocked (read-only)");}catch(e){} return true; } return false; };
+  return { ref(p){ const r=db.ref(p); return {
+    on:(...a)=>r.on(...a), off:(...a)=>r.off(...a), once:(...a)=>r.once(...a),
+    set:(...a)=> blocked()?noop():r.set(...a),
+    update:(...a)=> blocked()?noop():r.update(...a),
+    remove:(...a)=> blocked()?noop():r.remove(...a),
+    onDisconnect:()=>{ const od=r.onDisconnect(); return {
+      remove:(...a)=> blocked()?noop():od.remove(...a),
+      set:(...a)=> blocked()?noop():od.set(...a),
+      cancel:(...a)=> od.cancel?od.cancel(...a):noop() }; }
+  }; } };
+}
 function boot(){
   if(typeof firebase==="undefined"){ renderSdkError(); return; }
   if(configMissing()){ renderSetup(); return; }
   try{
-    firebase.initializeApp(FIREBASE_CONFIG); fb = firebase.database();
+    firebase.initializeApp(FIREBASE_CONFIG); fb = guardDb(firebase.database());
   }catch(e){ renderSetup(e); return; }
   /* Google sign-in — optional. Works once the instructor enables the Google
      provider and authorizes this domain in the Firebase console. If the auth
@@ -1136,6 +1165,7 @@ async function logOut(){
 /* Under lockdown, console access requires an allowlisted Google sign-in (matching
    what the strict rules enforce) — a leftover passcode session isn't enough. */
 function isTeacher(){
+  if(diagOn()) return false;   // "View as student" renders the whole app as the chosen student
   if(!(role==="teacher" && unlocked)) return false;
   if(REQUIRE_GOOGLE) return !!(authUser && isInstructorEmail(authUser.email));
   return true;
@@ -1186,7 +1216,7 @@ function viewKey(){
     (REQUIRE_GOOGLE&&!authUser)?"signin":"", authResolved,
     control?control.activeGame:"", control?control.phase:"", control?control.round:"",
     control?control.session:"", control?control.section:"", control&&control.hold?"hold":"", myCourses().length,
-    curStudentTab(), practiceGame||"", lessonMode||"", hubOn()?"hub":""].join("|");
+    curStudentTab(), practiceGame||"", lessonMode||"", hubOn()?"hub":"", diagAsId||""].join("|");
 }
 let lastViewKey=null, presentMode=false, lessonMode=null, studentTab=null, practiceGame=null, studentResK=null;
 let rollMode=false, rollSection=null, rollSearch="", _rollScroll=0;   // instructor manual roll-call page
@@ -1214,6 +1244,9 @@ function render(){
   syncCfgBtn();
   syncLogoutBtn();
   const app = $("#app");
+  // Instructor "View as student" diagnostic (read-only) — show exactly what a chosen student
+  // sees, wrapped in a picker + exit. Takes precedence over every other screen.
+  if(diagOn()){ app.replaceChildren(diagView()); return; }
   // Instructor "collection" view — full-screen, projected to the class. Shows
   // participation only (never results), so it can't leak the answer. Available in any
   // phase (Reveal from the console exits it); only drops if the console context is gone.
@@ -3612,6 +3645,33 @@ function syncLogoutBtn(){
 }
 /* Full-screen "Course config" page — the one-time setup cards (course, roster, session schedule,
    data export) moved off the console rail so the main console stays focused on running class. */
+/* Instructor "View as student" diagnostic (read-only): a student picker + exit bar above the
+   student's own view, rendered exactly as they see it (identity impersonated in applyIdentity;
+   all writes suppressed in guardDb). Lets the instructor reproduce what a student reports. */
+function diagView(){
+  const wrap=el("div","stack"); wrap.style.maxWidth="900px"; wrap.style.margin="0 auto";
+  const bar=el("div","card stage"); bar.style.cssText="border:2px solid var(--gold); background:color-mix(in srgb, var(--gold) 10%, transparent)";
+  const row=el("div","row"); row.style.cssText="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap";
+  const left=el("div");
+  left.append(Object.assign(el("div","eyebrow gold"),{textContent:"👁 View as student · read-only"}));
+  left.append(Object.assign(el("div","sm mut"),{textContent:"Exactly what this student sees. Nothing you tap here is saved.",style:"margin-top:2px"}));
+  row.append(left);
+  const ctrls=el("div","row"); ctrls.style.cssText="gap:8px;align-items:center;flex-wrap:wrap";
+  const sel=el("select"); sel.style.cssText="padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;max-width:340px";
+  rosterList.slice().sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""))).forEach(e=>{
+    const o=el("option"); o.value=String(e.email).toLowerCase();
+    o.textContent=(e.name||e.email)+(e.sid?" · "+e.sid:"")+(e.section?" ("+e.section+")":"");
+    if(o.value===String(diagAsId).toLowerCase()) o.selected=true; sel.append(o); });
+  sel.onchange=()=>{ diagAsId=sel.value; studentTab=null; render(); };
+  const exit=el("button","btn neutral","Exit"); exit.onclick=()=>{ diagAsId=null; render(); };
+  ctrls.append(sel, exit); row.append(ctrls);
+  bar.append(row); wrap.append(bar);
+  const body=el("div");
+  try{ body.append(studentRoot()); }
+  catch(e){ body.append(Object.assign(el("div","note-box"),{textContent:"Couldn't render this student's view: "+(e&&e.message||e)})); }
+  wrap.append(body);
+  return wrap;
+}
 function courseConfig(){
   const wrap=el("div","stack"); wrap.style.maxWidth="1000px"; wrap.style.margin="0 auto";
   const head=el("div","card stage");
@@ -3633,6 +3693,13 @@ function courseConfig(){
   sRost.append(rosterEditor()); grid.append(sRost);
 
   grid.append(studentPageCard());
+
+  const sView=el("div","rail-sec");
+  sView.append(Object.assign(el("h3"),{textContent:"View as student (read-only)"}));
+  sView.append(Object.assign(el("div","sm mut"),{textContent:"See exactly what one student sees — their My page, the results you've shared, their attendance and what they submitted — to diagnose what they report. Pick anyone by name or PGP id; nothing you do in this mode is saved.",style:"margin:-4px 0 8px"}));
+  const vb=el("button","btn neutral wide","Open student view…");
+  vb.onclick=()=>{ if(!rosterList.length){ toast("Load a roster first."); return; } cfgMode=false; studentTab="hub"; diagAsId=String(rosterList[0].email).toLowerCase(); render(); };
+  sView.append(vb); grid.append(sView);
 
   const sSch=el("div","rail-sec");
   sSch.append(Object.assign(el("h3"),{textContent:"Session schedule"}));

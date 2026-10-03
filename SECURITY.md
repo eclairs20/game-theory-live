@@ -38,6 +38,15 @@ are not deployed from this repo automatically.
 | `firebase-rules.stopgap.json` | **Now** — safe immediately | Blast-radius fix. Still open (no sign-in required), but the database root and unknown paths become unwritable (no full wipes / junk nodes), and `control` + submissions must have the right shape. Names length-capped. |
 | `firebase-rules.lockdown.json` | **Later**, once the checklist below is all true | Real write- **and read-security**. Only signed-in Google users can read or write (the app is sign-in-first, so it never reads before authenticating); every write requires a verified Google account; students can only submit as their own verified email; only allowlisted instructor emails can change the game/round/phase/config or the roster. |
 
+> **Instructor override on `subs` (lockdown):** the two allowlisted instructor emails may write
+> **any** submission with **any** `email` field — students stay restricted to their own verified
+> email. This lets an instructor correct or recover a student's game data (e.g. re-pairing a
+> record-mode game, or restoring a dropped partner side from `live/…/rec`) and keep the real
+> student's email on the record. It adds no practical risk: instructors are already fully trusted
+> (they own `control`/`roster` and can already overwrite any sub by stamping their own email) — the
+> override just lets them do it cleanly. Identity/enrollment is always classified by `studentId`,
+> never by `email`; the `email` field is only a write-rule stamp.
+
 ## Apply the stopgap now
 1. Firebase console → project **game-theory-live** → Realtime Database → **Rules**.
 2. Paste the contents of `firebase-rules.stopgap.json` (drop the `//…` comment keys if

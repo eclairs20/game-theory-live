@@ -343,10 +343,21 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - **Course config page** (`courseConfig`, local `cfgMode`) — a full-screen setup page (opened by the
   top-bar ⚙) holding the one-time cards moved off the rail, **stacked full-width** (`.cfg-grid`,
   flex column): **Course** (`courseCard`), **Course roster** (`rosterEditor`), **Student page**
-  (`studentPageCard` — the `control.hub` config), **Session schedule** (`scheduleEditor`) and
+  (`studentPageCard` — the `control.hub` config), **View as student (read-only)** (launches the
+  diagnostic below), **Session schedule** (`scheduleEditor`) and
   **Data** (CSV export). The old **Share with students** and **Testing sandbox** rail cards were
   removed (the sandbox is still reachable via `?class=sandbox`). Keeps the console focused on
   running class.
+- **View as student (read-only)** (`diagView`, global `diagAsId`; `diagOn()`) — an instructor
+  diagnostic that renders the whole app **as a chosen student** so you can reproduce what they
+  report ("I can't see my result", "my submission is missing"). Launched from the Course config
+  card; a picker (roster by **Name · PGP id (Section)**) sits above the student's own view. It
+  works by impersonating identity in `applyIdentity` (when `diagAsId` is set, `myId/myName/meGuest`
+  become the chosen student's) and making `isTeacher()` return `false` so every student branch
+  renders as they'd see it. **Read-only is enforced at the data layer, not per-button:** `boot()`
+  wraps the DB in `guardDb()`, whose `set/update/remove`/`onDisconnect` become no-ops whenever
+  `diagOn()` — a single choke point, so nothing in the impersonated view can ever write. Exit clears
+  `diagAsId`. `diagAsId` is part of `viewKey()` so switching students re-renders.
 - **Collection view** (`presentView`, local `presentMode` flag) — a full-screen, class-facing
   screen that auto-opens when the instructor presses **Open submissions** (also via the round
   bar's **Present** button). It shows participation only — live count, progress vs the section's

@@ -19,6 +19,9 @@
   "//14": "    so a determined signed-in student could overwrite another key while still",
   "//15": "    stamping their own email on it. Their email is on the record, so it's traceable;",
   "//16": "    acceptable for a classroom. Tightening further needs a Cloud Function or uid keys.",
+  "//17": "  - Instructor override on subs: the two allowlisted instructor emails may write ANY",
+  "//18": "    submission with ANY email field (students are still restricted to their own email),",
+  "//19": "    so an instructor can correct/recover data and keep the real student's email on it.",
   "rules": {
     ".read": "auth != null",
     ".write": false,
@@ -46,7 +49,7 @@
       "subs": {
         "$sub": {
           ".write": "auth != null && auth.token.email_verified == true",
-          ".validate": "!newData.exists() || (newData.hasChildren(['studentId','game','round','email']) && newData.child('email').val() == auth.token.email)",
+          ".validate": "!newData.exists() || (newData.hasChildren(['studentId','game','round','email']) && (newData.child('email').val() == auth.token.email || auth.token.email == 'ankit.khandelwal@gmail.com' || auth.token.email == 'sonia@iiml.ac.in'))",
           "name": { ".validate": "newData.isString() && newData.val().length <= 80" }
         }
       }
