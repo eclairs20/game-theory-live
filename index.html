@@ -1014,7 +1014,7 @@ function isDone(s){ return !!s && s.done!==false; }
 function oppColor(c){ return c==="red"?"black":"red"; }
 /* Pair card games write their sub incrementally so a partner can watch it fill in
    live. done:false = still tapping; the Submit button flips it to done:true. */
-let _pairSaveT=null;
+let _pairSaveT=null, _recWriteT=null;
 function pairDoc(payload, done){
   const key=roundKey(control.activeGame,control.round);
   const doc={ roundKey:key, session:curSession(), game:control.activeGame, round:control.round, studentId:myId, name:myName||"Anon", ts:Date.now(), done:!!done };
@@ -1928,9 +1928,21 @@ async function liveDecline(mc){ try{ await fb.ref(INVITE_DOC(mc,myId)).remove();
 async function liveLeaveMatch(mc){
   if(!confirm("Restart this match? The hands you've entered are cleared and you go back to set up the match again.")) return;
   const pid=myPairId;
+  const isRecord = !!(pairData && pairData.rec);   // record-mode pair (has a rec draft node)
+  const other = pairData ? (String(pairData.a)===String(myId)?pairData.b:pairData.a) : null;
+  if(_recWriteT){ clearTimeout(_recWriteT); _recWriteT=null; }
   try{ if(pid) await fb.ref(PAIR_DOC(mc,pid)+"/ended").set(String(myId)); }catch(e){}
   try{ await fb.ref(OF_DOC(mc,myId)).remove(); }catch(e){}
   try{ await fb.ref(SUB_DOC(curKey,myId)).remove(); }catch(e){}
+  // In record mode the recorder owns BOTH subs — also clear the partner's PROXY side (plus their
+  // `of` pointer and the rec draft) so a redo starts clean and can't inherit a stale, mismatched
+  // half-row (the NEVAGI↔AYUSH colour-drift failure mode). Only a proxy row we wrote is removed —
+  // a partner's confirmed/own sub is left untouched.
+  if(isRecord && other){
+    try{ const ps=(await fb.ref(SUB_DOC(curKey,other)).once("value")).val(); if(ps && ps.proxy) await fb.ref(SUB_DOC(curKey,other)).remove(); }catch(e){}
+    try{ await fb.ref(OF_DOC(mc,other)).remove(); }catch(e){}
+    try{ if(pid) await fb.ref(PAIR_DOC(mc,pid)+"/rec").remove(); }catch(e){}
+  }
   const dk=control.activeGame+"-"+curKey; if(gameDraft[dk]) delete gameDraft[dk];
   render();
 }
@@ -2054,7 +2066,8 @@ async function recPairWith(mc, partnerId, partnerName, solo){
   }catch(e){ toast("Couldn't start — the Firebase live rules may need publishing"); }
 }
 /* Write the partner's side of a solo (self-recorded) pair, so the joint analysis has both hands. */
-async function saveRecPartner(pid_, name_, payload){
+/* Build the partner's proxy sub doc (shared by saveRecPartner and the atomic Done writer). */
+function recPartnerDoc(pid_, name_, payload){
   const key=roundKey(control.activeGame,control.round);
   const doc={ roundKey:key, session:curSession(), game:control.activeGame, round:control.round,
     studentId:String(pid_), name:name_||"Partner", ts:Date.now(), done:true, guest:true };
@@ -2069,7 +2082,22 @@ async function saveRecPartner(pid_, name_, payload){
   const rp=roster[String(pid_).toLowerCase()];
   if(rp){ doc.guest=false; if(rp.sid)doc.sid=rp.sid; if(rp.area)doc.area=rp.area; if(rp.section)doc.section=rp.section; if(rp.audit)doc.audit=true; if(rp.drop)doc.drop=true; }
   doc.proxy=true;   // recorded on their behalf — shown "(unconfirmed)" until they self-confirm
-  try{ await fb.ref(SUB_DOC(key,String(pid_))).set(doc); return true; }catch(e){ return false; }
+  return doc;
+}
+async function saveRecPartner(pid_, name_, payload){
+  const key=roundKey(control.activeGame,control.round);
+  try{ await fb.ref(SUB_DOC(key,String(pid_))).set(recPartnerDoc(pid_,name_,payload)); return true; }catch(e){ return false; }
+}
+/* Atomic record-mode save: write the recorder's OWN sub AND the partner's proxy sub in ONE
+   multi-location update. Firebase applies it all-or-nothing, so a pair can never be left
+   half-saved (no one-sided pairs), and both colours come from the same redId at the same instant
+   (no colour drift). Returns true only if the combined write landed. */
+async function saveRecBoth(partnerId, partnerName, myPayload, partnerPayload){
+  const key=roundKey(control.activeGame,control.round);
+  const updates={};
+  updates[key+"__"+encodeKey(myId)] = pairDoc(myPayload, true);
+  updates[key+"__"+encodeKey(String(partnerId))] = recPartnerDoc(partnerId, partnerName, partnerPayload);
+  try{ await fb.ref(SUBS_PATH()).update(updates); return true; }catch(e){ return false; }
 }
 function pairLobby(c, game, mc, R, d){
   const rbRecord = game==="redblack" && (cfg("redblack").mode||"record")==="record";
@@ -2260,7 +2288,10 @@ function pairRecorded(c, R, d, opts){
   const filled=(i)=> red[i]!=null && black[i]!=null;
   let done=0, redW=0, blkW=0;
   for(let i=0;i<R;i++){ if(filled(i)){ done++; redBlackWinner(red[i],black[i])==="red"?redW++:blkW++; } }
-  const writeRec=()=>{ recSet(mc,pid,{red:red.map(x=>x||"").join(","), black:black.map(x=>x||"").join(","), verifiedBy:null}); };
+  // Debounced: persist the draft to the live rec node at most ~every 450ms instead of on every
+  // card tap — far fewer writes under a big class (the recorder's own UI uses the local arrays, so
+  // nothing is delayed for them; the verifier sees progress a beat later). Flushed on Done.
+  const writeRec=()=>{ if(_recWriteT) clearTimeout(_recWriteT); _recWriteT=setTimeout(()=>{ _recWriteT=null; recSet(mc,pid,{red:red.map(x=>x||"").join(","), black:black.map(x=>x||"").join(","), verifiedBy:null}); }, 450); };
 
   // ── RECORDER ──
   if(amRecorder){
@@ -2290,17 +2321,18 @@ function pairRecorded(c, R, d, opts){
       const b=el("button","btn big wide",(cur&&isDone(cur))?"Update":"Done — record this game"); b.style.marginTop="14px"; b.style.maxWidth="360px";
       b.onclick=async()=>{
         b.disabled=true;
+        if(_recWriteT){ clearTimeout(_recWriteT); _recWriteT=null; }   // cancel any pending debounced draft write
         const myColor=String(myId)===String(rec.redId)?"red":"black";
         const seq=(myColor==="red"?red:black).map(x=>x||"").join(",");
         const oppSeq=(myColor==="red"?black:red).map(x=>x||"").join(",");
-        const okMine = await savePair({mode:"record", color:myColor, partner, partnerName, seq}, true);
-        // Record the partner's side immediately (marked proxy → "unconfirmed") so the pair shows on
-        // the instructor page right away. VERIFY both writes actually landed — a silent failure of the
-        // partner write is exactly how a one-sided pair (recorder's hands only) used to slip through.
-        const okPartner = await saveRecPartner(partner, partnerName, {mode:"record", color:oppColor(myColor), partner:String(myId), partnerName:myName||"You", seq:oppSeq});
-        if(!okMine || !okPartner){
+        // Write BOTH sides in ONE atomic update — the pair can never be left one-sided, and both
+        // colours are derived from the same redId in the same write, so they can't drift apart.
+        const ok = await saveRecBoth(partner, partnerName,
+          {mode:"record", color:myColor, partner, partnerName, seq},
+          {mode:"record", color:oppColor(myColor), partner:String(myId), partnerName:myName||"You", seq:oppSeq});
+        if(!ok){
           b.disabled=false;
-          toast("Couldn't save "+(!okMine?"your hands":("your partner’s side ("+(partnerName||"partner")+")"))+" — check your connection and tap Done again.");
+          toast("Couldn't save — check your connection and tap Done again.");
           return;   // don't mark the pair done; let them retry so a half-saved pair can't happen
         }
         await recSet(mc,pid,{done:true, red:red.join(","), black:black.join(","), verifiedBy: solo?String(partner):null});

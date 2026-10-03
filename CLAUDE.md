@@ -278,10 +278,17 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
       such a player **"(unconfirmed)"** until they self-confirm. A roster partner's confirmation is an
       **optional hygiene step**, not required: they keep their `of` pointer and can open the game to
       **Confirm** (overwrites their sub without `proxy`, sets `rec.verifiedBy`) or correct — gated on
-      `!rec.verifiedBy`, not on whether their sub exists. **Done VERIFIES both writes landed**: it
-      checks the return of `savePair` AND `saveRecPartner` and, if either failed, shows an error and
-      does NOT mark the pair done (so a silent partner-write failure can't leave a one-sided pair —
-      the student just taps Done again). The verifier's Confirm checks its `savePair` the same way.
+      `!rec.verifiedBy`, not on whether their sub exists. **Done writes BOTH sides in ONE atomic
+      update** (`saveRecBoth` → a single `fb.ref(subs).update({<myKey>:myDoc, <partnerKey>:proxyDoc})`):
+      Firebase applies it all-or-nothing, so a pair can never be left one-sided AND both colours come
+      from the same `redId` in the same write (no colour drift). If the update fails, Done shows an
+      error and does NOT mark the pair done — the student just taps Done again. (`recPartnerDoc` builds
+      the proxy doc, shared by `saveRecBoth` and `saveRecPartner`.) The verifier's Confirm checks its
+      `savePair`. Per-tap draft writes to the live `rec` node are **debounced** (~450ms, flushed on
+      Done) so a 20-hand entry is a few writes, not 40. **Restart (`liveLeaveMatch`) in record mode
+      clears BOTH sides** — the recorder's sub AND the partner's PROXY sub (plus their `of` pointer and
+      the `rec` draft) — so a redo starts clean and can't inherit a stale, mismatched half-row; a
+      partner's confirmed/own (non-proxy) sub is left untouched.
       Any sub whose named partner has no submission is surfaced to the instructor by `orphanWarning`
       in `analyzeRedBlack`/`analyzeQuatro` ("⚠ N unpaired — partner not recorded", with the reason). `saveRecPartner` stamps a roster partner's
       roster fields and `guest:false` (a solo typed-name partner stays `guest:true`). **Both subs are
