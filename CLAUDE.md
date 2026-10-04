@@ -140,8 +140,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   **off/empty**; a **Student page** card in the console controls them). When `hub.on`, students get a
   **Class / My page** tab bar (`studentNav`; `studentRoot`/`curStudentTab` decide the default — the
   live class when something's open, else the hub; `onCtrl` resets `studentTab` on any activity change
-  so an opening game pulls them back). The hub (`studentHub`) shows: **What you submitted** (`allSubs`
-  filtered to `myId`); **Class results** and **Interactive lessons** are **explicit opt-in per item** —
+  so an opening game pulls them back). The hub (`studentHub`) shows: **What you submitted**
+  (`hubMySubs` — `allSubs` filtered to the viewer, matched on **all** their roster addresses
+  (primary + `email2` + current login), so a game a partner recorded under their primary email still
+  shows when they sign in with `email2`; `proxy` subs are included); **Class results** and **Interactive lessons** are **explicit opt-in per item** —
   the instructor ticks exactly which meetings/lessons are visible, so there's no ambiguity:
   - **Class results** (`hubResults`) shows the meetings whose roundKey is ticked in
     `hub.resultKeys` (`{<roundKey>:true}`) to **every student** — no per-section/attendance filter, so

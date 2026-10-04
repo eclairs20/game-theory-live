@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-03.001";
+const APP_VERSION = "2026-10-04.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1522,7 +1522,11 @@ function hubAttendance(){
 function hubMySubs(){
   const card=el("div","card stage");
   card.append(el("div","eyebrow","What you submitted"));
-  const mine=Object.values(allSubs).filter(s=>s && String(s.studentId)===String(myId) && isDone(s)).sort((a,b)=>(b.ts||0)-(a.ts||0));
+  // Match ALL of the viewer's addresses (roster primary + email2 + current login), case-insensitive,
+  // so a game a partner recorded under your primary email still shows when you sign in with email2.
+  const rn=roster[String(myId).toLowerCase()];
+  const ids=(rn ? [rn.email, rn.email2, myId] : [myId]).filter(Boolean).map(x=>String(x).toLowerCase());
+  const mine=Object.values(allSubs).filter(s=>s && isDone(s) && ids.includes(String(s.studentId).toLowerCase())).sort((a,b)=>(b.ts||0)-(a.ts||0));
   if(!mine.length){ card.append(Object.assign(el("p","lead"),{textContent:"Nothing yet — your answers will appear here as you play.",style:"margin-top:6px"})); return card; }
   let html="<tr><th>Session</th><th style='text-align:left'>Game</th><th style='text-align:left'>Your answer</th></tr>";
   mine.forEach(s=>{ const pk=parseRoundKey(s.roundKey)||{};
