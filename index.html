@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-04.001";
+const APP_VERSION = "2026-10-04.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -766,8 +766,16 @@ function playedMap(){
   }
   return m;
 }
-/* Did this roster person play in meeting `mk`? Matches either of their addresses (email/email2). */
-function playedIn(pm, mk, e){ const set=pm[mk]; return !!set && (set.has(e.email) || (e.email2 && set.has(e.email2))); }
+/* Did this roster person play in meeting `mk`'s SESSION — in this or ANY section? Session-scoped
+   (not section-strict) so a student who attended another section's meeting still shows as "played"
+   against their enrolled-section roll (`msection` stamps the meeting they played in, which may
+   differ from their enrolled section). Matches either address (email/email2). */
+function playedIn(pm, mk, e){
+  const pk=parseAttendKey(mk), sess=pk?pk.session:null;
+  for(const k in pm){ const kk=parseAttendKey(k);
+    if(kk && (sess==null || kk.session===sess)){ const set=pm[k]; if(set && (set.has(e.email) || (e.email2 && set.has(e.email2)))) return true; } }
+  return false;
+}
 /* Every meeting that has completed submissions, in canonical order — the menu the instructor
    ticks from (which results to share) and the source for the student results list. */
 function playedMeetings(){
@@ -3315,7 +3323,7 @@ function rollCall(){
         left.append(h);
       }
       // faint read-only marker: this student submitted a game in THIS meeting (doesn't tick them)
-      if(playedIn(pm, mk, e)) left.append(Object.assign(el("span","roll-played"),{textContent:"played", title:"Submitted a game this meeting — not marked present unless you tick them"}));
+      if(playedIn(pm, mk, e)) left.append(Object.assign(el("span","roll-played"),{textContent:"played", title:"Submitted a game this session (this or another section) — not marked present unless you tick them"}));
       const meta=el("span","roll-meta"); meta.textContent=(e.sid||"")+(e.section?" · "+e.section:"");
       b.append(tick, left, meta);
       b.onclick=()=>{ setAttend(mk, e.email, !on); };   // control listener re-renders
