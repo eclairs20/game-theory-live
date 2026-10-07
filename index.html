@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-07.002";
+const APP_VERSION = "2026-10-07.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -2378,6 +2378,18 @@ function adSoldier(x,y,col){ const g=svgEl("g",{});
   g.append(svgEl("rect",{x:x-4,y:y-3,width:8,height:13,rx:3,fill:col})); return g; }
 function adShield(x,y,col){ const g=svgEl("g",{});
   g.append(svgEl("path",{d:"M"+x+" "+(y-9)+" L"+(x+6)+" "+(y-6)+" V"+(y-1)+" C"+(x+6)+" "+(y+4)+" "+(x+3)+" "+(y+7)+" "+x+" "+(y+9)+" C"+(x-3)+" "+(y+7)+" "+(x-6)+" "+(y+4)+" "+(x-6)+" "+(y-1)+" V"+(y-6)+" Z",fill:col})); return g; }
+/* A spinning gold coin (SMIL scaleX flip about its centre) — shown while a tied round awaits its flip. */
+function adCoin(){
+  const svg=svgEl("svg",{viewBox:"0 0 60 60",width:60,height:60}); svg.setAttribute("aria-hidden","true");
+  svg.setAttribute("style","width:60px;height:60px;flex:none;display:block");   // pin size (unwrapped flex child)
+  const pivot=svgEl("g",{transform:"translate(30 30)"});        // coin centre at the origin
+  const spin=svgEl("g",{});                                     // scale pivots at origin → flips about centre
+  spin.append(svgEl("circle",{cx:0,cy:0,r:20,fill:"#f2a900",stroke:"#c98a00","stroke-width":3}));
+  spin.append(svgEl("text",{x:0,y:8,"text-anchor":"middle","font-size":"22","font-weight":"800",fill:"#8a5a00","font-family":"IBM Plex Sans"},"⚖"));
+  spin.append(svgEl("animateTransform",{attributeName:"transform",type:"scale",values:"1 1;0.08 1;1 1",dur:"1.1s",repeatCount:"indefinite"}));
+  pivot.append(spin); svg.append(pivot);
+  return svg;
+}
 
 function adMatch(c, R, d, opts){
   const {partner, partnerName, mc, bot}=opts;
@@ -2393,18 +2405,32 @@ function adMatch(c, R, d, opts){
   if(bot){ if(!Array.isArray(d.adBot)||d.adBot.length!==R) d.adBot=Array.from({length:R},()=> adTok(botAtt, adPickOpt(botAtt?AD_ATT_OPT:AD_DEF_OPT))); }
   const psub = bot? null : subs.find(s=> String(s.studentId)===String(partner));
   const theirTok = i => { if(bot) return (d.seq[i]!=null)? d.adBot[i] : null; if(!psub) return null; const t=String(psub.seq||"").split(",")[i]; return t?(t.trim()||null):null; };
-  // resolve one round → {breach,iWon,attTok,defTok,tie} or null if either side hasn't placed yet
+  // Coin-flip markers for TIED rounds: the attacker must explicitly flip to resolve a tie. Shared via
+  // the pair node (both watch pairData) for a real pair; local draft against the bot. The flip only
+  // gates WHEN the tie reveals — the outcome itself is the deterministic adBreaches() seed, so both
+  // phones always agree. canFlip = I'm the attacker (or it's a bot match, where the human reveals it).
+  const flips = bot ? (d.flips || (d.flips={})) : ((pairData && pairData.flips) || {});
+  const isFlipped = i => !!flips[i];
+  const bothPlaced = i => d.seq[i]!=null && theirTok(i)!=null;
+  const cellTie = i => { if(!bothPlaced(i)) return false; const mine=d.seq[i], theirs=theirTok(i);
+    const attTok=att?mine:theirs, defTok=att?theirs:mine; return AD_PAYOFF[adIdx(attTok)][adIdx(defTok)]===0.5; };
+  const roundDone = i => bothPlaced(i) && (!cellTie(i) || isFlipped(i));
+  const canFlip = att || bot;
+  const adFlip = (i)=>{ if(bot){ d.flips[i]=true; render(); return; }
+    if(myPairId){ fb.ref(PAIR_DOC(mc,myPairId)+"/flips/"+i).set(true).catch(()=>{}); } render(); };
+  // resolve one round → {breach,iWon,attTok,defTok,tie} or null until the round is fully done
+  // (both placed, and — if it's a tied cell — the coin has been flipped)
   const resolve = i => {
-    const mine=d.seq[i]||null, theirs=theirTok(i); if(!mine||!theirs) return null;
-    if(adIsAtt(mine)===adIsAtt(theirs)) return null;
+    if(!roundDone(i)) return null;
+    const mine=d.seq[i], theirs=theirTok(i);
     const attTok = att? mine : theirs, defTok = att? theirs : mine;
     const breach = adBreaches(adIdx(attTok), adIdx(defTok), adRoleSeed(a,b,i));
     return { breach, iWon: att?breach:!breach, attTok, defTok, tie: AD_PAYOFF[adIdx(attTok)][adIdx(defTok)]===0.5 };
   };
   const sc={me:0,them:0,done:0};
   for(let i=0;i<R;i++){ const r=resolve(i); if(!r) continue; sc.done++; r.iWon? sc.me++ : sc.them++; }
-  // lockstep cursor: k = first round not yet resolved by BOTH sides (rounds fill in order)
-  let k=0; while(k<R && d.seq[k]!=null && theirTok(k)!=null) k++;
+  // lockstep cursor: k = first round not fully resolved (a tied round waits on the coin flip)
+  let k=0; while(k<R && roundDone(k)) k++;
 
   // role banner (persistent)
   const rc = att?"#c0392b":"#2c6fb0";
@@ -2470,12 +2496,30 @@ function adMatch(c, R, d, opts){
     ctr.append(send);
     if(placed>0){ const rs=el("button","ghost-btn","↺ Reset"); rs.onclick=()=>{ d.plc={a:0,b:0}; d.plcRound=k; render(); }; ctr.append(rs); }
     c.append(ctr);
-  } else {
+  } else if(!bothPlaced(k)){
     // I've placed round k; waiting for my partner before it resolves
     const w=el("div","note-box"); w.style.cssText="margin-top:16px;border-color:"+rc+";background:color-mix(in srgb,"+rc+" 7%,transparent)";
     const myr=adPlaceDesc(att, adIdx(d.seq[k]));
     w.innerHTML="<b>Round "+(k+1)+" — your move is locked in.</b> You put "+myr+". Waiting for <b>"+esc(partnerName)+"</b> to place their "+(att?"defence":"attack")+"… the round resolves the moment they do.";
     c.append(w);
+  } else {
+    // both placed and it's a TIE on a road — the attacker flips the coin to resolve it, explicitly
+    const mine=d.seq[k], theirs=theirTok(k), attTok=att?mine:theirs, defTok=att?theirs:mine;
+    const tieBar=el("div"); tieBar.style.cssText="margin-top:16px;padding:12px 16px;border-radius:14px;text-align:center;color:#8a5a00;background:color-mix(in srgb,#f2a900 20%,transparent);border:1px solid #d9a200;font-weight:700";
+    tieBar.innerHTML="⚖ Round "+(k+1)+" — it's a TIE on a road!<div style='font-weight:600;font-size:.86rem;margin-top:3px'>Both sides are evenly matched where it counts — a coin flip decides whether the town falls.</div>";
+    c.append(tieBar);
+    c.append(adBattle(adIdx(attTok), adIdx(defTok), false, true));   // pending = true (no outcome yet)
+    const spin=adCoin();
+    const ctr=el("div"); ctr.style.cssText="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:10px";
+    ctr.append(spin);
+    if(canFlip){
+      const fb2=el("button","btn gold","🪙 Flip the coin"); fb2.style.maxWidth="260px";
+      fb2.onclick=()=>adFlip(k); ctr.append(fb2);
+      if(!att) ctr.append(Object.assign(el("div","sm mut"),{textContent:"(you're practising — tap to reveal the flip)"}));
+    } else {
+      ctr.append(Object.assign(el("div","note-box"),{style:"margin:0;border-color:#d9a200",innerHTML:"Waiting for <b>"+esc(partnerName)+"</b> (the attacker) to flip the coin…"}));
+    }
+    c.append(ctr);
   }
 
   // history chips (oldest→newest left→right; newest emphasised via reverse list)
@@ -2496,8 +2540,9 @@ function adMatch(c, R, d, opts){
 function adPlaceDesc(att, idx){ const r=(att?AD_ATT:AD_DEF)[idx].r; return r[0]+" on Road 1, "+r[1]+" on Road 2"; }
 
 /* The battle scene: two roads, red attacker soldiers vs blue defender shields, a town at the end.
-   Breach → the town is aflame; held → it flies a green flag. Inline SMIL only. */
-function adBattle(ai, di, breach){
+   Breach → the town is aflame; held → it flies a green flag. `pending` (a tie awaiting its coin
+   flip) draws the board with no outcome yet and a neutral town. Inline SMIL only. */
+function adBattle(ai, di, breach, pending){
   const A=AD_ATT[ai].r, D=AD_DEF[di].r, W=360,H=210, townX=W-78;
   const svg=svgEl("svg",{viewBox:"0 0 "+W+" "+H,role:"img"});
   svg.setAttribute("style","width:100%;max-width:420px;display:block;margin:6px auto;border:1px solid var(--line);border-radius:14px;background:var(--surface)");
@@ -2508,14 +2553,17 @@ function adBattle(ai, di, breach){
     const na=A[ri]; for(let k=0;k<na;k++) svg.append(adSoldier(28+k*26, y, "#c0392b"));
     const nd=D[ri]; for(let k=0;k<nd;k++) svg.append(adShield(townX-28-k*24, y, "#2c6fb0"));
     const win = na>nd?"att":nd>na?"def":"tie";
-    svg.append(svgEl("text",{x:(townX-6)/2,y:y+22,"text-anchor":"middle",fill: win==="att"?"#c0392b":win==="def"?"#2c6fb0":"var(--muted)","font-size":"10.5","font-weight":"700","font-family":"IBM Plex Sans"},
+    svg.append(svgEl("text",{x:(townX-6)/2,y:y+22,"text-anchor":"middle",fill: win==="att"?"#c0392b":win==="def"?"#2c6fb0":"#b8860b","font-size":"10.5","font-weight":"700","font-family":"IBM Plex Sans"},
       win==="att"?"▶ attacker breaks through":win==="def"?"defender holds":"⚖ tie — coin flip"));
   });
+  const aflame = breach && !pending;
   // town / castle
-  for(let k=0;k<4;k++) svg.append(svgEl("rect",{x:townX+k*16,y:52,width:11,height:12,fill:breach?"#7a2718":"var(--line-2)"}));
-  svg.append(svgEl("rect",{x:townX,y:62,width:60,height:86,rx:4,fill: breach?"#7a2718":"var(--line-2)","fill-opacity": breach?"1":"0.75"}));
+  for(let k=0;k<4;k++) svg.append(svgEl("rect",{x:townX+k*16,y:52,width:11,height:12,fill:aflame?"#7a2718":"var(--line-2)"}));
+  svg.append(svgEl("rect",{x:townX,y:62,width:60,height:86,rx:4,fill: aflame?"#7a2718":"var(--line-2)","fill-opacity": aflame?"1":"0.75"}));
   svg.append(svgEl("rect",{x:townX+22,y:112,width:16,height:36,fill:"rgba(0,0,0,.35)"}));   // gate
-  if(breach){
+  if(pending){
+    svg.append(svgEl("text",{x:W/2,y:H-6,"text-anchor":"middle",fill:"#b8860b","font-size":"14","font-weight":"800","font-family":"IBM Plex Sans"},"⚖ COIN FLIP PENDING"));
+  } else if(breach){
     [townX+6,townX+26,townX+45].forEach((fx,k)=>{ const fl=svgEl("path",{d:"M"+fx+" 55 q 6 -16 0 -28 q 10 10 6 22 q 8 -8 4 -20 q 10 18 -2 30 z",fill:k%2?"#ff7a1a":"#ff3b1a"});
       fl.append(svgEl("animate",{attributeName:"opacity",values:"1;0.55;1",dur:(0.7+k*0.2)+"s",repeatCount:"indefinite"})); svg.append(fl); });
     svg.append(svgEl("text",{x:W/2,y:H-6,"text-anchor":"middle",fill:"#c0392b","font-size":"15","font-weight":"800","font-family":"IBM Plex Sans"},"🔥 TOWN BREACHED"));

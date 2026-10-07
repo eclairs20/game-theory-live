@@ -356,8 +356,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     open. You can never be more than one unresolved round ahead of your partner.
   - Reuses the G5/G6 **lobby/pairing** machinery (`studentPair("attackdefend")` → `pairLobby` →
     `adMatch`), but is a **self-contained** function block (`adMatch`/`adBattle`/`adTroopIcon`/
-    `adSoldier`/`adShield`/`adPlaceDesc`/`analyzeAttackDefend` + the `AD_*`/`ad*` helpers) that does
-    **not** touch `pairMatch`, so the card games can't regress. **Live-only** (added to `wantLive`).
+    `adSoldier`/`adShield`/`adCoin`/`adPlaceDesc`/`analyzeAttackDefend` + the `AD_*`/`ad*` helpers)
+    that does **not** touch `pairMatch`, so the card games can't regress. **Live-only** (`wantLive`).
   - Each player stores only their **own** per-round placement as a **self-describing token** in field
     `seq` (comma-joined): `"A0/A1/A2"` attacking, `"D0/D1/D2/D3"` defending (index via
     `adSplitIdx(att,road1count)`). A round resolves once both tokens exist and are one attacker + one
@@ -365,6 +365,16 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     `adSeedFloat(adRoleSeed(a,b,i))` (djb2 + an integer-avalanche finalizer, well-distributed even
     across a pair's consecutive rounds) < 0.5 — the **raw sorted pair ids + round** seed is identical
     on both phones **and** in the instructor analysis, so both clients always agree.
+  - **Explicit tie coin-flip.** When both have placed and the cell is a **tie** (payoff ½), the round
+    does NOT auto-resolve: both see a gold "it's a TIE" banner + a pending battle board (neutral town,
+    "⚖ COIN FLIP PENDING") + a spinning coin (`adCoin`), and the **attacker** presses **🪙 Flip the
+    coin** to resolve it (the defender waits; in a bot match the human presses, whichever side).
+    `adBattle(…,pending=true)` draws the pre-flip board. Gating helpers: `cellTie(i)`, `isFlipped(i)`,
+    `roundDone(i)` (= both placed AND (not a tie OR flipped)); the lockstep cursor `k` advances on
+    `roundDone`. The flip marker is shared via the **pair node** `live/<mc>/pairs/<pid>/flips/<round>`
+    (both watch `pairData`; `adFlip` writes it) for a real pair, or the local draft `d.flips` vs the
+    bot. The flip only gates **when** the tie reveals — the outcome is still the deterministic
+    `adBreaches` seed, so clients never desync, and the sub's `done`/analysis are unaffected.
   - UI (`adMatch`, all **inline styles**, no new CSS): a persistent role banner with a troop icon
     (`adTroopIcon` — red soldier / blue shield, size-pinned so unwrapped flex children don't stretch);
     a live `scoreboard`; an explicit per-round **winner callout bar** ("🔥 Round N: Attacker broke
