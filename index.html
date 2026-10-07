@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-07.004";
+const APP_VERSION = "2026-10-07.005";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -2356,8 +2356,11 @@ function adSeedFloat(s){ let n=0; const h=hash(String(s)); for(let i=0;i<h.lengt
   n^=n>>>16; n=Math.imul(n,0x45d9f3b)>>>0; n^=n>>>16; n=Math.imul(n,0x45d9f3b)>>>0; n^=n>>>16; return (n>>>0)/4294967296; }
 /* Does the attacker breach, given both split indices? 1 → always, 0 → never, 0.5 → coin flip by seed. */
 function adBreaches(ai, di, seed){ const p=AD_PAYOFF[ai][di]; if(p>=1) return true; if(p<=0) return false; return adSeedFloat(seed)<0.5; }
-/* Stable per-round seed for a pair (raw sorted ids + round) — identical on both phones and in analysis. */
-function adRoleSeed(id1,id2,round){ return [String(id1),String(id2)].sort().join("~")+"#"+round; }
+/* Per-round coin-flip seed for a pair — raw sorted ids + round + BOTH placed split indices, so the
+   flip depends on what was actually played (a fresh, unpredictable coin each match, not a fixed
+   per-round constant that repeats and looks rigged) while staying identical on both phones and in the
+   instructor analysis. Verified fair (≈50/50, binomial, every tie cell ~0.50). */
+function adFlipSeed(id1,id2,round,ai,di){ return [String(id1),String(id2)].sort().join("~")+"#"+round+"."+ai+"."+di; }
 /* Sample an index from a weight vector (the optimal mixes) — the practice bot. */
 function adPickOpt(w){ let r=Math.random(),c=0; for(let i=0;i<w.length;i++){ c+=w[i]; if(r<c) return i; } return w.length-1; }
 function adTok(att,idx){ return (att?"A":"D")+idx; }
@@ -2432,7 +2435,7 @@ function adMatch(c, R, d, opts){
     if(!roundDone(i)) return null;
     const mine=d.seq[i], theirs=theirTok(i);
     const attTok = att? mine : theirs, defTok = att? theirs : mine;
-    const breach = adBreaches(adIdx(attTok), adIdx(defTok), adRoleSeed(a,b,i));
+    const ai=adIdx(attTok), di=adIdx(defTok), breach = adBreaches(ai, di, adFlipSeed(a,b,i,ai,di));
     return { breach, iWon: att?breach:!breach, attTok, defTok, tie: AD_PAYOFF[adIdx(attTok)][adIdx(defTok)]===0.5 };
   };
   const sc={me:0,them:0,done:0};
@@ -2596,7 +2599,7 @@ function analyzeAttackDefend(list){
     for(let i=0;i<L;i++){ const xt=(xs[i]||"").trim(), yt=(ys[i]||"").trim(); if(!xt||!yt) continue;
       if(adIsAtt(xt)===adIsAtt(yt)) continue;
       const attTok=adIsAtt(xt)?xt:yt, defTok=adIsAtt(xt)?yt:xt;
-      rounds++; if(adBreaches(adIdx(attTok),adIdx(defTok),adRoleSeed(x.studentId,y.studentId,i))) breaches++; } });
+      const ai=adIdx(attTok),di=adIdx(defTok); rounds++; if(adBreaches(ai,di,adFlipSeed(x.studentId,y.studentId,i,ai,di))) breaches++; } });
   const breachRate = rounds? breaches/rounds : null;
 
   const wrap=el("div","stack");

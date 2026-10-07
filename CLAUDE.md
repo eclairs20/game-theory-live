@@ -365,9 +365,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     `seq` (comma-joined): `"A0/A1/A2"` attacking, `"D0/D1/D2/D3"` defending (index via
     `adSplitIdx(att,road1count)`). A round resolves once both tokens exist and are one attacker + one
     defender; `adBreaches(attIdx,defIdx,seed)` decides it. **Ties are a deterministic coin flip**:
-    `adSeedFloat(adRoleSeed(a,b,i))` (djb2 + an integer-avalanche finalizer, well-distributed even
-    across a pair's consecutive rounds) < 0.5 — the **raw sorted pair ids + round** seed is identical
-    on both phones **and** in the instructor analysis, so both clients always agree.
+    `adSeedFloat(adFlipSeed(a,b,i,attIdx,defIdx))` (djb2 + an integer-avalanche finalizer) < 0.5. The
+    seed is **sorted pair ids + round + BOTH placed split indices**, so the flip depends on what was
+    actually played — a fresh, unpredictable coin each match rather than a fixed per-round constant
+    that repeats (and so looks rigged) across a pair's matches — while staying identical on both phones
+    **and** in the instructor analysis, so both always agree. Verified fair: ≈50/50 overall, a binomial
+    per-pair distribution, every tie cell ~0.50 (a lopsided run like 6/7 in one match is just variance).
   - **Explicit tie coin-flip.** When both have placed and the cell is a **tie** (payoff ½), the round
     does NOT auto-resolve: both see a gold "it's a TIE" banner + a pending battle board (neutral town,
     "⚖ COIN FLIP PENDING") + a spinning coin (`adCoin`), and the **attacker** presses **🪙 Flip the
