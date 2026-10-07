@@ -338,35 +338,45 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     beside the Nash independent-product matrix** (`jointMatrixCard`; K 40% / A·2·3 20% → 16/8/8/8…),
     the **observed** Red/Black win split (from real zipped hands, not a formula), and a
     `pairingsCard` ("who played whom"). CSV/`subValue` carry the full `seq`/`piles` + partner.
-- `attackdefend` — **Attack & Defend** (**G7**) — a **real-time two-player** zero-sum game teaching
-  **mixed-strategy equilibrium** (randomise, don't out-think). Story: two roads lead to a town; the
-  **attacker** has **2 divisions**, the **defender 3**. Each picks how to split across the two roads;
-  the attacker **breaches** the town if on **at least one road** they *strictly outnumber* the
-  defender (a tie on a road → a **coin flip**). Payoff = attacker's breach probability; the matrix is
-  `AD_PAYOFF` (rows = attacker split 0..2 `AD_ATT`, cols = defender split 0..3 `AD_DEF`) =
-  `[[0,½,1,1],[1,½,½,1],[1,1,½,0]]`. **Value = ⅔** (`AD_VALUE`), attacker optimal **(⅓,⅓,⅓)**
-  (`AD_ATT_OPT`), defender optimal **(⅙,⅓,⅓,⅙)** (`AD_DEF_OPT`). Because the game is **asymmetric**,
-  **roles SWAP at the midpoint** — a match is `rounds` (default **16** = 8 attacking + 8 defending),
-  `adHalf(R)=⌊R/2⌋`; player `pairData.a` attacks the first half, `.b` the second (`iAttack(i)`).
+- `attackdefend` — **Colonel Blotto** (**G7**; internal key kept as `attackdefend`) — a **real-time
+  two-player** zero-sum game teaching **mixed-strategy equilibrium** (randomise, don't out-think).
+  Story: two roads lead to a town; the **attacker** has **2 divisions**, the **defender 3**. Each
+  round both place **all** their units across the two roads; the attacker **breaches** the town if on
+  **at least one road** they *strictly outnumber* the defender (a tied road → a **coin flip**). Payoff
+  = attacker's breach probability; the matrix is `AD_PAYOFF` (rows = attacker split 0..2 `AD_ATT`,
+  cols = defender split 0..3 `AD_DEF`) = `[[0,½,1,1],[1,½,½,1],[1,1,½,0]]`. **Value = ⅔** (`AD_VALUE`),
+  attacker optimal **(⅓,⅓,⅓)** (`AD_ATT_OPT`), defender optimal **(⅙,⅓,⅓,⅙)** (`AD_DEF_OPT`).
+  - **Roles are FIXED for the whole match** (no mid-game swap — that was confusing): assigned at
+    random when the pair forms by **reusing `pairData.colors`** (set for every pair in `liveAccept`) —
+    **red → attacker, black → defender**; against the practice bot it's a one-time random `d.role`.
+    A match is `rounds` (default **10**) lockstep rounds; both players keep their role throughout.
+  - **Strict lockstep** (`adMatch`): `k` = first round not yet resolved by BOTH sides. You place your
+    units for round `k`, your sub saves (`done:false`), then you **wait** ("your move is locked in… waiting
+    for <partner>") until the partner places theirs — only then does the round resolve and round `k+1`
+    open. You can never be more than one unresolved round ahead of your partner.
   - Reuses the G5/G6 **lobby/pairing** machinery (`studentPair("attackdefend")` → `pairLobby` →
-    `adMatch`), but is a **self-contained** function block (`adMatch`/`adMiniSplit`/`adBattle`/
-    `adSoldier`/`analyzeAttackDefend` + the `AD_*`/`ad*` helpers) that does **not** touch `pairMatch`,
-    so the card games can't regress. It is **live-only** (added to `wantLive`); there is no record mode.
-  - Each player stores only their **own** per-round decision as a **self-describing token** in field
-    `seq` (comma-joined): `"A0/A1/A2"` when attacking, `"D0/D1/D2/D3"` when defending. A round resolves
-    (from either side's view) once **both** tokens for that round exist and are one attacker + one
+    `adMatch`), but is a **self-contained** function block (`adMatch`/`adBattle`/`adTroopIcon`/
+    `adSoldier`/`adShield`/`adPlaceDesc`/`analyzeAttackDefend` + the `AD_*`/`ad*` helpers) that does
+    **not** touch `pairMatch`, so the card games can't regress. **Live-only** (added to `wantLive`).
+  - Each player stores only their **own** per-round placement as a **self-describing token** in field
+    `seq` (comma-joined): `"A0/A1/A2"` attacking, `"D0/D1/D2/D3"` defending (index via
+    `adSplitIdx(att,road1count)`). A round resolves once both tokens exist and are one attacker + one
     defender; `adBreaches(attIdx,defIdx,seed)` decides it. **Ties are a deterministic coin flip**:
     `adSeedFloat(adRoleSeed(a,b,i))` (djb2 + an integer-avalanche finalizer, well-distributed even
     across a pair's consecutive rounds) < 0.5 — the **raw sorted pair ids + round** seed is identical
-    on both phones **and** in the instructor analysis, so both clients always agree on the outcome.
-  - UI (`adMatch`, all **inline styles**, no new CSS): a red **ATTACK** / blue **DEFEND** role banner,
-    choice buttons each previewing the split as a two-road schematic (`adMiniSplit`), a live
-    `scoreboard`, and `adBattle(attIdx,defIdx,breach)` — a ~360×210 inline-SVG battle scene (red/blue
-    soldiers on the two roads, a castle that **flames + "🔥 TOWN BREACHED"** or flies a **green flag +
-    "🛡 TOWN HELD"**, with SMIL `<animate>`), plus win/loss history chips. Sequential, like the card
-    games — only the first unplayed round is tappable. **Practice bot** (lobby button) plays the
-    complementary role each round from the optimal mix (`adPickOpt`); `saveBot` writes its synthetic
-    opponent sub (`mode:"ad"`, `seq`). Commit is `savePair({partner,partnerName,seq,mode:"ad"},done)`.
+    on both phones **and** in the instructor analysis, so both clients always agree.
+  - UI (`adMatch`, all **inline styles**, no new CSS): a persistent role banner with a troop icon
+    (`adTroopIcon` — red soldier / blue shield, size-pinned so unwrapped flex children don't stretch);
+    a live `scoreboard`; an explicit per-round **winner callout bar** ("🔥 Round N: Attacker broke
+    through — TOWN LOST" / "🛡 Defender held both roads — TOWN SAVED", plus "You won/lost this round");
+    `adBattle(attIdx,defIdx,breach)` — a ~360×210 inline-SVG battle scene (red soldiers vs blue shields
+    on the two roads, per-road "breaks through / holds / coin flip", a castle that **flames + "🔥 TOWN
+    BREACHED"** or flies a **green flag + "🛡 TOWN HELD"**, SMIL `<animate>`); **interactive placement**
+    — two tappable road lanes where you add/remove your units (no multiple-choice buttons), a "forces"
+    pool, and a **Send into battle** button enabled only once all units are placed; and win/loss
+    history chips. **Practice bot** plays the complementary role from the optimal mix (`adPickOpt`);
+    `saveBot` writes its synthetic opponent (`mode:"ad"`, `seq`). Commit is
+    `savePair({partner,partnerName,seq,mode:"ad"},done)`.
   - `analyzeAttackDefend` (reveal) counts the whole-class **attacker mix** (3 bars vs optimal
     33/33/33) and **defender mix** (4 bars vs optimal 17/33/33/17) straight from the token prefixes
     (no pairing needed), and the **breach rate** from `mutualPairs` round-aligned (stat tiles:

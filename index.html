@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-07.001";
+const APP_VERSION = "2026-10-07.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -593,8 +593,8 @@ const GAMES = {
     blurb:"Card duel with your neighbour — tap your own pile each hand." },
   redblack: { name:"Red vs Black", short:"G5", icon:"G5",
     blurb:"Card duel with your neighbour — tap the card you played each hand." },
-  attackdefend: { name:"Attack & Defend", short:"G7", icon:"G7",
-    blurb:"Two roads, one town — attack or defend, round by round with your neighbour." },
+  attackdefend: { name:"Colonel Blotto", short:"G7", icon:"G7",
+    blurb:"Two roads, one town — attacker vs defender, round by round with your neighbour." },
   publicgoods: { name:"Public Goods", short:"G10", icon:"G10",
     blurb:"Contribute to a shared fund that pays everyone." }
 };
@@ -604,7 +604,7 @@ const DEFAULT_CONFIG = {
   coord:{ pot:100 },
   quatro:{ rounds:5 },
   redblack:{ rounds:20, mode:"record" },   // mode: "record" (real cards, one enters + partner verifies) | "live" (real-time on phones)
-  attackdefend:{ rounds:16 },   // 16 = 8 rounds attacking + 8 rounds defending (roles swap at the midpoint, since the game is asymmetric)
+  attackdefend:{ rounds:10 },   // Colonel Blotto: fixed roles (attacker 2 / defender 3), this many lockstep rounds per pair
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -2165,11 +2165,11 @@ async function saveRecBoth(partnerId, partnerName, myPayload, partnerPayload){
 }
 function pairLobby(c, game, mc, R, d){
   const rbRecord = game==="redblack" && (cfg("redblack").mode||"record")==="record";
-  const title = game==="redblack"?"Red vs Black" : game==="attackdefend"?"Attack & Defend" : "Quatro Uno";
+  const title = game==="redblack"?"Red vs Black" : game==="attackdefend"?"Colonel Blotto" : "Quatro Uno";
   c.append(pairRules(title,
     game==="attackdefend" ? [
-      "Pair up with a neighbour. You'll ATTACK for "+(R/2)+" rounds, then DEFEND for "+(R/2)+" — roles swap at the halfway mark.",
-      "Each round you both choose at the same time; we resolve the battle and score it live."
+      "Pair up with a neighbour — one of you is dealt the ATTACKER (2 divisions), the other the DEFENDER (3). Your role is fixed for all "+R+" rounds.",
+      "Each round you place your units across the two roads; once you BOTH commit, the battle resolves and we score it live."
     ] : rbRecord ? [
       "Play all "+R+" hands with your real cards — one Red deck, one Black.",
       "Then pair up here: ONE of you enters every hand, the other checks it against the table."
@@ -2316,17 +2316,19 @@ function pairMatch(c, game, R, d, opts){
   else { const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="14px"; lv.onclick=()=>{ d.bot=false; const dk=game+"-"+curKey; delete gameDraft[dk]; render(); }; c.append(lv); }
 }
 
-/* ═══════════════════════ G7 · ATTACK & DEFEND ═══════════════════════
-   A two-player live match (reuses the lobby/pairing machinery, but NOT pairMatch,
-   so it can't regress the card games). Two attacker divisions, three defender
-   divisions, two roads. Each round both players choose a split at the same time;
-   the attacker BREACHES the town if on at least one road they strictly outnumber
-   the defender — a tie on a road is a 50/50 coin flip, resolved DETERMINISTICALLY
-   from the pair id + round so both phones and the instructor analysis agree.
-   Roles SWAP at the midpoint (the game is asymmetric — value 2/3 to the attacker),
-   so each player attacks half the rounds and defends half. Each player stores only
-   their OWN per-round decision as a self-describing token ("A0/A1/A2" attacking,
-   "D0/D1/D2/D3" defending) in `seq`. */
+/* ═══════════════════════ G7 · COLONEL BLOTTO ═══════════════════════
+   The classic Colonel Blotto battle, as a two-player live match (reuses the
+   lobby/pairing machinery but NOT pairMatch, so it can't regress the card games).
+   Two roads lead to a town. The ATTACKER has 2 divisions, the DEFENDER has 3; each
+   round both place ALL their units across the two roads at the same time. The
+   attacker BREACHES the town if on at least one road they strictly outnumber the
+   defender — a tied road is a 50/50 coin flip, resolved DETERMINISTICALLY from the
+   pair id + round so both phones and the instructor analysis always agree.
+   ROLES ARE FIXED for the whole match (assigned at random when the pair forms: the
+   "red" side attacks, "black" defends) — no mid-game swap. Play is STRICT LOCKSTEP:
+   you place your units, then wait for your partner before the round resolves and the
+   next one opens. Each player stores only their OWN per-round placement as a
+   self-describing token ("A0/A1/A2" attacking, "D0/D1/D2/D3" defending) in `seq`. */
 const AD_ATT = [ {r:[2,0], label:"Both → Road 1"},
                  {r:[1,1], label:"One on each road"},
                  {r:[0,2], label:"Both → Road 2"} ];
@@ -2339,7 +2341,6 @@ const AD_PAYOFF = [ [0,0.5,1,1], [1,0.5,0.5,1], [1,1,0.5,0] ];
 const AD_ATT_OPT = [1/3,1/3,1/3];        // attacker's optimal (maximin) mix
 const AD_DEF_OPT = [1/6,1/3,1/3,1/6];    // defender's optimal (minimax) mix
 const AD_VALUE = 2/3;                    // value of the game — breach probability under optimal play
-function adHalf(R){ return Math.floor(R/2); }   // rounds before the role swap
 /* A deterministic [0,1) float from any string — ties resolve identically on both clients + analysis.
    djb2 seed + an integer avalanche (xorshift-multiply finalizer) so even near-identical seeds
    (a pair's round 0,1,2…) spread evenly and a tie is a genuinely fair coin flip. */
@@ -2354,81 +2355,135 @@ function adPickOpt(w){ let r=Math.random(),c=0; for(let i=0;i<w.length;i++){ c+=
 function adTok(att,idx){ return (att?"A":"D")+idx; }
 function adIsAtt(tok){ return typeof tok==="string" && tok[0]==="A"; }
 function adIdx(tok){ return tok? (parseInt(tok.slice(1),10)||0) : null; }
+// placement (road-1 count, road-2 count) → the split index used in the token
+function adSplitIdx(att, r0){ return att ? (2-r0) : (3-r0); }
 
 function studentAttackDefend(c){ studentPair(c,"attackdefend"); }
 
+/* A troop icon: a red soldier (attacker) or a blue shield (defender), sized for a lane. */
+function adTroopIcon(att, px){
+  px=px||30; const col=att?"#c0392b":"#2c6fb0";
+  const svg=svgEl("svg",{viewBox:"0 0 24 24",width:px,height:px}); svg.setAttribute("aria-hidden","true");
+  svg.setAttribute("style","width:"+px+"px;height:"+px+"px;flex:none;display:block");   // pin size (unwrapped flex children otherwise stretch)
+  if(att){ svg.append(svgEl("circle",{cx:11,cy:6,r:3.3,fill:col}));
+    svg.append(svgEl("rect",{x:7,y:10,width:8,height:11,rx:3,fill:col}));
+    svg.append(svgEl("rect",{x:14.3,y:7,width:2,height:13,rx:1,fill:col,transform:"rotate(28 15 13)"})); }   // slung rifle
+  else { svg.append(svgEl("path",{d:"M12 2 L20 5 V11 C20 16.2 16.4 20.2 12 22 C7.6 20.2 4 16.2 4 11 V5 Z",fill:col}));
+    svg.append(svgEl("path",{d:"M12 5.2 L17 7 V11 C17 14.7 14.6 17.8 12 19.2 Z",fill:"rgba(255,255,255,.28)"})); }
+  return svg;
+}
+/* Small glyphs for the battle scene (a <g> positioned at x,y). */
+function adSoldier(x,y,col){ const g=svgEl("g",{});
+  g.append(svgEl("circle",{cx:x,cy:y-7,r:4,fill:col}));
+  g.append(svgEl("rect",{x:x-4,y:y-3,width:8,height:13,rx:3,fill:col})); return g; }
+function adShield(x,y,col){ const g=svgEl("g",{});
+  g.append(svgEl("path",{d:"M"+x+" "+(y-9)+" L"+(x+6)+" "+(y-6)+" V"+(y-1)+" C"+(x+6)+" "+(y+4)+" "+(x+3)+" "+(y+7)+" "+x+" "+(y+9)+" C"+(x-3)+" "+(y+7)+" "+(x-6)+" "+(y+4)+" "+(x-6)+" "+(y-1)+" V"+(y-6)+" Z",fill:col})); return g; }
+
 function adMatch(c, R, d, opts){
   const {partner, partnerName, mc, bot}=opts;
-  const H=adHalf(R), cur=mySub();
+  const cur=mySub();
   if(cur && d._loaded!==true && cur.seq){ d.seq=String(cur.seq).split(",").map(x=>{x=x.trim();return x===""?undefined:x;}); }
   if(!Array.isArray(d.seq)) d.seq=[]; d.seq.length=R; d._loaded=true;
-  // who attacks each round? player `a` attacks the first half, player `b` the second (swapped at H).
   const a = bot? String(myId) : String(pairData.a), b = bot? ("bot:"+myId) : String(pairData.b);
-  const iAttack = i => (String(myId)===a) ? (i<H) : (i>=H);
-  if(bot){ if(!Array.isArray(d.adBot)||d.adBot.length!==R) d.adBot=Array.from({length:R},(_,i)=>{ const botAtt=!iAttack(i); return adTok(botAtt, adPickOpt(botAtt?AD_ATT_OPT:AD_DEF_OPT)); }); }
+  // FIXED role for the whole match: the "red" side attacks, "black" defends. For a pair that's the
+  // random colour assigned when it formed; against the bot it's a one-time random choice (stored).
+  const myRole = bot ? (d.role || (d.role = Math.random()<0.5?"att":"def"))
+                     : ((pairData.colors && pairData.colors[encodeKey(String(myId))]==="red") ? "att" : "def");
+  const att = myRole==="att", total = att?2:3, botAtt = !att;
+  if(bot){ if(!Array.isArray(d.adBot)||d.adBot.length!==R) d.adBot=Array.from({length:R},()=> adTok(botAtt, adPickOpt(botAtt?AD_ATT_OPT:AD_DEF_OPT))); }
   const psub = bot? null : subs.find(s=> String(s.studentId)===String(partner));
   const theirTok = i => { if(bot) return (d.seq[i]!=null)? d.adBot[i] : null; if(!psub) return null; const t=String(psub.seq||"").split(",")[i]; return t?(t.trim()||null):null; };
-  // resolve one round from MY perspective → {breach,iWon,attTok,defTok,tie} or null if either side unplayed
+  // resolve one round → {breach,iWon,attTok,defTok,tie} or null if either side hasn't placed yet
   const resolve = i => {
     const mine=d.seq[i]||null, theirs=theirTok(i); if(!mine||!theirs) return null;
-    if(adIsAtt(mine)===adIsAtt(theirs)) return null;   // need exactly one attacker + one defender
-    const attTok = adIsAtt(mine)? mine : theirs, defTok = adIsAtt(mine)? theirs : mine;
+    if(adIsAtt(mine)===adIsAtt(theirs)) return null;
+    const attTok = att? mine : theirs, defTok = att? theirs : mine;
     const breach = adBreaches(adIdx(attTok), adIdx(defTok), adRoleSeed(a,b,i));
-    return { breach, iWon: iAttack(i)?breach:!breach, attTok, defTok, tie: AD_PAYOFF[adIdx(attTok)][adIdx(defTok)]===0.5 };
+    return { breach, iWon: att?breach:!breach, attTok, defTok, tie: AD_PAYOFF[adIdx(attTok)][adIdx(defTok)]===0.5 };
   };
   const sc={me:0,them:0,done:0};
   for(let i=0;i<R;i++){ const r=resolve(i); if(!r) continue; sc.done++; r.iWon? sc.me++ : sc.them++; }
+  // lockstep cursor: k = first round not yet resolved by BOTH sides (rounds fill in order)
+  let k=0; while(k<R && d.seq[k]!=null && theirTok(k)!=null) k++;
 
-  const head=el("div","match-head"); head.innerHTML="You vs <b>"+esc(partnerName)+"</b> — "+R+" rounds, roles swap after "+H;
+  // role banner (persistent)
+  const rc = att?"#c0392b":"#2c6fb0";
+  const head=el("div"); head.style.cssText="margin:6px 0 4px;padding:12px 14px;border-radius:14px;display:flex;align-items:center;gap:12px;background:color-mix(in srgb,"+rc+" 12%,transparent);border:1px solid "+rc;
+  head.append(adTroopIcon(att,34));
+  head.append(Object.assign(el("div"),{innerHTML:"You are the <b style='color:"+rc+"'>"+(att?"ATTACKER":"DEFENDER")+"</b> — "+total+" "+(att?"divisions":"divisions to defend")+"<div style='font-size:.82rem;color:var(--muted);margin-top:2px'>vs <b>"+esc(partnerName)+"</b>, the "+(att?"Defender":"Attacker")+" · "+R+" rounds</div>"}));
   c.append(head);
-  c.append(scoreboard("attackdefend", sc, partnerName));
+  c.append(scoreboard("attackdefend", {me:sc.me,them:sc.them}, partnerName+(att?" (Def)":" (Att)")));
 
-  let active=-1; for(let i=0;i<R;i++){ if(d.seq[i]==null){ active=i; break; } }
+  // most-recent resolved round → explicit winner headline + battle scene
+  if(k>0){ const li=k-1, r=resolve(li);
+    const won=r.iWon, line = r.breach ? "Attacker broke through — TOWN LOST" : "Defender held both roads — TOWN SAVED";
+    const bar=el("div"); bar.style.cssText="margin:14px 0 2px;padding:10px 14px;border-radius:12px;text-align:center;color:#fff;font-weight:800;background:"+(r.breach?"#c0392b":"#2e8b57");
+    bar.innerHTML=(r.breach?"🔥 ":"🛡 ")+"Round "+(li+1)+": "+line+"<div style='font-weight:600;font-size:.84rem;opacity:.95;margin-top:2px'>"+(won?"You won this round":"You lost this round")+(r.tie?" · a tied road came down to a coin flip":"")+"</div>";
+    c.append(bar);
+    c.append(adBattle(adIdx(r.attTok), adIdx(r.defTok), r.breach));
+  }
+
   const commit=()=>{
     const done = d.seq.every(x=>x!=null);
     savePair({partner, partnerName, seq:d.seq.map(x=>x==null?"":x).join(","), mode:"ad"}, done);
     if(done && bot) saveBot({ seq:d.adBot.join(","), mode:"ad" });
     render();
   };
-  if(active>=0){
-    const att=iAttack(active);
-    const banner=el("div"); banner.style.cssText="margin:12px 0 6px;padding:10px 14px;border-radius:12px;font-weight:700;text-align:center;color:#fff;background:"+(att?"#c0392b":"#2c6fb0");
-    banner.textContent = att ? "⚔ Round "+(active+1)+" — YOU ATTACK (2 divisions)" : "🛡 Round "+(active+1)+" — YOU DEFEND (3 divisions)";
-    c.append(banner);
-    c.append(Object.assign(el("div","sm mut"),{textContent: att
-      ? "Send your 2 divisions down the roads. You breach the town if you outnumber the defender on at least one road (a tie on a road is a coin flip)."
-      : "Position your 3 divisions. You hold the town only if you match or beat the attacker on BOTH roads.", style:"text-align:center;margin:0 0 10px"}));
-    const choices = att? AD_ATT : AD_DEF;
-    const rail=el("div"); rail.style.cssText="display:flex;flex-wrap:wrap;gap:10px;justify-content:center";
-    choices.forEach((o,idx)=>{ const btn=el("button"); btn.type="button";
-      btn.style.cssText="display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 14px;border:1.5px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);cursor:pointer;min-width:134px;font:inherit";
-      btn.append(adMiniSplit(o.r[0], o.r[1], att));
-      btn.append(Object.assign(el("div"),{textContent:o.label,style:"font-size:.82rem;font-weight:600;line-height:1.2;text-align:center"}));
-      btn.onmouseenter=()=>{ btn.style.borderColor=att?"#c0392b":"#2c6fb0"; };
-      btn.onmouseleave=()=>{ btn.style.borderColor="var(--line)"; };
-      btn.onclick=()=>{ d.seq[active]=adTok(att,idx); commit(); };
-      rail.append(btn); });
-    c.append(rail);
-    c.append(Object.assign(el("div","sm mut"),{textContent:sc.done+" of "+R+" rounds resolved so far.",style:"text-align:center;margin-top:10px"}));
-  } else if(!bot && sc.done<R){
-    c.append(hintLine("You've made all your choices — waiting for "+esc(partnerName)+" to finish so the last rounds resolve."));
-  } else {
+
+  if(k>=R){
     const tie=sc.me===sc.them, won=sc.me>sc.them;
-    c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:12px",innerHTML:"<b>Match complete.</b> You "+sc.me+", "+esc(partnerName)+" "+sc.them+" — "+(tie?"an even fight":won?"you came out ahead":"your neighbour came out ahead")+"."+(bot?"":" Results appear when your instructor reveals.")}));
+    c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:14px",innerHTML:"<b>Match complete.</b> As the "+(att?"attacker you took the town "+sc.me+" / "+R+" rounds":"defender you held the town "+sc.me+" / "+R+" rounds")+" — "+(tie?"an even fight":won?"you came out ahead":"your neighbour came out ahead")+"."+(bot?"":" Results appear when your instructor reveals.")}));
+  } else if(d.seq[k]==null){
+    // ── placement UI for round k ──
+    c.append(Object.assign(el("div","tinylabel"),{textContent:"Round "+(k+1)+" of "+R+" — place your "+total+" "+(att?"divisions":"units")+" across the two roads",style:"margin-top:16px"}));
+    c.append(Object.assign(el("div","sm mut"),{textContent: att
+      ? "Outnumber the defender on at least one road and you breach the town. A tie on a road is a coin flip."
+      : "Match or beat the attacker on BOTH roads to hold the town. Lose either road and the town falls.",style:"margin:0 0 8px"}));
+    if(!d.plc || d.plcRound!==k){ d.plc={a:0,b:0}; d.plcRound=k; }
+    const placed=d.plc.a+d.plc.b, remaining=total-placed;
+    // forces pool
+    const pool=el("div"); pool.style.cssText="display:flex;align-items:center;gap:8px;margin:6px 0 10px;flex-wrap:wrap";
+    pool.append(Object.assign(el("span","sm mut"),{textContent:"Your forces:"}));
+    for(let u=0;u<total;u++){ const w=el("span"); w.style.cssText="opacity:"+(u<remaining?"1":".22"); w.append(adTroopIcon(att,26)); pool.append(w); }
+    pool.append(Object.assign(el("span","sm mut"),{textContent:remaining>0?(remaining+" left to place"):"all placed — ready",style:"margin-left:4px"}));
+    c.append(pool);
+    // two road lanes
+    const lane=(roadNo)=>{
+      const key=roadNo===1?"a":"b", cnt=d.plc[key];
+      const L=el("div"); L.style.cssText="position:relative;margin:8px 0;padding:12px 14px;border:2px dashed "+rc+";border-radius:16px;background:color-mix(in srgb,"+rc+" 5%,transparent);cursor:"+(remaining>0?"pointer":"default")+";min-height:58px;display:flex;align-items:center;gap:10px";
+      L.append(Object.assign(el("div"),{innerHTML:"🛣️ <b>Road "+roadNo+"</b>",style:"min-width:82px;font-size:.92rem"}));
+      const slot=el("div"); slot.style.cssText="display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1";
+      for(let u=0;u<cnt;u++){ const chip=el("button"); chip.type="button"; chip.title="Tap to remove";
+        chip.style.cssText="border:none;background:none;padding:0;cursor:pointer;line-height:0"; chip.append(adTroopIcon(att,34));
+        chip.onclick=(e)=>{ e.stopPropagation(); d.plc[key]=Math.max(0,d.plc[key]-1); render(); }; slot.append(chip); }
+      if(!cnt) slot.append(Object.assign(el("span","sm mut"),{textContent: remaining>0?"tap here to send a division":"—"}));
+      L.append(slot);
+      if(remaining>0){ L.append(Object.assign(el("span"),{textContent:"＋",style:"font-size:1.4rem;color:"+rc+";font-weight:700"})); }
+      L.onclick=()=>{ if(remaining>0){ d.plc[key]++; render(); } };
+      return L;
+    };
+    c.append(lane(1)); c.append(lane(2));
+    // send / reset
+    const ctr=el("div"); ctr.style.cssText="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap";
+    const send=el("button","btn wide","Send into battle ▶"); send.style.maxWidth="260px"; send.disabled=remaining>0; send.style.opacity=remaining>0?".45":"1";
+    send.onclick=()=>{ d.seq[k]=adTok(att, adSplitIdx(att,d.plc.a)); d.plc=null; commit(); };
+    ctr.append(send);
+    if(placed>0){ const rs=el("button","ghost-btn","↺ Reset"); rs.onclick=()=>{ d.plc={a:0,b:0}; d.plcRound=k; render(); }; ctr.append(rs); }
+    c.append(ctr);
+  } else {
+    // I've placed round k; waiting for my partner before it resolves
+    const w=el("div","note-box"); w.style.cssText="margin-top:16px;border-color:"+rc+";background:color-mix(in srgb,"+rc+" 7%,transparent)";
+    const myr=adPlaceDesc(att, adIdx(d.seq[k]));
+    w.innerHTML="<b>Round "+(k+1)+" — your move is locked in.</b> You put "+myr+". Waiting for <b>"+esc(partnerName)+"</b> to place their "+(att?"defence":"attack")+"… the round resolves the moment they do.";
+    c.append(w);
   }
 
-  // battle graphic for the most recent resolved round
-  let lastI=-1; for(let i=0;i<R;i++){ if(resolve(i)) lastI=i; }
-  if(lastI>=0){ const r=resolve(lastI);
-    c.append(Object.assign(el("div","tinylabel"),{textContent:"Round "+(lastI+1)+" — "+(r.breach?"town breached":"town held")+(r.tie?" (a road came down to a coin flip)":""),style:"margin-top:16px"}));
-    c.append(adBattle(adIdx(r.attTok), adIdx(r.defTok), r.breach)); }
-
-  // history chips
+  // history chips (oldest→newest left→right; newest emphasised via reverse list)
   const rows=[]; for(let i=0;i<R;i++){ const r=resolve(i); if(r) rows.push({i,r}); }
   if(rows.length){
-    c.append(Object.assign(el("div","tinylabel"),{textContent:"Rounds so far (✓ = you won the round)",style:"margin-top:14px"}));
+    c.append(Object.assign(el("div","tinylabel"),{textContent:"Rounds so far (✓ = you won)",style:"margin-top:16px"}));
     const hist=el("div"); hist.style.cssText="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px";
-    rows.slice().reverse().forEach(({i,r})=>{ const chip=el("div");
+    rows.forEach(({i,r})=>{ const chip=el("div");
       chip.style.cssText="font:600 .74rem/1 'IBM Plex Mono',monospace;padding:5px 8px;border-radius:8px;color:#fff;background:"+(r.iWon?"#2e8b57":"#b03030");
       chip.textContent="R"+(i+1)+" "+(r.breach?"🔥":"🛡")+" "+(r.iWon?"✓":"✗"); hist.append(chip); });
     c.append(hist);
@@ -2437,24 +2492,10 @@ function adMatch(c, R, d, opts){
   if(!bot){ const lv=el("button","btn danger","Restart"); lv.style.marginTop="16px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
   else { const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="16px"; lv.onclick=()=>{ d.bot=false; const dk="attackdefend-"+curKey; delete gameDraft[dk]; render(); }; c.append(lv); }
 }
+// human-readable placement, e.g. "2 on Road 1, 0 on Road 2" (for the waiting note)
+function adPlaceDesc(att, idx){ const r=(att?AD_ATT:AD_DEF)[idx].r; return r[0]+" on Road 1, "+r[1]+" on Road 2"; }
 
-/* Tiny two-road schematic for a choice button: dots on Road 1 / Road 2 (red attacker, blue defender). */
-function adMiniSplit(r0, r1, att){
-  const col = att? "#c0392b" : "#2c6fb0", W=118,H=50;
-  const svg=svgEl("svg",{viewBox:"0 0 "+W+" "+H,width:W,height:H});
-  svg.append(svgEl("rect",{x:W-14,y:12,width:11,height:26,rx:2,fill:"var(--line-2)"}));   // town
-  const road=(y,n)=>{ svg.append(svgEl("line",{x1:18,y1:y,x2:W-16,y2:y,stroke:"var(--line)","stroke-width":2,"stroke-dasharray":"4 3"}));
-    for(let k=0;k<n;k++) svg.append(svgEl("circle",{cx:24+k*13,cy:y,r:5,fill:col})); };
-  road(15,r0); road(37,r1);
-  svg.append(svgEl("text",{x:2,y:18,fill:"var(--faint)","font-size":"8","font-family":"IBM Plex Mono"},"1"));
-  svg.append(svgEl("text",{x:2,y:40,fill:"var(--faint)","font-size":"8","font-family":"IBM Plex Mono"},"2"));
-  return svg;
-}
-/* A minimal soldier glyph (head + body) in the given colour. */
-function adSoldier(x,y,col){ const g=svgEl("g",{});
-  g.append(svgEl("circle",{cx:x,cy:y-7,r:4,fill:col}));
-  g.append(svgEl("rect",{x:x-4,y:y-3,width:8,height:13,rx:3,fill:col})); return g; }
-/* The battle scene: two roads, red attackers vs blue defenders, a town at the end.
+/* The battle scene: two roads, red attacker soldiers vs blue defender shields, a town at the end.
    Breach → the town is aflame; held → it flies a green flag. Inline SMIL only. */
 function adBattle(ai, di, breach){
   const A=AD_ATT[ai].r, D=AD_DEF[di].r, W=360,H=210, townX=W-78;
@@ -2465,7 +2506,7 @@ function adBattle(ai, di, breach){
     svg.append(svgEl("rect",{x:8,y:y-15,width:townX-14,height:30,rx:8,fill:"var(--line-2)","fill-opacity":"0.16"}));
     svg.append(svgEl("text",{x:12,y:y-19,fill:"var(--faint)","font-size":"10","font-family":"IBM Plex Mono"},"Road "+(ri+1)));
     const na=A[ri]; for(let k=0;k<na;k++) svg.append(adSoldier(28+k*26, y, "#c0392b"));
-    const nd=D[ri]; for(let k=0;k<nd;k++) svg.append(adSoldier(townX-28-k*24, y, "#2c6fb0"));
+    const nd=D[ri]; for(let k=0;k<nd;k++) svg.append(adShield(townX-28-k*24, y, "#2c6fb0"));
     const win = na>nd?"att":nd>na?"def":"tie";
     svg.append(svgEl("text",{x:(townX-6)/2,y:y+22,"text-anchor":"middle",fill: win==="att"?"#c0392b":win==="def"?"#2c6fb0":"var(--muted)","font-size":"10.5","font-weight":"700","font-family":"IBM Plex Sans"},
       win==="att"?"▶ attacker breaks through":win==="def"?"defender holds":"⚖ tie — coin flip"));
@@ -2721,7 +2762,7 @@ function revealNarr(g){
   if(g==="coord") return "Without a word exchanged, did the class converge on the same answer?";
   if(g==="quatro") return "Which card orderings did the class favour, and did any win more?";
   if(g==="redblack") return "How did the class play each card — and does it match the equilibrium?";
-  if(g==="attackdefend") return "How did the class attack and defend — and how often did the town fall?";
+  if(g==="attackdefend") return "How did the class attack and defend Blotto's town — and how often did it fall?";
   return "How close did the group get to the socially optimal outcome?";
 }
 function analyzeGuess(teacher,list){
@@ -4245,7 +4286,7 @@ function paramEditor(){
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Question 4 splits this pot; the focal answer is half of it. Just Open → students play all four → Reveal (all four results show together)."})); }
   else if(g==="attackdefend"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played","rounds",cf.rounds)); wrap.append(grid);
-    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Two attacker divisions, three defender divisions, two roads. Each pair plays these rounds, swapping attack/defend at the halfway mark (keep it even). Students pair up in a waiting room and choose simultaneously each round; the battle resolves and aggregates on reveal.",style:"margin-top:6px"})); }
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Colonel Blotto: two roads, one town. In each pair one student is dealt the attacker (2 divisions), the other the defender (3) — roles are fixed for the match. They place units each round and, once both commit, the battle resolves in lockstep. Set how many rounds each pair plays; results aggregate on reveal.",style:"margin-top:6px"})); }
   else if(g==="quatro" || g==="redblack"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played","rounds",cf.rounds)); wrap.append(grid);
     if(g==="redblack"){
