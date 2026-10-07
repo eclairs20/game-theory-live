@@ -353,7 +353,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - **Strict lockstep** (`adMatch`): `k` = first round not yet resolved by BOTH sides. You place your
     units for round `k`, your sub saves (`done:false`), then you **wait** ("your move is locked in… waiting
     for <partner>") until the partner places theirs — only then does the round resolve and round `k+1`
-    open. You can never be more than one unresolved round ahead of your partner.
+    open. You can never be more than one unresolved round ahead of your partner. **Restart**
+    (`liveLeaveMatch`) in a live pair match clears **both** sides — your sub AND the partner's own sub
+    (+ `of` pointer, + the pair's `flips`) — so neither reloads stale moves or lingers as a phantom
+    submission, and removing the partner's `of` drops them straight back to the waiting room.
   - Reuses the G5/G6 **lobby/pairing** machinery (`studentPair("attackdefend")` → `pairLobby` →
     `adMatch`), but is a **self-contained** function block (`adMatch`/`adBattle`/`adTroopIcon`/
     `adSoldier`/`adShield`/`adCoin`/`adPlaceDesc`/`analyzeAttackDefend` + the `AD_*`/`ad*` helpers)

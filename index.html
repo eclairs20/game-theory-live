@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-07.003";
+const APP_VERSION = "2026-10-07.004";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -2005,6 +2005,14 @@ async function liveLeaveMatch(mc){
     try{ const ps=(await fb.ref(SUB_DOC(curKey,other)).once("value")).val(); if(ps && ps.proxy) await fb.ref(SUB_DOC(curKey,other)).remove(); }catch(e){}
     try{ await fb.ref(OF_DOC(mc,other)).remove(); }catch(e){}
     try{ if(pid) await fb.ref(PAIR_DOC(mc,pid)+"/rec").remove(); }catch(e){}
+  } else if(other){
+    // Live pair match (G5/G6 live, G7 Colonel Blotto): each player wrote their OWN real sub, so a
+    // restart must also clear the PARTNER's sub + `of` pointer (and any tie coin-flip markers) — else
+    // their moves linger, reload when they re-pair, and still count as a phantom submission. Removing
+    // their `of` also drops them straight back to the waiting room for a clean redo.
+    try{ await fb.ref(SUB_DOC(curKey,other)).remove(); }catch(e){}
+    try{ await fb.ref(OF_DOC(mc,other)).remove(); }catch(e){}
+    try{ if(pid) await fb.ref(PAIR_DOC(mc,pid)+"/flips").remove(); }catch(e){}
   }
   const dk=control.activeGame+"-"+curKey; if(gameDraft[dk]) delete gameDraft[dk];
   render();
