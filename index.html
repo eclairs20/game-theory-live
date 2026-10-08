@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-08.005";
+const APP_VERSION = "2026-10-08.006";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -907,6 +907,8 @@ function guardDb(db){
     set:(...a)=> blocked()?noop():r.set(...a),
     update:(...a)=> blocked()?noop():r.update(...a),
     remove:(...a)=> blocked()?noop():r.remove(...a),
+    transaction:(...a)=> blocked()?Promise.resolve({committed:false}):r.transaction(...a),   // atomic claim (pairing); a no-op (never commits) in read-only view-as-student
+
     onDisconnect:()=>{ const od=r.onDisconnect(); return {
       remove:(...a)=> blocked()?noop():od.remove(...a),
       set:(...a)=> blocked()?noop():od.set(...a),
@@ -1968,7 +1970,12 @@ async function liveJoin(mc){
   try{ const r=fb.ref(LOBBY_DOC(mc,myId)); await r.set({id:myId,name:myName||"Player",guest:!!meGuest,ts:Date.now()}); if(r.onDisconnect) r.onDisconnect().remove(); liveErr=null; }
   catch(e){ liveErr=(e&&e.code)||"write-denied"; render(); }
 }
-async function liveInvite(mc,toId,toName){ try{ await fb.ref(INVITE_DOC(mc,toId)).set({from:myId,fromName:myName||"Player",to:toId,ts:Date.now()}); invSent={to:toId,toName}; render(); }catch(e){ toast("Couldn't invite"); } }
+async function liveInvite(mc,toId,toName){ try{
+  // Only ONE outstanding invite at a time — clear any previous so you can't have two people accept
+  // you at once and end up claimed by both (the red/black double-claim).
+  if(invSent && String(invSent.to)!==String(toId)){ try{ await fb.ref(INVITE_DOC(mc,invSent.to)).remove(); }catch(e){} }
+  await fb.ref(INVITE_DOC(mc,toId)).set({from:myId,fromName:myName||"Player",to:toId,ts:Date.now()}); invSent={to:toId,toName}; render();
+}catch(e){ toast("Couldn't invite"); } }
 async function liveCancelInvite(mc){ if(!invSent) return; try{ await fb.ref(INVITE_DOC(mc,invSent.to)).remove(); }catch(e){} invSent=null; render(); }
 async function liveAccept(mc,fromId,fromName){
   const ids=[String(myId),String(fromId)].sort();          // raw ids (values)
@@ -1978,12 +1985,19 @@ async function liveAccept(mc,fromId,fromName){
   colors[encodeKey(ids[0])]=redFirst?"red":"black"; colors[encodeKey(ids[1])]=redFirst?"black":"red";
   const sw=pickTwoSuits(); suits[encodeKey(ids[0])]=sw[0]; suits[encodeKey(ids[1])]=sw[1];   // G5: a distinct suit each
   names[encodeKey(String(myId))]=myName||"Player"; names[encodeKey(String(fromId))]=fromName||"Player";
+  // Claim BOTH `of` pointers with TRANSACTIONS so a partner can never be grabbed by two people at
+  // once: a transaction commits only if the pointer is still free (or already ours). If the inviter
+  // was claimed by someone else first, we bail cleanly; if WE were, we release the inviter's claim.
+  const claim = path => fb.ref(path).transaction(cur => (cur==null||cur===pid) ? pid : undefined);
   try{
-    await fb.ref(PAIR_DOC(mc,pid)).set({a:ids[0],b:ids[1],colors,suits,names,ts:Date.now()});
-    await fb.ref(OF_DOC(mc,myId)).set(pid);
-    await fb.ref(OF_DOC(mc,fromId)).set(pid);
+    await fb.ref(PAIR_DOC(mc,pid)).set({a:ids[0],b:ids[1],colors,suits,names,ts:Date.now()});   // write first so whoever's `of` lands here can load it immediately
+    const r1 = await claim(OF_DOC(mc,fromId));
+    if(!r1.committed){ toast((fromName||"They")+" just paired with someone else — pick another classmate"); try{ await fb.ref(INVITE_DOC(mc,myId)).remove(); }catch(e){} render(); return; }
+    const r2 = await claim(OF_DOC(mc,myId));
+    if(!r2.committed){ try{ await fb.ref(OF_DOC(mc,fromId)).transaction(cur => cur===pid ? null : undefined); }catch(e){} render(); return; }
     await fb.ref(INVITE_DOC(mc,myId)).remove();
     try{ await fb.ref(LOBBY_DOC(mc,fromId)).remove(); }catch(e){}
+    try{ await fb.ref(LOBBY_DOC(mc,myId)).remove(); }catch(e){}
     invSent=null;
   }catch(e){ toast("Couldn't pair"); }
 }
@@ -2338,13 +2352,16 @@ function pairMatch(c, game, R, d, opts){
    you place your units, then wait for your partner before the round resolves and the
    next one opens. Each player stores only their OWN per-round placement as a
    self-describing token ("A0/A1/A2" attacking, "D0/D1/D2/D3" defending) in `seq`. */
-const AD_ATT = [ {r:[2,0], label:"Both → Road 1"},
+const AD_ROADS = ["A","B"];               // the two roads are named A and B everywhere students see them
+const AD_ATT = [ {r:[2,0], label:"Both → Road A"},
                  {r:[1,1], label:"One on each road"},
-                 {r:[0,2], label:"Both → Road 2"} ];
-const AD_DEF = [ {r:[3,0], label:"All 3 → Road 1"},
-                 {r:[2,1], label:"2 Road 1 · 1 Road 2"},
-                 {r:[1,2], label:"1 Road 1 · 2 Road 2"},
-                 {r:[0,3], label:"All 3 → Road 2"} ];
+                 {r:[0,2], label:"Both → Road B"} ];
+const AD_DEF = [ {r:[3,0], label:"All 3 → Road A"},
+                 {r:[2,1], label:"2 Road A · 1 Road B"},
+                 {r:[1,2], label:"1 Road A · 2 Road B"},
+                 {r:[0,3], label:"All 3 → Road B"} ];
+// the single decisive road (0=A, 1=B) that is a real tie (equal non-zero count) in a tie cell, else -1
+function adTieRoad(ai,di){ const A=AD_ATT[ai].r, D=AD_DEF[di].r; for(let r=0;r<2;r++){ if(A[r]===D[r] && A[r]>0) return r; } return -1; }
 // payoff = attacker's probability of entering the town. rows = attacker idx 0..2, cols = defender idx 0..3.
 const AD_PAYOFF = [ [0,0.5,1,1], [1,0.5,0.5,1], [1,1,0.5,0] ];
 const AD_ATT_OPT = [1/3,1/3,1/3];        // attacker's optimal (maximin) mix
@@ -2502,7 +2519,7 @@ function adMatch(c, R, d, opts){
     const lane=(roadNo)=>{
       const key=roadNo===1?"a":"b", cnt=d.plc[key];
       const L=el("div"); L.style.cssText="position:relative;margin:8px 0;padding:12px 14px;border:2px dashed "+rc+";border-radius:16px;background:color-mix(in srgb,"+rc+" 5%,transparent);cursor:"+(remaining>0?"pointer":"default")+";min-height:58px;display:flex;align-items:center;gap:10px";
-      L.append(Object.assign(el("div"),{innerHTML:"🛣️ <b>Road "+roadNo+"</b>",style:"min-width:82px;font-size:.92rem"}));
+      L.append(Object.assign(el("div"),{innerHTML:"🛣️ <b>Road "+AD_ROADS[roadNo-1]+"</b>",style:"min-width:82px;font-size:.92rem"}));
       const slot=el("div"); slot.style.cssText="display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1";
       for(let u=0;u<cnt;u++){ const chip=el("button"); chip.type="button"; chip.title="Tap to remove";
         chip.style.cssText="border:none;background:none;padding:0;cursor:pointer;line-height:0"; chip.append(adTroopIcon(att,34));
@@ -2530,8 +2547,9 @@ function adMatch(c, R, d, opts){
   } else {
     // both placed and it's a TIE on a road — the attacker flips the coin to resolve it, explicitly
     const mine=d.seq[k], theirs=theirTok(k), attTok=att?mine:theirs, defTok=att?theirs:mine;
+    const tr=adTieRoad(adIdx(attTok), adIdx(defTok));   // which road (A/B) is the decisive tie
     const tieBar=el("div"); tieBar.style.cssText="margin-top:16px;padding:12px 16px;border-radius:14px;text-align:center;color:#8a5a00;background:color-mix(in srgb,#f2a900 20%,transparent);border:1px solid #d9a200;font-weight:700";
-    tieBar.innerHTML="⚖ Round "+(k+1)+" — it's a TIE on a road!<div style='font-weight:600;font-size:.86rem;margin-top:3px'>Both sides are evenly matched where it counts — a coin flip decides whether the town falls.</div>";
+    tieBar.innerHTML="⚖ Round "+(k+1)+" — it's a TIE on Road "+(tr>=0?AD_ROADS[tr]:"?")+"!<div style='font-weight:600;font-size:.86rem;margin-top:3px'>Both sides put the same number on Road "+(tr>=0?AD_ROADS[tr]:"?")+" — a coin flip decides whether the town falls.</div>";
     c.append(tieBar);
     c.append(adBattle(adIdx(attTok), adIdx(defTok), false, true));   // pending = true (no outcome yet)
     const spin=adCoin();
@@ -2558,17 +2576,19 @@ function adMatch(c, R, d, opts){
     c.append(hist);
   }
 
-  if(!bot){ const lv=el("button","btn danger","Restart"); lv.style.marginTop="16px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
-  else { const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="16px"; lv.onclick=()=>{ d.bot=false; const dk="attackdefend-"+curKey; delete gameDraft[dk]; render(); }; c.append(lv); }
+  if(bot){ const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="16px"; lv.onclick=()=>{ d.bot=false; const dk="attackdefend-"+curKey; delete gameDraft[dk]; render(); }; c.append(lv); }
+  else if(k<R){ const lv=el("button","btn danger","Restart"); lv.style.marginTop="16px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
+  // After the final round the Restart button is GONE — the match is over and a stray tap must not be
+  // able to wipe a completed result.
 }
-// human-readable placement, e.g. "2 on Road 1, 0 on Road 2" (for the waiting note)
-function adPlaceDesc(att, idx){ const r=(att?AD_ATT:AD_DEF)[idx].r; return r[0]+" on Road 1, "+r[1]+" on Road 2"; }
+// human-readable placement, e.g. "2 on Road A, 0 on Road B" (for the waiting note)
+function adPlaceDesc(att, idx){ const r=(att?AD_ATT:AD_DEF)[idx].r; return r[0]+" on Road A, "+r[1]+" on Road B"; }
 /* The Colonel Blotto problem statement — the scenario students read before playing. */
 function adScenario(){
   const box=el("div"); box.style.cssText="margin-top:12px;padding:13px 16px;border:1px solid var(--line);border-radius:14px;background:var(--surface)";
   box.append(Object.assign(el("div","tinylabel"),{textContent:"The situation"}));
   box.append(Object.assign(el("div"),{style:"font-size:.93rem;line-height:1.55;color:var(--ink-2);margin-top:2px",innerHTML:
-    "Two roads lead into a town. The <b style='color:#c0392b'>attackers</b> have <b>2 divisions</b>; the <b style='color:#2c6fb0'>defenders</b> have <b>3</b>. Each side decides how to split its divisions across the two roads — both on one road, or spread across the two. On a road, whichever side has <b>more</b> divisions commands it. If the two sides put an <b>equal</b> number on a road, it's a coin toss — half the time the defender holds it, half the time the attackers get through. The attackers <b>enter the town</b> if they get through on <b>either</b> road; the defenders <b>save it</b> only by holding <b>both</b>."}));
+    "Two roads — <b>Road A</b> and <b>Road B</b> — lead into a town. The <b style='color:#c0392b'>attackers</b> have <b>2 divisions</b>; the <b style='color:#2c6fb0'>defenders</b> have <b>3</b>. Each side decides how to split its divisions across the two roads — both on one road, or spread across the two. On a road, whichever side has <b>more</b> divisions commands it. If the two sides put an <b>equal</b> number on a road, it's a coin toss — half the time the defender holds it, half the time the attackers get through. The attackers <b>enter the town</b> if they get through on <b>either</b> road; the defenders <b>save it</b> only by holding <b>both</b>."}));
   return box;
 }
 
@@ -2582,14 +2602,14 @@ function adBattle(ai, di, breach, pending){
   svg.append(svgEl("rect",{x:0,y:H-24,width:W,height:24,fill:"var(--line-2)","fill-opacity":"0.3"}));
   [58,138].forEach((y,ri)=>{
     svg.append(svgEl("rect",{x:8,y:y-15,width:townX-14,height:30,rx:8,fill:"var(--line-2)","fill-opacity":"0.16"}));
-    svg.append(svgEl("text",{x:12,y:y-19,fill:"var(--faint)","font-size":"10","font-family":"IBM Plex Mono"},"Road "+(ri+1)));
+    svg.append(svgEl("text",{x:12,y:y-19,fill:"var(--faint)","font-size":"10","font-family":"IBM Plex Mono"},"Road "+AD_ROADS[ri]));
     const na=A[ri]; for(let k=0;k<na;k++) svg.append(adSoldier(28+k*26, y, "#c0392b"));
     const nd=D[ri]; for(let k=0;k<nd;k++) svg.append(adShield(townX-28-k*24, y, "#2c6fb0"));
     // A road with NO forces on either side (0 vs 0) is definitive — nobody is contesting it, so it's
     // not a coin-flip tie; only an EQUAL non-zero count (e.g. 2 vs 2) is a real tie.
     const win = na>nd?"att" : nd>na?"def" : (na===0?"empty":"tie");
     const col = win==="att"?"#c0392b" : win==="def"?"#2c6fb0" : win==="tie"?"#b8860b" : "var(--faint)";
-    const label = win==="att"?"▶ attacker breaks through" : win==="def"?"defender holds" : win==="tie"?"⚖ tie — coin flip" : "— no forces here —";
+    const label = win==="att"?"▶ attacker breaks through" : win==="def"?"defender holds" : win==="tie"?("⚖ Tie on Road "+AD_ROADS[ri]+" — coin flip") : "— no forces here —";
     svg.append(svgEl("text",{x:(townX-6)/2,y:y+22,"text-anchor":"middle",fill:col,"font-size":"10.5","font-weight":"700","font-family":"IBM Plex Sans"}, label));
   });
   const aflame = breach && !pending;

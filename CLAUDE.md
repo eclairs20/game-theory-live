@@ -249,7 +249,13 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     ♠♥♦♣ red/black), so each player's four cards look like a real suit and whose-is-whose is obvious.
     It also sets the `of/‹enc(id)›` → `pid`
     pointer for both. Each side watches `of/<me>`; when it points at a pid they load the pair and
-    enter the match. Works for **guests** too — matching is by presence, not roster identity. The
+    enter the match. Works for **guests** too — matching is by presence, not roster identity.
+    **Double-claim guard:** `liveAccept` claims BOTH `of` pointers with Firebase **transactions**
+    (commit only if the pointer is still free or already ours), so a partner can never be grabbed by
+    two people at once — if the inviter was claimed first, the acceptor bails cleanly ("just paired
+    with someone else"); if the acceptor was, it releases the inviter's claim. `liveInvite` keeps only
+    ONE outstanding invite (clears the previous), so you can't have two people accept you at once.
+    `guardDb` passes `transaction` through (a no-op that never commits in read-only view-as-student). The
     listeners attach via `ensureLive(mc)` and are torn down by `detachLive()` (which also removes
     your lobby presence) whenever `render()` sees you're no longer on an open pair game.
   - **Live match** (`pairMatch`): the pair is **locked** — no changing partner or colour mid-game;
@@ -358,7 +364,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     bar + `adBattle` scene + a **"Continue to round N ▶"** button — and only once you tap Continue
     (local `d.ack` = last-resolved round index) does the next round's placement appear. So a previous
     round's result is never left sitting above the board you're placing on (`resultCard(i)` is the
-    shared renderer; the match-complete screen shows the final round's result too). **Restart**
+    shared renderer; the match-complete screen shows the final round's result too). After the **final
+    round the Restart button is GONE** (`else if(k<R)`), so a stray tap can't wipe a completed result.
+    The two roads are named **Road A** and **Road B** everywhere (`AD_ROADS`); a tie names its road
+    ("Tie on Road A/B", via `adTieRoad`). **Restart**
     (`liveLeaveMatch`) in a live pair match clears **both** sides — your sub AND the partner's own sub
     (+ `of` pointer, + the pair's `flips`) — so neither reloads stale moves or lingers as a phantom
     submission, and removing the partner's `of` drops them straight back to the waiting room.
