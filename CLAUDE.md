@@ -396,7 +396,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     through — TOWN LOST" / "🛡 Defender held both roads — TOWN SAVED", plus "You won/lost this round");
     `adBattle(attIdx,defIdx,breach)` — a ~360×210 inline-SVG battle scene (red soldiers vs blue shields
     on the two roads, per-road "breaks through / holds / coin flip", a castle that **flames + "🔥 TOWN
-    BREACHED"** or flies a **green flag + "🛡 TOWN HELD"**, SMIL `<animate>`); **interactive placement**
+    BREACHED"** or flies a **green flag + "🛡 TOWN HELD"**, SMIL `<animate>`). A road with **no forces
+    on either side (0 vs 0)** is labelled "— no forces here —", **not** a tie: it's definitive (the
+    outcome matrix already treats it as no breach); only an EQUAL non-zero count (2v2, 1v1) is a real
+    coin-flip tie. Then **interactive placement**
     — two tappable road lanes where you add/remove your units (no multiple-choice buttons), a "forces"
     pool, and a **Send into battle** button enabled only once all units are placed; and win/loss
     history chips. **Practice bot** plays the complementary role from the optimal mix (`adPickOpt`);

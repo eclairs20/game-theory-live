@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-08.004";
+const APP_VERSION = "2026-10-08.005";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -2585,9 +2585,12 @@ function adBattle(ai, di, breach, pending){
     svg.append(svgEl("text",{x:12,y:y-19,fill:"var(--faint)","font-size":"10","font-family":"IBM Plex Mono"},"Road "+(ri+1)));
     const na=A[ri]; for(let k=0;k<na;k++) svg.append(adSoldier(28+k*26, y, "#c0392b"));
     const nd=D[ri]; for(let k=0;k<nd;k++) svg.append(adShield(townX-28-k*24, y, "#2c6fb0"));
-    const win = na>nd?"att":nd>na?"def":"tie";
-    svg.append(svgEl("text",{x:(townX-6)/2,y:y+22,"text-anchor":"middle",fill: win==="att"?"#c0392b":win==="def"?"#2c6fb0":"#b8860b","font-size":"10.5","font-weight":"700","font-family":"IBM Plex Sans"},
-      win==="att"?"▶ attacker breaks through":win==="def"?"defender holds":"⚖ tie — coin flip"));
+    // A road with NO forces on either side (0 vs 0) is definitive — nobody is contesting it, so it's
+    // not a coin-flip tie; only an EQUAL non-zero count (e.g. 2 vs 2) is a real tie.
+    const win = na>nd?"att" : nd>na?"def" : (na===0?"empty":"tie");
+    const col = win==="att"?"#c0392b" : win==="def"?"#2c6fb0" : win==="tie"?"#b8860b" : "var(--faint)";
+    const label = win==="att"?"▶ attacker breaks through" : win==="def"?"defender holds" : win==="tie"?"⚖ tie — coin flip" : "— no forces here —";
+    svg.append(svgEl("text",{x:(townX-6)/2,y:y+22,"text-anchor":"middle",fill:col,"font-size":"10.5","font-weight":"700","font-family":"IBM Plex Sans"}, label));
   });
   const aflame = breach && !pending;
   // town / castle
