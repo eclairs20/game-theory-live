@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-08.003";
+const APP_VERSION = "2026-10-08.004";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -2217,7 +2217,7 @@ function pairLobby(c, game, mc, R, d){
     b.onclick=()=>{ if(!sel) liveInvite(mc,p.id,p.name); }; list.append(b); });
   wr.append(list);
   const botB=el("button","pair-name bot","🤖 Practice bot — play solo"); botB.style.marginTop="12px";
-  botB.onclick=()=>{ ["seq","piles","adBot","botSeq","botPiles","flips","plc","plcRound","role","_loaded","_build","suit","botSuit","color"].forEach(k=>delete d[k]); d.bot=true; render(); }; wr.append(botB);   // start a clean bot game
+  botB.onclick=()=>{ ["seq","piles","adBot","botSeq","botPiles","flips","plc","plcRound","role","_loaded","_build","suit","botSuit","color","ack"].forEach(k=>delete d[k]); d.bot=true; render(); }; wr.append(botB);   // start a clean bot game
   c.append(wr);
   c.append(liveCount());
 }
@@ -2454,16 +2454,6 @@ function adMatch(c, R, d, opts){
   head.append(Object.assign(el("div"),{innerHTML:"You are the <b style='color:"+rc+"'>"+(att?"ATTACKER":"DEFENDER")+"</b> — "+total+" "+(att?"divisions":"divisions to defend")+"<div style='font-size:.82rem;color:var(--muted);margin-top:2px'>vs <b>"+esc(partnerName)+"</b>, the "+(att?"Defender":"Attacker")+" · "+R+" rounds</div>"}));
   c.append(head);
   c.append(scoreboard("attackdefend", {me:sc.me,them:sc.them}, partnerName+(att?" (Def)":" (Att)")));
-  if(k===0) c.append(adScenario());   // the situation — shown at the start (and on a refresh into round 1)
-
-  // most-recent resolved round → explicit winner headline + battle scene
-  if(k>0){ const li=k-1, r=resolve(li);
-    const won=r.iWon, line = r.breach ? "Attacker broke through — TOWN LOST" : "Defender held both roads — TOWN SAVED";
-    const bar=el("div"); bar.style.cssText="margin:14px 0 2px;padding:10px 14px;border-radius:12px;text-align:center;color:#fff;font-weight:800;background:"+(r.breach?"#c0392b":"#2e8b57");
-    bar.innerHTML=(r.breach?"🔥 ":"🛡 ")+"Round "+(li+1)+": "+line+"<div style='font-weight:600;font-size:.84rem;opacity:.95;margin-top:2px'>"+(won?"You won this round":"You lost this round")+(r.tie?" · a tied road came down to a coin flip":"")+"</div>";
-    c.append(bar);
-    c.append(adBattle(adIdx(r.attTok), adIdx(r.defTok), r.breach));
-  }
 
   const commit=()=>{
     const done = d.seq.every(x=>x!=null);
@@ -2471,12 +2461,31 @@ function adMatch(c, R, d, opts){
     if(done && bot) saveBot({ seq:d.adBot.join(","), mode:"ad" });
     render();
   };
+  // Explicit result card for one resolved round: winner callout + battle scene.
+  const resultCard=(li)=>{ const r=resolve(li); if(!r) return;
+    const bar=el("div"); bar.style.cssText="margin:14px 0 2px;padding:10px 14px;border-radius:12px;text-align:center;color:#fff;font-weight:800;background:"+(r.breach?"#c0392b":"#2e8b57");
+    bar.innerHTML=(r.breach?"🔥 ":"🛡 ")+"Round "+(li+1)+": "+(r.breach?"Attacker broke through — TOWN LOST":"Defender held both roads — TOWN SAVED")+"<div style='font-weight:600;font-size:.84rem;opacity:.95;margin-top:2px'>"+(r.iWon?"You won this round":"You lost this round")+(r.tie?" · a tied road came down to a coin flip":"")+"</div>";
+    c.append(bar); c.append(adBattle(adIdx(r.attTok), adIdx(r.defTok), r.breach)); };
+
+  // One screen at a time: after a round resolves, show ITS result (with a Continue button) on its own;
+  // only once acknowledged does the next round's placement appear — so a previous round's result is
+  // never left sitting above the board you're placing on.
+  const lastRes = k>0 ? k-1 : -1;
+  const needAck = lastRes>=0 && d.ack!==lastRes && k<R;
+  if(k===0) c.append(adScenario());   // the situation — shown at the start (and on a refresh into round 1)
 
   if(k>=R){
+    resultCard(R-1);                   // the final round's result
     const tie=sc.me===sc.them, won=sc.me>sc.them;
     c.append(Object.assign(el("div","note-box teal"),{style:"margin-top:14px",innerHTML:"<b>Match complete.</b> As the "+(att?"attacker you took the town "+sc.me+" / "+R+" rounds":"defender you held the town "+sc.me+" / "+R+" rounds")+" — "+(tie?"an even fight":won?"you came out ahead":"your neighbour came out ahead")+"."+(bot?"":" Results appear when your instructor reveals.")}));
+  } else if(needAck){
+    // result of the round that just resolved — shown alone until the player taps Continue
+    resultCard(lastRes);
+    const cont=el("button","btn wide","Continue to round "+(k+1)+" ▶"); cont.style.cssText="margin-top:12px;max-width:300px";
+    cont.onclick=()=>{ d.ack=lastRes; render(); };
+    c.append(cont);
   } else if(d.seq[k]==null){
-    // ── placement UI for round k ──
+    // ── placement UI for round k (clean — no previous result on screen) ──
     c.append(Object.assign(el("div","tinylabel"),{textContent:"Round "+(k+1)+" of "+R+" — place your "+total+" "+(att?"divisions":"units")+" across the two roads",style:"margin-top:16px"}));
     c.append(Object.assign(el("div","sm mut"),{textContent: att
       ? "Outnumber the defender on at least one road and you breach the town. A tie on a road is a coin flip."

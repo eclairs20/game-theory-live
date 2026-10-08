@@ -353,7 +353,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - **Strict lockstep** (`adMatch`): `k` = first round not yet resolved by BOTH sides. You place your
     units for round `k`, your sub saves (`done:false`), then you **wait** ("your move is locked in… waiting
     for <partner>") until the partner places theirs — only then does the round resolve and round `k+1`
-    open. You can never be more than one unresolved round ahead of your partner. **Restart**
+    open. You can never be more than one unresolved round ahead of your partner.
+    **One screen at a time:** when a round resolves it shows its result on its own — the winner callout
+    bar + `adBattle` scene + a **"Continue to round N ▶"** button — and only once you tap Continue
+    (local `d.ack` = last-resolved round index) does the next round's placement appear. So a previous
+    round's result is never left sitting above the board you're placing on (`resultCard(i)` is the
+    shared renderer; the match-complete screen shows the final round's result too). **Restart**
     (`liveLeaveMatch`) in a live pair match clears **both** sides — your sub AND the partner's own sub
     (+ `of` pointer, + the pair's `flips`) — so neither reloads stale moves or lingers as a phantom
     submission, and removing the partner's `of` drops them straight back to the waiting room.
