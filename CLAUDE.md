@@ -258,6 +258,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     `guardDb` passes `transaction` through (a no-op that never commits in read-only view-as-student). The
     listeners attach via `ensureLive(mc)` and are torn down by `detachLive()` (which also removes
     your lobby presence) whenever `render()` sees you're no longer on an open pair game.
+    **Waiting-room liveness:** the realtime `.on()` listeners get throttled/dropped on a backgrounded
+    phone tab, so a classmate joining or an invite arriving wouldn't surface without a page refresh. A
+    **5s heartbeat** (`liveTick`) re-asserts presence AND actively **re-polls** the lobby/invite/pair
+    (`livePoll`, `.once()` reads) as a safety net; a `visibilitychange` hook re-syncs the instant the
+    tab regains focus; and the lobby has a manual **↻ Refresh** button. All three update the globals and
+    re-render (or enter the match if `of/<me>` now points at a pid) without a reload.
   - **Live match** (`pairMatch`): the pair is **locked** — no changing partner or colour mid-game;
     an explicit **Leave match** clears your sub + `of` pointer and marks the pair `ended` (the
     partner is offered "back to the waiting room"). Play is **strictly sequential** — only the

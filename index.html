@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-08.006";
+const APP_VERSION = "2026-10-08.007";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1941,7 +1941,7 @@ const LOBBY_DOC = (mc,id)=> LIVE_ROOT(mc)+"/lobby/"+encodeKey(id);
 const INVITE_DOC = (mc,id)=> LIVE_ROOT(mc)+"/invite/"+encodeKey(id);   // invite addressed TO id
 const OF_DOC = (mc,id)=> LIVE_ROOT(mc)+"/of/"+encodeKey(id);           // id → pairId
 const PAIR_DOC = (mc,pid)=> LIVE_ROOT(mc)+"/pairs/"+pid;
-let liveCtx=null, lobby={}, invIn=null, invSent=null, myPairId=null, pairData=null, _pairRef=null, _hbT=null, liveErr=null;
+let liveCtx=null, lobby={}, invIn=null, invSent=null, myPairId=null, pairData=null, _pairRef=null, _hbT=null, liveErr=null, _liveVisHook=false;
 function attachLive(mc){
   liveCtx=mc; lobby={}; invIn=null; myPairId=null; pairData=null; _pairRef=null; liveErr=null;
   fb.ref(LIVE_ROOT(mc)+"/lobby").on("value", s=>{ lobby=s.val()||{}; liveErr=null; render(); }, e=>{ liveErr=(e&&e.code)||"read-denied"; render(); });
@@ -1949,7 +1949,34 @@ function attachLive(mc){
   fb.ref(OF_DOC(mc,myId)).on("value", s=>{ onMyPair(mc, s.val()); }, e=>{});
   liveJoin(mc);
   if(_hbT) clearInterval(_hbT);
-  _hbT=setInterval(()=>{ if(liveCtx===mc && !myPairId){ try{ fb.ref(LOBBY_DOC(mc,myId)+"/ts").set(Date.now()); }catch(e){} } }, 20000);
+  // Re-assert presence AND actively re-poll the lobby/invite/pair every few seconds. On a phone the
+  // realtime websocket gets throttled or dropped when the tab is backgrounded / the screen locks, so
+  // a classmate joining or an invite arriving may not fire the `.on()` listener until a manual
+  // refresh. This poll is the safety net that surfaces it within a few seconds without a reload.
+  _hbT=setInterval(()=>{ if(liveCtx===mc && !myPairId){ liveTick(mc); } }, 5000);
+  if(!_liveVisHook){ _liveVisHook=true; try{ document.addEventListener("visibilitychange",()=>{
+    if(!document.hidden && liveCtx && !myPairId){ liveTick(liveCtx); } }); }catch(e){} }
+}
+/* One waiting-room heartbeat: re-assert my presence (re-creating it if a flaky disconnect dropped it),
+   then poll the lobby/invite/pair so the list and incoming invites stay live without a page refresh. */
+async function liveTick(mc){
+  try{ await fb.ref(LOBBY_DOC(mc,myId)).update({id:myId,name:myName||"Player",guest:!!meGuest,ts:Date.now()}); }catch(e){}
+  livePoll(mc);
+}
+/* Fallback poll for the waiting room: read the lobby, my invite and my pair pointer directly, in case
+   the realtime listeners were asleep (backgrounded tab / dropped socket). Updates the globals and
+   re-renders, or enters the match if a pair now points at me. */
+async function livePoll(mc){
+  try{
+    const [lob,inv,of]=await Promise.all([
+      fb.ref(LIVE_ROOT(mc)+"/lobby").once("value"),
+      fb.ref(INVITE_DOC(mc,myId)).once("value"),
+      fb.ref(OF_DOC(mc,myId)).once("value") ]);
+    if(liveCtx!==mc) return;
+    lobby=lob.val()||{}; invIn=inv.val()||null; liveErr=null;
+    const pid=of.val()||null;
+    if(pid && pid!==myPairId){ onMyPair(mc, pid); } else render();
+  }catch(e){}
 }
 function onMyPair(mc, pid){
   if(_pairRef){ try{ fb.ref(_pairRef).off(); }catch(e){} _pairRef=null; }
@@ -2215,8 +2242,12 @@ function pairLobby(c, game, mc, R, d){
     er.innerHTML="<b>Waiting room can't connect.</b> Your presence couldn't be saved (<code>"+esc(String(liveErr))+"</code>) — usually the Firebase rules need re-publishing to allow the <code>live</code> node. Until then, pairing won't work; the practice bot below still does.";
     wr.append(er);
   }
-  wr.append(tinyLabel("Waiting room — tap a classmate to invite them"));
-  wr.append(Object.assign(el("div","sm mut"),{textContent:"You're here as "+(myName||"Player")+(meGuest?" (guest)":"")+". You won't see your own name below."}));
+  const hdr=el("div"); hdr.style.cssText="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap";
+  hdr.append(tinyLabel("Waiting room — tap a classmate to invite them"));
+  const rfr=el("button","ghost-btn","↻ Refresh"); rfr.style.cssText="padding:4px 12px;font-size:.84rem";
+  rfr.onclick=()=>{ if(liveCtx) liveTick(liveCtx); else render(); }; hdr.append(rfr);
+  wr.append(hdr);
+  wr.append(Object.assign(el("div","sm mut"),{textContent:"You're here as "+(myName||"Player")+(meGuest?" (guest)":"")+". Classmates and invites appear automatically — tap Refresh if someone's missing."}));
   if(invSent){
     const s=el("div","note-box teal"); s.style.margin="8px 0";
     s.innerHTML="Waiting for <b>"+esc(invSent.toName)+"</b> to accept… ";
