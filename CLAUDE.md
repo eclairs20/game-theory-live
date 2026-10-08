@@ -397,9 +397,11 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     ? null : mySub()`, and the lobby "Practice bot" button resets the draft's play-state. Otherwise a
     prior sub at this roundKey reloads as your moves "already placed", so the bot plays against your old
     submission and every round resolves at once (the reported solo-vs-bot bug).
-  - `analyzeAttackDefend` (reveal) counts the whole-class **attacker mix** (3 bars vs optimal
-    33/33/33) and **defender mix** (4 bars vs optimal 17/33/33/17) straight from the token prefixes
-    (no pairing needed), and the **breach rate** from `mutualPairs` round-aligned (stat tiles:
+  - `analyzeAttackDefend` (reveal) counts the whole-class **attacker mix** and **defender mix** from
+    the token prefixes (no pairing needed), each shown as **two bar charts side by side on a shared
+    scale** (`grid-even`): the class mix (red/blue) next to the **Nash (optimal) mix** (gold bars —
+    attacker 33/33/33, defender 17/33/33/17), so the gap from equilibrium reads directly. Plus the
+    **breach rate** from `mutualPairs` round-aligned (stat tiles:
     rounds, town breached %, town held %, **game value 67%**), a lesson note, and a `pairingsCard` +
     `orphanWarning`. `subValue` renders `[tokens] vs partner`; `paramEditor` exposes **Rounds played**.
 

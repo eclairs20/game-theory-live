@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-08.001";
+const APP_VERSION = "2026-10-08.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -2615,15 +2615,25 @@ function analyzeAttackDefend(list){
   );
   wrap.append(tiles);
 
-  const attCard=el("div","chart-card"); attCard.append(Object.assign(el("h3"),{textContent:"How the class ATTACKED ("+attN+" choices)"}));
-  attCard.append(barChart(AD_ATT.map((o,i)=>({label:o.label,value:attN?Math.round(1000*attCnt[i]/attN)/10:0,color:"#c0392b"})), Math.max(50,...attCnt.map(v=>attN?100*v/attN:0)), false, "%"));
-  attCard.append(Object.assign(el("div","cap"),{textContent:"Optimal attacker mix: 33% / 33% / 33% — spread evenly across the three splits."}));
-  wrap.append(attCard);
-
-  const defCard=el("div","chart-card"); defCard.append(Object.assign(el("h3"),{textContent:"How the class DEFENDED ("+defN+" choices)"}));
-  defCard.append(barChart(AD_DEF.map((o,i)=>({label:o.label,value:defN?Math.round(1000*defCnt[i]/defN)/10:0,color:"#2c6fb0"})), Math.max(50,...defCnt.map(v=>defN?100*v/defN:0)), false, "%"));
-  defCard.append(Object.assign(el("div","cap"),{textContent:"Optimal defender mix: 17% / 33% / 33% / 17% — favour the two balanced splits; rarely stack all three on one road."}));
-  wrap.append(defCard);
+  // Class mix vs the Nash (optimal) mix, as bar charts SIDE BY SIDE on a shared scale so the gap is
+  // read directly — the whole lesson ("randomise toward the equilibrium") is in how far the coloured
+  // class bars sit from the gold Nash bars.
+  const mixCard=(title, opts, cnt, N, classCol, optVec, caption)=>{
+    const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:title}));
+    const classBars=opts.map((o,i)=>({label:o.label, value:N?Math.round(1000*cnt[i]/N)/10:0, color:classCol}));
+    const nashBars =opts.map((o,i)=>({label:o.label, value:Math.round(1000*optVec[i])/10, color:"var(--gold)"}));
+    const mx=Math.max(50, ...classBars.map(b=>b.value), ...nashBars.map(b=>b.value));   // shared scale → comparable
+    const row=el("div","grid-even");
+    const cCol=el("div"); cCol.append(tinyLabel("Class mix"+(N?" — "+N+" choices":"")), barChart(classBars, mx, false, "%"));
+    const nCol=el("div"); nCol.append(tinyLabel("Nash (optimal) mix"), barChart(nashBars, mx, false, "%"));
+    row.append(cCol, nCol); card.append(row);
+    card.append(Object.assign(el("div","cap"),{textContent:caption}));
+    return card;
+  };
+  wrap.append(mixCard("How the class ATTACKED", AD_ATT, attCnt, attN, "#c0392b", AD_ATT_OPT,
+    "Nash: 33% / 33% / 33% — spread evenly across the three splits. The further the red bars sit from the gold, the more exploitable the class was."));
+  wrap.append(mixCard("How the class DEFENDED", AD_DEF, defCnt, defN, "#2c6fb0", AD_DEF_OPT,
+    "Nash: 17% / 33% / 33% / 17% — favour the two balanced splits, rarely stack all three on one road. Gaps from the gold bars are where the defence leaked."));
 
   const note=el("div","note-box"); note.style.marginTop="4px";
   note.innerHTML="<b>The lesson.</b> Neither side has a safe pure choice — any fixed split is exploitable once your opponent guesses it. The equilibrium is to <b>randomise</b>: the attacker mixes the three splits equally (⅓ each), the defender favours the two balanced splits (⅓ each) over stacking all three on one road (⅙ each). Under optimal play the town falls <b>two times in three</b> (game value = ⅔) — the attacker's freedom to pick either road beats the defender's extra division. Out-thinking your neighbour round by round is what the optimal mix protects against.";
