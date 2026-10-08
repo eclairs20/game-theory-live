@@ -392,7 +392,11 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     pool, and a **Send into battle** button enabled only once all units are placed; and win/loss
     history chips. **Practice bot** plays the complementary role from the optimal mix (`adPickOpt`);
     `saveBot` writes its synthetic opponent (`mode:"ad"`, `seq`). Commit is
-    `savePair({partner,partnerName,seq,mode:"ad"},done)`.
+    `savePair({partner,partnerName,seq,mode:"ad"},done)`. A **bot game is a fresh throwaway** — it
+    **never resumes a persisted submission**: both `adMatch` and `pairMatch` set `cur = (bot||practice)
+    ? null : mySub()`, and the lobby "Practice bot" button resets the draft's play-state. Otherwise a
+    prior sub at this roundKey reloads as your moves "already placed", so the bot plays against your old
+    submission and every round resolves at once (the reported solo-vs-bot bug).
   - `analyzeAttackDefend` (reveal) counts the whole-class **attacker mix** (3 bars vs optimal
     33/33/33) and **defender mix** (4 bars vs optimal 17/33/33/17) straight from the token prefixes
     (no pairing needed), and the **breach rate** from `mutualPairs` round-aligned (stat tiles:

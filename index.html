@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-07.005";
+const APP_VERSION = "2026-10-08.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -2216,12 +2216,12 @@ function pairLobby(c, game, mc, R, d){
     b.onclick=()=>{ if(!sel) liveInvite(mc,p.id,p.name); }; list.append(b); });
   wr.append(list);
   const botB=el("button","pair-name bot","🤖 Practice bot — play solo"); botB.style.marginTop="12px";
-  botB.onclick=()=>{ d.bot=true; render(); }; wr.append(botB);
+  botB.onclick=()=>{ ["seq","piles","adBot","botSeq","botPiles","flips","plc","plcRound","role","_loaded","_build","suit","botSuit","color"].forEach(k=>delete d[k]); d.bot=true; render(); }; wr.append(botB);   // start a clean bot game
   c.append(wr);
   c.append(liveCount());
 }
 function pairMatch(c, game, R, d, opts){
-  const {partner, partnerName, myColor, mc, bot, practice, onExit}=opts, cur=practice?null:mySub();
+  const {partner, partnerName, myColor, mc, bot, practice, onExit}=opts, cur=(practice||bot)?null:mySub();   // bot/practice games never resume a persisted sub
   // my moves store
   if(game==="redblack"){
     if(cur && d._loaded!==true && cur.seq){ d.seq=String(cur.seq).split(",").map(x=>{x=x.trim();return x===""?undefined:x;}); }
@@ -2404,7 +2404,10 @@ function adCoin(){
 
 function adMatch(c, R, d, opts){
   const {partner, partnerName, mc, bot}=opts;
-  const cur=mySub();
+  // A practice-bot game is a fresh throwaway — never resume a persisted submission (a prior real or
+  // bot game at this roundKey). Loading it would start the match with your old moves already placed,
+  // so the bot "plays against your previous submission" and every round resolves at once.
+  const cur=bot?null:mySub();
   if(cur && d._loaded!==true && cur.seq){ d.seq=String(cur.seq).split(",").map(x=>{x=x.trim();return x===""?undefined:x;}); }
   if(!Array.isArray(d.seq)) d.seq=[]; d.seq.length=R; d._loaded=true;
   const a = bot? String(myId) : String(pairData.a), b = bot? ("bot:"+myId) : String(pairData.b);
