@@ -359,8 +359,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     submission, and removing the partner's `of` drops them straight back to the waiting room.
   - Reuses the G5/G6 **lobby/pairing** machinery (`studentPair("attackdefend")` → `pairLobby` →
     `adMatch`), but is a **self-contained** function block (`adMatch`/`adBattle`/`adTroopIcon`/
-    `adSoldier`/`adShield`/`adCoin`/`adPlaceDesc`/`analyzeAttackDefend` + the `AD_*`/`ad*` helpers)
-    that does **not** touch `pairMatch`, so the card games can't regress. **Live-only** (`wantLive`).
+    `adSoldier`/`adShield`/`adCoin`/`adScenario`/`adPlaceDesc`/`analyzeAttackDefend` + the `AD_*`/`ad*`
+    helpers) that does **not** touch `pairMatch`, so the card games can't regress. **Live-only**
+    (`wantLive`). The full problem statement (`adScenario` — "The situation": two roads, 2 attackers /
+    3 defenders, more-commands-the-road, ties a coin toss, attackers win on either road vs defenders
+    must hold both) shows in the lobby and at the start of a match (cursor `k===0`, so it survives a
+    refresh straight into round 1).
   - Each player stores only their **own** per-round placement as a **self-describing token** in field
     `seq` (comma-joined): `"A0/A1/A2"` attacking, `"D0/D1/D2/D3"` defending (index via
     `adSplitIdx(att,road1count)`). A round resolves once both tokens exist and are one attacker + one

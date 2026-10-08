@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-08.002";
+const APP_VERSION = "2026-10-08.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -2186,6 +2186,7 @@ function pairLobby(c, game, mc, R, d){
         ? "Pair up, then each hand tap the card you played. We score each hand live."
         : "Pair up, then each hand tap your pile order. We work out who won, live.",
       "Playing with real cards at your desk? Still pair up here and record each hand for live scoring."]));
+  if(game==="attackdefend") c.append(adScenario());
   const wr=el("div","lobby"); wr.style.marginTop="14px";
   if(invIn){
     const inv=el("div","invite-in");
@@ -2453,6 +2454,7 @@ function adMatch(c, R, d, opts){
   head.append(Object.assign(el("div"),{innerHTML:"You are the <b style='color:"+rc+"'>"+(att?"ATTACKER":"DEFENDER")+"</b> — "+total+" "+(att?"divisions":"divisions to defend")+"<div style='font-size:.82rem;color:var(--muted);margin-top:2px'>vs <b>"+esc(partnerName)+"</b>, the "+(att?"Defender":"Attacker")+" · "+R+" rounds</div>"}));
   c.append(head);
   c.append(scoreboard("attackdefend", {me:sc.me,them:sc.them}, partnerName+(att?" (Def)":" (Att)")));
+  if(k===0) c.append(adScenario());   // the situation — shown at the start (and on a refresh into round 1)
 
   // most-recent resolved round → explicit winner headline + battle scene
   if(k>0){ const li=k-1, r=resolve(li);
@@ -2552,6 +2554,14 @@ function adMatch(c, R, d, opts){
 }
 // human-readable placement, e.g. "2 on Road 1, 0 on Road 2" (for the waiting note)
 function adPlaceDesc(att, idx){ const r=(att?AD_ATT:AD_DEF)[idx].r; return r[0]+" on Road 1, "+r[1]+" on Road 2"; }
+/* The Colonel Blotto problem statement — the scenario students read before playing. */
+function adScenario(){
+  const box=el("div"); box.style.cssText="margin-top:12px;padding:13px 16px;border:1px solid var(--line);border-radius:14px;background:var(--surface)";
+  box.append(Object.assign(el("div","tinylabel"),{textContent:"The situation"}));
+  box.append(Object.assign(el("div"),{style:"font-size:.93rem;line-height:1.55;color:var(--ink-2);margin-top:2px",innerHTML:
+    "Two roads lead into a town. The <b style='color:#c0392b'>attackers</b> have <b>2 divisions</b>; the <b style='color:#2c6fb0'>defenders</b> have <b>3</b>. Each side decides how to split its divisions across the two roads — both on one road, or spread across the two. On a road, whichever side has <b>more</b> divisions commands it. If the two sides put an <b>equal</b> number on a road, it's a coin toss — half the time the defender holds it, half the time the attackers get through. The attackers <b>enter the town</b> if they get through on <b>either</b> road; the defenders <b>save it</b> only by holding <b>both</b>."}));
+  return box;
+}
 
 /* The battle scene: two roads, red attacker soldiers vs blue defender shields, a town at the end.
    Breach → the town is aflame; held → it flies a green flag. `pending` (a tie awaiting its coin
