@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-09.002";
+const APP_VERSION = "2026-10-09.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -682,6 +682,15 @@ const curMSection = ()=>{
 const roundKey = (g,r)=> "S"+curSession()+curMSection()+"-"+g+"-"+r;         // e.g. "S1A-pd-1" or "S1-pd-1"
 /* Split a roundKey back into its parts (inverse of roundKey). */
 function parseRoundKey(rk){ const m=/^S(\d+)([A-Za-z]*)-(.+)-(\d+)$/.exec(String(rk||"")); return m? {session:+m[1], section:m[2]||"", game:m[3], round:+m[4]} : null; }
+/* An EXTRA (unscheduled) class between S8 and S9 is shown as "S8.5" but stored as the integer
+   1085 (1000 + 10·after + k): the session lives inside every record key, live-room name and
+   roll-call key, and Firebase keys can't contain ".". The label is derived from the number alone,
+   so it never depends on the schedule. Regular sessions stay plain integers 1..99. */
+const isExtraSess = n => +n>=1000;
+const extraCode = (after,k)=> 1000+10*after+k;
+function sessLabel(n){ n=+n; return isExtraSess(n) ? "S"+Math.floor((n-1000)/10)+"."+(n%10) : "S"+n; }
+/* Chronological order of sessions: S8 < S8.5 < S8.6 < S9. */
+function sessOrd(n){ n=+n; return isExtraSess(n) ? Math.floor((n-1000)/10)+(n%10)/10 : n; }
 /* Course-level student-hub settings (instructor-controlled, stored in control.hub;
    everything defaults OFF so nothing changes until the instructor turns it on). */
 function hubCfg(){ return (control&&control.hub)||{}; }
@@ -709,7 +718,7 @@ const GAME_ORDER = Object.keys(GAMES);
    game names interleaving across meetings. Takes anything with {session, section, game, round}. */
 function meetingCmp(a,b){
   return (GAME_ORDER.indexOf(a.game)-GAME_ORDER.indexOf(b.game))
-      || (a.session-b.session) || (a.section<b.section?-1:a.section>b.section?1:0) || (a.round-b.round);
+      || (sessOrd(a.session)-sessOrd(b.session)) || (a.section<b.section?-1:a.section>b.section?1:0) || (a.round-b.round);
 }
 /* Labels for a set of meetings; the round is shown only when the same game+session+section
    has more than one round in the set (so single-round meetings stay uncluttered but repeated
@@ -719,7 +728,7 @@ function meetingLabels(list){
   list.forEach(m=>{ const k=m.game+"|"+m.session+"|"+m.section; (groups[k]||(groups[k]={}))[m.round]=1; });
   const out={};
   list.forEach(m=>{ const k=m.game+"|"+m.session+"|"+m.section; const multi=Object.keys(groups[k]).length>1;
-    out[m.rk]=((GAMES[m.game]||{}).name||m.game)+" · S"+m.session+(m.section?"."+m.section:"")+(multi?" · R"+m.round:""); });
+    out[m.rk]=((GAMES[m.game]||{}).name||m.game)+" · "+sessLabel(m.session)+(m.section?"."+m.section:"")+(multi?" · R"+m.round:""); });
   return out;
 }
 /* Manual roll-call attendance, stored in control.attend so it's instructor-writable and
@@ -748,15 +757,25 @@ function attendSessions(sec){
   Object.keys(attendMap()).forEach(mk=>{ const pk=parseAttendKey(mk); if(!pk) return;
     if((pk.section||"")!==(sec||"")) return;
     const a=attendMap()[mk]; if(a && Object.keys(a).length) set.add(pk.session); });
-  return [...set].sort((a,b)=>a-b);
+  return [...set].sort((a,b)=>sessOrd(a)-sessOrd(b));
 }
-/* Session numbers 1..N to show in the all-sessions grid — covers every taken, scheduled or
-   current session so the instructor can tick ahead or back-fill. */
+/* Every session number known for a section — scheduled (its own or a shared row), roll call taken,
+   or games played there. Extra classes (S8.5) included. */
+function knownSessions(sec){
+  const set=new Set();
+  schedule.forEach(x=>{ if(!x.section || !sec || x.section===sec) set.add(x.session); });
+  attendSessions(sec).forEach(s=>set.add(s));
+  Object.values(allSubs).forEach(s=>{ if(s && s.session!=null && (!sec || String(s.msection||"").toUpperCase()===sec)) set.add(+s.session); });
+  return set;
+}
+/* Columns for the all-sessions grid: every regular session 1..N (so the instructor can tick ahead
+   or back-fill) plus any extra classes, in date order — S8, S8.5, S9 — never 1..1085. */
 function gridSessions(sec){
-  let mx=curSession();
-  attendSessions(sec).forEach(s=>{ if(s>mx) mx=s; });
-  schedule.forEach(x=>{ if((!x.section||x.section===sec) && x.session>mx) mx=x.session; });
-  const out=[]; for(let s=1;s<=mx;s++) out.push(s); return out;
+  const known=knownSessions(sec); let mx=0;
+  known.forEach(s=>{ if(!isExtraSess(s) && s>mx) mx=s; });
+  const out=[]; for(let s=1;s<=mx;s++) out.push(s);
+  known.forEach(s=>{ if(isExtraSess(s)) out.push(s); });
+  return out.sort((a,b)=>sessOrd(a)-sessOrd(b));
 }
 /* Who *submitted a game* in each meeting — a read-only overlay for roll call. It NEVER writes to
    the register; the instructor's ticks stay the single source of truth. Maps meetingKey
@@ -845,7 +864,7 @@ function parseSchedule(text){
     let date=null, session=null, section="";
     toks.forEach(t=>{ const d=normDate(t);
       if(d){ if(!date) date=d; return; }
-      let sm=/^S?(\d{1,2})$/i.exec(t); if(sm && session==null){ session=parseInt(sm[1],10); return; }
+      let sm=/^S?(\d{1,2})(?:\.([1-9]))?$/i.exec(t); if(sm && session==null){ session=sm[2]?extraCode(+sm[1],+sm[2]):parseInt(sm[1],10); return; }   // "S8.5" = an extra class
       if(/^[A-Za-z]$/.test(t) && !section){ section=t.toUpperCase(); } });
     if(!date || session==null) continue;
     const key=date+"|"+section; const row={date,session,section};
@@ -856,6 +875,116 @@ function parseSchedule(text){
 }
 async function writeSchedule(list){ try{ await fb.ref(SCHEDULE_PATH()).set(list); return true; }catch(e){ toast("Couldn't save schedule"); return false; } }
 async function removeSchedule(){ try{ await fb.ref(SCHEDULE_PATH()).remove(); toast("Schedule cleared"); }catch(e){} }
+
+/* ── Automatic session. The SCHEDULE is the single source of truth for which session a date is.
+   Games (whenever submissions open) and roll call each look up today's row for their section; neither
+   reads the other's state, and there's no session stepper to forget. An unscheduled class day asks once
+   "which class is this?" and saves the answer into the schedule, so both then agree. ── */
+const rowAppliesTo = (r, sec)=> !r.section || !sec || r.section===sec;
+/* The schedule row for (date, section): a row naming this section beats a shared (section-less) one. */
+function schedRowOn(date, sec){
+  const rows=schedule.filter(r=>r.date===date && rowAppliesTo(r,sec));
+  return rows.find(r=>r.section===sec) || rows.find(r=>!r.section) || rows[0] || null;
+}
+function todaySession(sec){ const r=schedRowOn(todayISO(), sec); return r ? r.session : null; }
+/* Has anything been recorded for this session+section — a roll-call tick or a game submission? */
+function sessRecorded(sess, sec){
+  const a=attendMap()[attendKeyFor(sess, sec)]; if(a && Object.keys(a).length) return true;
+  return Object.values(allSubs).some(s=> s && +s.session===+sess && (!sec || String(s.msection||"").toUpperCase()===sec));
+}
+/* Choices for an unscheduled day. Almost always it's a MOVED class whose schedule row wasn't updated:
+   offer the next scheduled session (pulled forward) and the most recent past one if nothing was
+   recorded for it (postponed). Only those two — an ordinary lecture with no roll call or game also
+   looks "empty", so older sessions would just be clutter. A genuine extra class is the minor option
+   (S8.5); with no future row (or no schedule at all) it's a new session number. */
+function unschedChoices(sec){
+  const today=todayISO(), out=[];
+  const rows=schedule.filter(r=>rowAppliesTo(r,sec)).slice().sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:sessOrd(a.session)-sessOrd(b.session));
+  const fut=rows.filter(r=>r.date>today), past=rows.filter(r=>r.date<today);
+  const next=fut[0], prev=past[past.length-1];
+  if(next && !isExtraSess(next.session) && !sessRecorded(next.session,sec))
+    out.push({kind:"move", row:next, session:next.session, primary:true, label:sessLabel(next.session)+" — moved from "+fmtSchedDate(next.date), sub:"The next scheduled class. Its date in the schedule changes to today."});
+  if(prev && !isExtraSess(prev.session) && !sessRecorded(prev.session,sec))
+    out.push({kind:"move", row:prev, session:prev.session, label:sessLabel(prev.session)+" — scheduled "+fmtSchedDate(prev.date)+", nothing recorded", sub:"A postponed class. Its date in the schedule changes to today."});
+  const known=knownSessions(sec); let maxReg=0; known.forEach(s=>{ if(!isExtraSess(s) && s>maxReg) maxReg=s; });
+  if(!next) out.push({kind:"new", session:maxReg+1, primary:!out.length, label:"New session S"+(maxReg+1),
+    sub: haveSchedule() ? "After the last scheduled session — added to the schedule for today." : "This course has no session schedule, so today's class gets the next number (added to the schedule)."});
+  if(haveSchedule()){
+    const after = prev ? Math.floor(sessOrd(prev.session)) : 0;
+    let k=5; while(k<=9 && known.has(extraCode(after,k))) k++;
+    if(k<=9) out.push({kind:"extra", session:extraCode(after,k), minor:true, label:"Extra class ("+sessLabel(extraCode(after,k))+")", sub:"A class that isn't on the schedule at all — later sessions keep their numbers."});
+  }
+  return out;
+}
+/* Save a chosen option into the schedule (one structured write — no text editing in class) and remember
+   how to undo it. A shared row (all sections) is split so only THIS section's meeting moves. */
+let _schedUndo=null;
+async function applySchedChoice(opt, sec){
+  const today=todayISO(), secs=rosterSections();
+  const prevSched=schedule.map(r=>Object.assign({},r));
+  let list=schedule.map(r=>Object.assign({},r));
+  if(opt.kind==="move"){
+    const r=opt.row, same=x=> x.date===r.date && x.session===r.session && x.section===r.section;
+    if(r.section || !sec || secs.length<=1) list=list.map(x=> same(x) ? Object.assign({},x,{date:today}) : x);
+    else { list=list.filter(x=>!same(x)); secs.forEach(s=> list.push({date: s===sec?today:r.date, session:r.session, section:s})); }
+  } else {
+    list.push({date:today, session:opt.session, section:(secs.length>1?sec:"")});
+  }
+  list.sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:(a.section<b.section?-1:1));
+  if(!await writeSchedule(list)) return null;
+  setSchedule(list);   // apply locally now; the schedule listener confirms it
+  _schedUndo={ prev:prevSched, sess:opt.session, sec, label:opt.kind==="move" ? sessLabel(opt.session)+" (moved from "+fmtSchedDate(opt.row.date)+")" : sessLabel(opt.session), ctrl:null };
+  return opt.session;
+}
+/* Undo the last choice — only while nothing has been recorded under it yet. */
+async function undoSchedChoice(){
+  const u=_schedUndo; if(!u) return;
+  if(sessRecorded(u.sess, u.sec)){ toast("Can't undo — roll call or submissions are already recorded under "+sessLabel(u.sess)+". Edit the schedule in Course config."); return; }
+  if(!await writeSchedule(u.prev)) return;
+  setSchedule(u.prev);
+  if(u.ctrl) await writeControl({session:u.ctrl.session, round:u.ctrl.round, phase:"waiting"});
+  _schedUndo=null; toast("Undone — the schedule is back as it was"); render();
+}
+/* A small blocking chooser (resolves to the picked option, or null on Cancel). Appended to <body>, so
+   the frequent #app re-renders don't wipe it. */
+function chooseModal(title, intro, opts){
+  return new Promise(res=>{
+    const ov=el("div"); ov.id="chooseModal"; ov.style.cssText="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px";
+    const card=el("div","card"); card.style.cssText="max-width:480px;width:100%;padding:20px 22px;max-height:90vh;overflow:auto";
+    card.append(Object.assign(el("h3"),{textContent:title,style:"margin:0 0 6px"}));
+    if(intro) card.append(Object.assign(el("p","sm mut"),{textContent:intro,style:"margin:0 0 12px"}));
+    const done=v=>{ ov.remove(); res(v); };
+    opts.forEach(o=>{ const b=el("button", o.minor?"ghost-btn":("btn"+(o.primary?" gold":""))); b.type="button";
+      b.style.cssText="display:block;width:100%;text-align:left;margin:0 0 8px;padding:10px 14px";
+      b.append(Object.assign(el("div"),{textContent:o.label,style:"font-weight:700"}));
+      if(o.sub) b.append(Object.assign(el("div"),{textContent:o.sub,style:"font-size:.8rem;font-weight:400;opacity:.85;margin-top:2px"}));
+      b.onclick=()=>done(o); card.append(b); });
+    const cx=el("button","ghost-btn","Cancel"); cx.type="button"; cx.style.marginTop="4px"; cx.onclick=()=>done(null); card.append(cx);
+    ov.onclick=e=>{ if(e.target===ov) done(null); };
+    ov.append(card); document.body.append(ov);
+  });
+}
+const unschedTitle = sec=> haveSchedule() ? "Today ("+fmtSchedDate(todayISO())+") isn't in the schedule"+(sec?" for Section "+sec:"") : "Today's class"+(sec?" · Section "+sec:"");
+/* Today's session for a section — from the schedule, or (unscheduled day) by asking once. null = cancelled. */
+async function resolveTodaySession(sec){
+  const s=todaySession(sec); if(s!=null) return s;
+  const pick=await chooseModal(unschedTitle(sec), "Which class is this? Your answer is saved to the session schedule, so roll call and games agree.", unschedChoices(sec));
+  return pick ? await applySchedChoice(pick, sec) : null;
+}
+/* EVERY button that opens submissions (Open, Next round →, Reopen) goes through here. The session comes
+   from today's schedule row for the running section, so a game can never be opened into a past session;
+   moving to a new session starts at round 1 (so "Reopen" on a later day starts today's meeting). */
+async function openMeeting(patch){
+  if(!control || !control.activeGame) return false;
+  const want=await resolveTodaySession(curMSection());
+  if(want==null) return false;
+  const p=Object.assign({}, patch||{}, {phase:"open"});
+  if(want!==curSession()){
+    if(_schedUndo && _schedUndo.sess===want && !_schedUndo.ctrl) _schedUndo.ctrl={session:curSession(), round:control.round||1};
+    p.session=want; p.round=1;
+  }
+  return await writeControl(p);
+}
 /* A submission's home section: denormalized on the doc, else looked up from the roster. */
 function secOf(s){ return (s.section || (roster[String(s.studentId||"").toLowerCase()]||{}).section || "").toUpperCase(); }
 /* Instructor analysis scope by MEETING section. null = follow the running section;
@@ -1191,7 +1320,7 @@ async function logOut(){
   try{ if(fbAuth) await fbAuth.signOut(); }catch(e){}
   role="student"; unlocked=false; myName="";
   try{ ls("gtl_role","student"); ls("gtl_name",""); }catch(e){}
-  sectionScope=null; presentMode=false; lessonMode=null;
+  sectionScope=null; presentMode=false; lessonMode=null; histSel=null;
   refreshRoleBtn(); lastViewKey=null; render();
   toast(wasTeacher?"Logged out of the console":"Signed out");
 }
@@ -1282,6 +1411,7 @@ function viewKey(){
 }
 let lastViewKey=null, presentMode=false, lessonMode=null, studentTab=null, practiceGame=null, studentResK=null;
 let rollMode=false, rollSection=null, rollSearch="", _rollScroll=0;   // instructor manual roll-call page
+let rollSess=null;   // roll call's OWN session being viewed (null = today's, from the schedule) — never control.session
 let rollGrid=false, _rollGT=0, _rollGL=0;   // all-sessions grid view (toggle) + its scroll offsets
 let cfgMode=false;   // instructor "Course config" full-screen page (roster / schedule / course / data)
 /* Which student screen is showing: the live class, or the personal hub ("My page").
@@ -1522,14 +1652,14 @@ function hubAttendance(){
   const rows=Object.keys(att).filter(mk=>{ const a=att[mk]; return a && Object.keys(a).length; })  // roll taken
     .map(mk=>({mk, pk:parseAttendKey(mk)})).filter(x=>x.pk)
     .filter(({mk,pk})=> myIds.some(id=>isPresent(mk,id)) || !pk.section || pk.section===mySec)  // relevant to me
-    .sort((a,b)=> (a.pk.session-b.pk.session) || (a.pk.section<b.pk.section?-1:1));
+    .sort((a,b)=> (sessOrd(a.pk.session)-sessOrd(b.pk.session)) || (a.pk.section<b.pk.section?-1:1));
   if(!rows.length) return null;   // no roll calls taken that concern this student
   const card=el("div","card stage");
   card.append(el("div","eyebrow","My attendance"));
   let html="<tr><th style='text-align:left'>Meeting</th><th>Status</th></tr>";
   let present=0;
   rows.forEach(({mk,pk})=>{ const here=myIds.some(id=>isPresent(mk,id)); if(here)present++;
-    html+="<tr><td style='text-align:left'>Session S"+pk.session+(pk.section?" · Section "+pk.section:"")+"</td>"+
+    html+="<tr><td style='text-align:left'>Session "+sessLabel(pk.session)+(pk.section?" · Section "+pk.section:"")+"</td>"+
       "<td><span class='att-pill "+(here?"here":"away")+"'>"+(here?"Present":"Absent")+"</span></td></tr>"; });
   card.append(Object.assign(el("p","lead"),{textContent:"You were marked present at "+present+" of "+rows.length+" meetings so far.",style:"margin:6px 0 0"}));
   const t=el("table","matrix"); t.style.fontSize=".86rem"; t.innerHTML=html;
@@ -1547,7 +1677,7 @@ function hubMySubs(){
   if(!mine.length){ card.append(Object.assign(el("p","lead"),{textContent:"Nothing yet — your answers will appear here as you play.",style:"margin-top:6px"})); return card; }
   let html="<tr><th>Session</th><th style='text-align:left'>Game</th><th style='text-align:left'>Your answer</th></tr>";
   mine.forEach(s=>{ const pk=parseRoundKey(s.roundKey)||{};
-    html+="<tr><td>S"+(s.session||pk.session||"?")+(pk.section?"."+pk.section:"")+"</td><td style='text-align:left'>"+esc((GAMES[s.game]||{}).name||s.game)+"</td><td style='text-align:left'>"+esc(subValue(s))+"</td></tr>"; });
+    html+="<tr><td>"+((s.session||pk.session)?sessLabel(s.session||pk.session):"S?")+(pk.section?"."+pk.section:"")+"</td><td style='text-align:left'>"+esc((GAMES[s.game]||{}).name||s.game)+"</td><td style='text-align:left'>"+esc(subValue(s))+"</td></tr>"; });
   const t=el("table","matrix"); t.style.fontSize=".86rem"; t.innerHTML=html;
   const sc=el("div","tablescroll"); sc.style.marginTop="10px"; sc.append(t); card.append(sc);
   return card;
@@ -2921,7 +3051,7 @@ function analysisView(teacher){
   const list = teacher ? analysisSubs() : subs;   // meeting-scope is instructor-only
   const sc = teacher ? effScope() : "";
   const scLbl = sc==="BOTH" ? " · both sections" : sc ? " · Section "+sc : "";
-  const meetLbl = "Session S"+curSession()+(sc&&sc!=="BOTH"?"."+sc:"");
+  const meetLbl = "Session "+sessLabel(curSession())+(sc&&sc!=="BOTH"?"."+sc:"");
   const c=el("div","stack");
   const head=el("div","card stage");
   head.append(el("div","eyebrow gold","Results · "+meetLbl+" · Round "+control.round),
@@ -3040,7 +3170,11 @@ function seededRand(seedStr){
    identical for the instructor and every student; last player unpaired if odd. */
 function pairSubs(list){
   const a=list.slice().sort((x,y)=> x.studentId<y.studentId?-1:x.studentId>y.studentId?1:0);
-  const rand=seededRand("pair-"+(curKey||""));
+  // Seed from the MEETING's own key, so a past meeting (history view, My page) re-pairs exactly as
+  // it did live. A mixed list (A+B combined) keeps the live key when it's in there, as before.
+  const keys=[...new Set(list.map(s=>s&&s.roundKey).filter(Boolean))].sort();
+  const seedKey = keys.length===1 ? keys[0] : (keys.includes(curKey) ? curKey : (keys[0]||curKey||""));
+  const rand=seededRand("pair-"+seedKey);
   for(let i=a.length-1;i>0;i--){ const j=Math.floor(rand()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; }
   const pairs=[]; for(let i=0;i<a.length;i+=2){ pairs.push([a[i], a[i+1]||null]); }
   return pairs;
@@ -3598,18 +3732,19 @@ function roundActionBar(){
   bar.append(el("div","ab-spacer"));
   const openBtn=el("button","btn"+(phase==="open"?" neutral":""), phase==="open"?"Close submissions":"Open submissions");
   // Opening a round auto-launches the class-facing collection screen (participation only).
-  openBtn.onclick=()=>{ const opening=phase!=="open"; if(opening) presentMode=true; writeControl({phase: opening?"open":"waiting"}); render(); };
+  openBtn.onclick=async()=>{ if(phase==="open"){ writeControl({phase:"waiting"}); return; }
+    if(await openMeeting({})){ presentMode=true; render(); } };   // session comes from today's schedule
   // Reveal ↔ Hide toggle. Hiding returns to "waiting" — results hidden from the class,
   // submissions stay closed (does NOT reopen the round).
   const revealed=phase==="revealed";
   const revealBtn=el("button","btn"+(revealed?" neutral":" gold"), revealed?"Hide results":"Reveal results");
   revealBtn.title=revealed?"Hide results from the class (submissions stay closed)":"Show results to the class";
   revealBtn.onclick=()=>{ if(revealed){ writeControl({phase:"waiting"}); } else { doReveal(); } };
-  const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>writeControl({round:control.round+1,phase:"open"});
+  const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>openMeeting({round:control.round+1});
   const presentBtn=el("button","ghost-btn","Present ⛶"); presentBtn.title="Show the class the full-screen collection screen (no results)";
   presentBtn.onclick=()=>{ presentMode=true; render(); };
   const clr=el("button","ghost-btn ab-clear","Clear"); clr.title="Clear this meeting's submissions";
-  clr.onclick=()=>{ const mtg=(GAMES[control.activeGame]||{}).name+" · S"+curSession()+(curMSection()?"."+curMSection():"")+" · Round "+control.round;
+  clr.onclick=()=>{ const mtg=(GAMES[control.activeGame]||{}).name+" · "+sessLabel(curSession())+(curMSection()?"."+curMSection():"")+" · Round "+control.round;
     if(confirm("Clear all submissions for “"+mtg+"”? This also resets any in-progress card match and can't be undone.")) clearRound(); };
   bar.append(openBtn,revealBtn,nextR,presentBtn,clr);
   return bar;
@@ -3651,14 +3786,18 @@ function schedDateFor(sess, sec){
    per meeting (session + section). Writes control.attend[meetingKey][enc(email)]. */
 function rollCall(){
   const sec = rollSection!=null ? rollSection : curMSection();
-  const mk = attendKeyFor(curSession(), sec);
+  // Roll call has its OWN session: today's from the schedule (or one you browse to with − / +). It never
+  // reads or writes control.session, so taking roll can't move the game and the game can't move roll call.
+  const tdy = todaySession(sec);
+  const vs = rollSess!=null ? rollSess : tdy;          // null = unscheduled day, not settled yet
+  const mk = vs!=null ? attendKeyFor(vs, sec) : null;
   const inSec = e => sec ? e.section===sec : true;
   const people = rosterList.filter(inSec);
   const enrolled = people.filter(e=>!e.audit && !e.drop);
-  const presentOf = e => isPresent(mk, e.email);
+  const presentOf = e => mk ? isPresent(mk, e.email) : false;
   const presentN = people.filter(presentOf).length;
   const enrolledPresent = enrolled.filter(presentOf).length;
-  const schedDate = schedDateFor(curSession(), sec);
+  const schedDate = vs!=null ? schedDateFor(vs, sec) : "";
 
   const pm=playedMap();   // read-only "played a game" overlay (never written to the register)
   const wrap=el("div","stack"); wrap.style.maxWidth="1180px"; wrap.style.margin="0 auto";
@@ -3668,19 +3807,30 @@ function rollCall(){
   hl.append(el("div","eyebrow gold","Roll call"));
   // session stepper sits right next to the session header
   const trow=el("div"); trow.style.cssText="display:flex;align-items:center;gap:8px;margin-top:2px;flex-wrap:wrap";
-  const sm=el("button","ghost-btn","–"); sm.title="Previous session"; sm.onclick=()=>{ const nv=curSession(); if(nv>1) writeControl({session:nv-1, round:1, phase:"waiting"}); };
-  const h2=Object.assign(el("h2"),{textContent:"Session S"+curSession()+(sec?" · Section "+sec:""),style:"font-size:1.4rem;margin:0"});
-  const sp=el("button","ghost-btn","+"); sp.title="Next session"; sp.onclick=()=>writeControl({session:curSession()+1, round:1, phase:"waiting"});
+  // − / + browse sessions LOCALLY (view only — nothing is written until you tick someone).
+  const order=gridSessions(sec); const today=todayISO();
+  const rowsFor=schedule.filter(r=>rowAppliesTo(r,sec));
+  const near=dir=>{ if(vs!=null){ const i=order.indexOf(vs); return order[i+dir]; }
+    const r = dir<0 ? rowsFor.filter(x=>x.date<today).pop() : rowsFor.find(x=>x.date>today); return r ? r.session : (dir<0 ? order[order.length-1] : undefined); };
+  const pv=near(-1), nx=near(1);
+  const sm=el("button","ghost-btn","–"); sm.title="Previous session (view only)"; sm.disabled=pv==null; sm.onclick=()=>{ rollSess=pv; render(); };
+  const h2=Object.assign(el("h2"),{textContent:(vs!=null?"Session "+sessLabel(vs):"Today — not in the schedule")+(sec?" · Section "+sec:""),style:"font-size:1.4rem;margin:0"});
+  const sp=el("button","ghost-btn","+"); sp.title="Next session (view only)"; sp.disabled=nx==null; sp.onclick=()=>{ rollSess=nx; render(); };
   trow.append(sm, h2, sp); hl.append(trow);
-  hl.append(Object.assign(el("div","sm mut"),{textContent: schedDate ? ("📅 "+schedDate) : "No date in the schedule for this session.", style:"margin-top:4px"}));
+  const isToday = vs!=null && vs===tdy;
+  const sub=el("div","sm mut"); sub.style.marginTop="4px";
+  sub.textContent = vs==null ? "Settle which class this is below to start today's roll call." : (schedDate ? ("📅 "+schedDate) : "No date in the schedule for this session.")+(isToday?" · today":"");
+  if(rollSess!=null && rollSess!==tdy && tdy!=null){ const back=el("button","linkbtn","back to today"); back.type="button"; back.style.marginLeft="8px"; back.onclick=()=>{ rollSess=null; render(); }; sub.append(back); }
+  hl.append(sub);
   hr.append(hl);
   const close=el("button","btn neutral","Done"); close.onclick=()=>{ rollMode=false; rollSearch=""; render(); }; hr.append(close);
   head.append(hr);
+  const ub=schedUndoBanner(); if(ub){ ub.style.marginTop="10px"; head.append(ub); }
   // count + progress (enrolled only; audit shown but not in the denominator)
   const nEnr=enrolled.length;
   head.append(Object.assign(el("div"),{style:"font-size:1.1rem;font-weight:600;margin-top:10px",
-    textContent: haveRoster()? (enrolledPresent+" of "+nEnr+" "+(sec?"Section "+sec:"enrolled")+" present"+(presentN>enrolledPresent?"  ·  +"+(presentN-enrolledPresent)+" visiting (audit/dropped)":"")) : "No roster loaded — load the class roster first."}));
-  if(nEnr){ const pr=el("div","present-prog"); pr.style.marginTop="8px"; const bar=el("span"); bar.style.width=Math.round(100*enrolledPresent/nEnr)+"%"; pr.append(bar); head.append(pr); }
+    textContent: !haveRoster() ? "No roster loaded — load the class roster first." : !mk ? "Roll call starts once today's class is settled." : (enrolledPresent+" of "+nEnr+" "+(sec?"Section "+sec:"enrolled")+" present"+(presentN>enrolledPresent?"  ·  +"+(presentN-enrolledPresent)+" visiting (audit/dropped)":""))}));
+  if(nEnr && mk){ const pr=el("div","present-prog"); pr.style.marginTop="8px"; const bar=el("span"); bar.style.width=Math.round(100*enrolledPresent/nEnr)+"%"; pr.append(bar); head.append(pr); }
   wrap.append(head);
 
   if(!haveRoster()) return wrap;
@@ -3690,7 +3840,7 @@ function rollCall(){
   const secs=rosterSections();
   if(secs.length>1){
     const srow=el("div","res-list"); srow.append(el("span","tinylabel","Section"));
-    secs.forEach(s=>{ const b=el("button","res-btn"+(s===sec?" on":"")); b.type="button"; b.textContent=s; b.onclick=()=>{ rollSection=s; render(); }; srow.append(b); });
+    secs.forEach(s=>{ const b=el("button","res-btn"+(s===sec?" on":"")); b.type="button"; b.textContent=s; b.onclick=()=>{ rollSection=s; rollSess=null; render(); }; srow.append(b); });
     ctl.append(srow);
   }
   // view toggle — tick one meeting at a time, or edit every session at once in a grid
@@ -3699,7 +3849,16 @@ function rollCall(){
   const vGrid=el("button","res-btn"+(rollGrid?" on":"")); vGrid.type="button"; vGrid.textContent="All sessions"; vGrid.onclick=()=>{ rollGrid=true; render(); };
   vrow.append(vSingle, vGrid); ctl.append(vrow);
 
-  if(!rollGrid){
+  if(!rollGrid && !mk){
+    // Unscheduled day: the same "which class is this?" choice as Open (saved to the schedule, so the
+    // games that follow land in the same session). Nothing is ticked until it's settled.
+    const box=el("div","note-box gold"); box.style.cssText="margin-top:10px;display:flex;flex-direction:column;gap:8px";
+    box.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(unschedTitle(sec))+".</b> Which class is this? (Or browse to a past session with − / +.)"}));
+    const btns=el("div","row"); btns.style.cssText="gap:8px;flex-wrap:wrap";
+    unschedChoices(sec).forEach(o=>{ const bb=el("button", o.minor?"ghost-btn":("btn"+(o.primary?" gold":"")), o.label); bb.title=o.sub||"";
+      bb.onclick=async()=>{ await applySchedChoice(o, sec); rollSess=null; render(); }; btns.append(bb); });
+    box.append(btns); ctl.append(box);
+  } else if(!rollGrid){
     const srow2=el("div","row"); srow2.style.cssText="gap:8px;margin-top:10px;flex-wrap:wrap";
     const allB=el("button","ghost-btn","Mark all present"); allB.onclick=()=>setAttendMany(mk, people.map(e=>e.email), true);
     const clrB=el("button","ghost-btn","Clear all"); clrB.onclick=()=>{ if(confirm("Clear attendance for this meeting?")) setAttendMany(mk, people.map(e=>e.email), false); };
@@ -3723,9 +3882,9 @@ function rollCall(){
     const thead=el("thead"); const htr=el("tr");
     htr.append(Object.assign(el("th","nmcol"),{textContent:"Name"}));
     sess.forEach(s=>{ const smk=attendKeyFor(s, sec);
-      const th=el("th","sess"); th.append(document.createTextNode("S"+s));
+      const th=el("th","sess"); th.append(document.createTextNode(sessLabel(s)));
       const d=schedDateFor(s, sec); if(d){ const p=d.split(" "); th.append(Object.assign(el("span","shd"),{textContent:(p[1]||"")+" "+(p[2]||"")})); }
-      th.title="S"+s+(d?" · "+d:"")+" — tap to mark all present / clear";
+      th.title=sessLabel(s)+(d?" · "+d:"")+" — tap to mark all present / clear";
       th.onclick=()=>{ const allOn=people.length>0 && people.every(e=>isPresent(smk, e.email)); setAttendMany(smk, people.map(e=>e.email), !allOn); };
       htr.append(th);
     });
@@ -3741,7 +3900,7 @@ function rollCall(){
         const td=el("td","gcell");
         const b=el("button","gc"+(on?" on":"")+(!on&&played?" played":"")); b.type="button";
         b.textContent=on?"P":(played?"·":"");
-        b.title=e.name+" · S"+s+" · "+(on?"present":(played?"absent — played a game (not ticked)":"absent"));
+        b.title=e.name+" · "+sessLabel(s)+" · "+(on?"present":(played?"absent — played a game (not ticked)":"absent"));
         b.onclick=()=>{ setAttend(smk, e.email, !on); };   // control listener re-renders
         td.append(b); tr.append(td);
       });
@@ -3754,6 +3913,7 @@ function rollCall(){
     return wrap;
   }
 
+  if(!mk) return wrap;   // unscheduled day not settled yet — no list to tick
   // the tappable list — preserve scroll across the re-render each tick triggers
   const listCard=el("div","card stage");
   const list=el("div","roll-list"); listCard.append(list); wrap.append(listCard);
@@ -3774,7 +3934,7 @@ function rollCall(){
       const left=el("span"); left.style.cssText="flex:1;min-width:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap";
       const nm=el("span"); nm.style.cssText="font-weight:600;color:var(--ink)"; nm.textContent=e.name+(e.audit?" · audit":e.drop?" · dropped":"");
       left.append(nm);
-      if(histSess.length){ const h=el("span","roll-hist"); h.title="Attendance across taken sessions: "+histSess.map(s=>"S"+s).join(", ");
+      if(histSess.length){ const h=el("span","roll-hist"); h.title="Attendance across taken sessions: "+histSess.map(s=>sessLabel(s)).join(", ");
         histSess.forEach(s=>{ const p=isPresent(attendKeyFor(s, sec), e.email); h.append(Object.assign(el("span",p?"ph":"pa"),{textContent:p?"P":"A"})); });
         left.append(h);
       }
@@ -3796,7 +3956,7 @@ function presentView(){
   const head=el("div","present-head");
   const cn=courseName(); if(cn) head.append(el("div","present-course",cn));
   head.append(el("div","present-game",GAMES[g].name),
-    el("div","present-meta","Session S"+curSession()+(curMSection()?"."+curMSection():"")+" · Round "+control.round));
+    el("div","present-meta","Session "+sessLabel(curSession())+(curMSection()?"."+curMSection():"")+" · Round "+control.round));
   wrap.append(head);
 
   const body=el("div","present-body");
@@ -3825,11 +3985,11 @@ function presentView(){
   } else if(revealed){
     // Results are showing on the console/students' screens. Offer to hide or move on.
     const hide=el("button","btn neutral","Hide results"); hide.onclick=()=>writeControl({phase:"waiting"});
-    const nextR=el("button","btn","Next round →"); nextR.onclick=()=>writeControl({round:control.round+1,phase:"open"});
+    const nextR=el("button","btn","Next round →"); nextR.onclick=()=>openMeeting({round:control.round+1});
     ctr.append(hide,nextR);
   } else {
     const reveal=el("button","btn gold","Reveal results"); reveal.onclick=()=>{ doReveal(); };
-    const reopen=el("button","btn","Reopen"); reopen.onclick=()=>writeControl({phase:"open"});
+    const reopen=el("button","btn","Reopen"); reopen.onclick=()=>openMeeting({});
     ctr.append(reveal,reopen);
   }
   const fs=el("button","ghost-btn","⛶ Fullscreen"); fs.onclick=toggleFullscreen;
@@ -3840,51 +4000,77 @@ function presentView(){
 }
 /* Session + section controls as a compact bar (mirrors the round bar), at the top of
    the main panel. Titles carry the longer explanations the old card spelled out. */
-/* Tap-to-apply reminder: if today's date is in the schedule and the console isn't on
-   that session/section, offer a one-tap "set it" (never auto-writes control). */
+/* Console banners for the automatic session (non-blocking): the Undo notice right after a "which class
+   is this?" choice, and — on a day the schedule doesn't cover — the same choices ahead of class, so it's
+   settled before you open anything (Open/roll call would otherwise ask). Shared by roll call. */
 let schedBannerHidden=false;
-function scheduleBanner(){
-  if(!haveSchedule() || schedBannerHidden) return null;
-  const today=todayISO();
-  const rows=schedule.filter(r=>r.date===today);
-  if(!rows.length) return null;
-  const sess=rows.map(r=>r.session).sort((a,b)=>b-a)[0];        // usually one; take the highest if they differ
-  const secs=[...new Set(rows.map(r=>r.section).filter(Boolean))].sort();
-  const curS=curSession(), curSec=curMSection();
-  const sessionOK = curS===sess;
-  const sectionOK = !secs.length || secs.includes(curSec);
-  if(sessionOK && sectionOK) return null;
+function schedUndoBanner(){
+  const u=_schedUndo; if(!u) return null;
+  const box=el("div","note-box gold"); box.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap";
+  box.append(Object.assign(el("div"),{innerHTML:"Today's class"+(u.sec?" (Section "+esc(u.sec)+")":"")+" is recorded as <b>"+esc(u.label)+"</b> in the schedule."}));
+  const r=el("div","row"); r.style.gap="8px";
+  const un=el("button","ghost-btn","Undo"); un.onclick=undoSchedChoice;
+  const ok=el("button","linkbtn","dismiss"); ok.type="button"; ok.onclick=()=>{ _schedUndo=null; render(); };
+  r.append(un,ok); box.append(r);
+  return box;
+}
+function unschedBanner(sec){
+  if(!haveSchedule() || schedBannerHidden || todaySession(sec)!=null) return null;
+  const opts=unschedChoices(sec); if(!opts.length) return null;
   const box=el("div","note-box gold"); box.style.display="flex"; box.style.flexDirection="column"; box.style.gap="8px";
   const top=el("div"); top.style.cssText="display:flex;justify-content:space-between;align-items:flex-start;gap:10px";
-  const dateLbl=new Date(today+"T00:00:00").toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"});
-  const p=el("div"); p.innerHTML="<b>Today ("+dateLbl+")</b> is scheduled as <b>Session "+sess+"</b>"+(secs.length?(" · Section"+(secs.length>1?"s ":" ")+secs.join(" & ")):"")+". Your console is on <b>S"+curS+(curSec?"."+curSec:"")+"</b>.";
+  top.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(unschedTitle(sec))+".</b> If you're teaching today, which class is this? (Saved to the schedule — roll call and games will agree.)"}));
   const x=el("button","linkbtn","dismiss"); x.type="button"; x.onclick=()=>{ schedBannerHidden=true; render(); };
-  top.append(p,x); box.append(top);
-  const btns=el("div","row"); btns.style.gap="8px"; btns.style.flexWrap="wrap";
-  if(secs.length){ secs.forEach(sec=>{ const b=el("button","btn gold"); b.textContent="Set S"+sess+" · Section "+sec;
-    b.onclick=()=>writeControl({session:sess, section:sec, round:1, phase:"waiting"}); btns.append(b); }); }
-  else { const b=el("button","btn gold"); b.textContent="Set Session "+sess;
-    b.onclick=()=>writeControl({session:sess, round:1, phase:"waiting"}); btns.append(b); }
+  top.append(x); box.append(top);
+  const btns=el("div","row"); btns.style.cssText="gap:8px;flex-wrap:wrap";
+  opts.forEach(o=>{ const b=el("button", o.minor?"ghost-btn":("btn"+(o.primary?" gold":"")), o.label); b.title=o.sub||"";
+    b.onclick=async()=>{ await applySchedChoice(o, sec); render(); }; btns.append(b); });
   box.append(btns);
   return box;
 }
+function scheduleBanner(){ return schedUndoBanner() || unschedBanner(curMSection()); }
+/* Checks before saving the schedule (mutates `list` to keep recorded extra-class rows). Returns false to
+   abort. (1) A re-paste mustn't drop an extra class (S8.5) that already has records. (2) A session may be
+   on only ONE date per section — otherwise two classes share one record key and a replayed game
+   overwrites the first. (3) Warn if the save changes the date of a session that already has records —
+   the classic case is re-pasting an older spreadsheet after a class was moved in the app. */
+function scheduleSaveOK(list){
+  const secs=[...new Set(rosterSections().concat(list.map(r=>r.section), schedule.map(r=>r.section)).filter(Boolean))].sort();
+  if(!secs.length) secs.push("");
+  schedule.filter(r=>isExtraSess(r.session)).forEach(r=>{
+    const rec=(r.section?[r.section]:secs).some(sc=>sessRecorded(r.session, sc));
+    if(rec && !list.some(x=>x.session===r.session && x.date===r.date && x.section===r.section)) list.push(Object.assign({},r));
+  });
+  list.sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:(a.section<b.section?-1:1));
+  const dups=[];
+  secs.forEach(sc=>{ const by={}; list.filter(r=>rowAppliesTo(r,sc)).forEach(r=>{ (by[r.session]||(by[r.session]=new Set())).add(r.date); });
+    Object.keys(by).forEach(k=>{ if(by[k].size>1) dups.push(sessLabel(+k)+(sc?" · Section "+sc:"")+" is on "+[...by[k]].map(shortDate).join(" and ")); }); });
+  if(dups.length){ alert("Each session can be on only one date per section — otherwise two classes would share one record, and a game replayed in the second would overwrite the first.\n\nPlease fix:\n• "+dups.join("\n• ")); return false; }
+  const dateIn=(L,sess,sc)=>{ const rs=L.filter(r=>r.session===sess && rowAppliesTo(r,sc)); const r=rs.find(x=>x.section===sc)||rs.find(x=>!x.section)||rs[0]; return r?r.date:null; };
+  const moved=[];
+  secs.forEach(sc=>{ new Set(schedule.filter(r=>rowAppliesTo(r,sc)).map(r=>r.session)).forEach(ss=>{
+    const od=dateIn(schedule,ss,sc), nd=dateIn(list,ss,sc);
+    if(od && od!==nd && sessRecorded(ss,sc)) moved.push(sessLabel(ss)+(sc?" · Section "+sc:"")+" has records from "+shortDate(od)+", but this schedule "+(nd?"puts it on "+shortDate(nd):"removes it")); }); });
+  if(moved.length && !confirm("These sessions already have roll call or game records, and this save changes their date:\n\n• "+moved.join("\n• ")+"\n\nIf you pasted an older copy of your schedule, it may be undoing a class that was moved in the app. Save anyway?")) return false;
+  return true;
+}
 function scheduleEditor(){
   const wrap=el("div","stack");
-  wrap.append(Object.assign(el("div","sm mut"),{textContent:"One meeting per line: date, session, and optional section. Dates are day-first (12/09/2026) or ISO (2026-09-12). For two sections on the same day, add a line each — or leave the section off to set just the session."}));
+  wrap.append(Object.assign(el("div","sm mut"),{textContent:"One meeting per line: date, session, and optional section. Dates are day-first (12/09/2026) or ISO (2026-09-12). For two sections on the same day, add a line each — or leave the section off to set just the session. This drives the session automatically (games and roll call). An extra class that isn't in the plan is written like S8.5."}));
   const ta=el("textarea","input"); ta.rows=4; ta.style.cssText='font-family:"IBM Plex Mono",monospace;font-size:.82rem;width:100%';
   ta.placeholder="2026-09-12  S2  A\n2026-09-12  S2  B\n2026-09-19  S3";
-  ta.value=schedule.map(r=>r.date+"  S"+r.session+(r.section?"  "+r.section:"")).join("\n");
+  ta.value=schedule.map(r=>r.date+"  "+sessLabel(r.session)+(r.section?"  "+r.section:"")).join("\n");
   wrap.append(ta);
   if(haveSchedule()){
     const today=todayISO();
     const t=el("table","matrix"); t.style.fontSize=".8rem";
     let html="<tr><th>Date</th><th>Session</th><th>Section</th></tr>";
     schedule.forEach(r=>{ const isT=r.date===today;
-      html+="<tr"+(isT?" style='font-weight:700;color:var(--accent-ink)'":"")+"><td style='text-align:left'>"+esc(r.date)+(isT?" · today":"")+"</td><td>S"+r.session+"</td><td>"+(r.section||"—")+"</td></tr>"; });
+      html+="<tr"+(isT?" style='font-weight:700;color:var(--accent-ink)'":"")+"><td style='text-align:left'>"+esc(r.date)+(isT?" · today":"")+"</td><td>"+sessLabel(r.session)+"</td><td>"+(r.section||"—")+"</td></tr>"; });
     t.innerHTML=html; const sc=el("div","tablescroll"); sc.style.marginTop="6px"; sc.append(t); wrap.append(sc);
   }
   const save=el("button","btn wide","Save schedule"); save.style.marginTop="2px";
-  save.onclick=async()=>{ const list=parseSchedule(ta.value); const ok=await writeSchedule(list); if(ok) toast(list.length?(list.length+" meetings saved"):"Schedule saved (empty)"); };
+  save.onclick=async()=>{ const list=parseSchedule(ta.value); if(!scheduleSaveOK(list)) return; const ok=await writeSchedule(list); if(ok) toast(list.length?(list.length+" meetings saved"):"Schedule saved (empty)"); };
   wrap.append(save);
   if(haveSchedule()){ const clr=el("button","ghost-btn","Clear schedule"); clr.style.marginTop="6px"; clr.onclick=removeSchedule; wrap.append(clr); }
   return wrap;
@@ -3892,11 +4078,16 @@ function scheduleEditor(){
 function sessionTile(){
   const bar=el("div","actionbar");
   const g1=el("div","ab-grp");
+  // Session is AUTOMATIC (no stepper): set from today's schedule row whenever submissions open.
+  // Shown read-only, with a hint when the next Open will start a different (today's) session.
   g1.append(el("span","tinylabel","Session"));
-  const sminus=el("button","ghost-btn","–"); sminus.title="Previous session"; sminus.onclick=()=>{ const nv=curSession(); if(nv>1) writeControl({session:nv-1, round:1, phase:"waiting"}); };
-  const snum=el("span","rnum"); snum.textContent="S"+curSession();
-  const splus=el("button","ghost-btn","+"); splus.title="New session — each meeting's data is kept separately"; splus.onclick=()=>writeControl({session:curSession()+1, round:1, phase:"waiting"});
-  g1.append(sminus,snum,splus); bar.append(g1);
+  const live=curSession(), lsec=curMSection(), tdy=todaySession(lsec);
+  const snum=el("span","rnum"); snum.textContent=sessLabel(live);
+  const ldate=schedDateFor(live, lsec); snum.title="The meeting students are in now"+(ldate?" — scheduled "+ldate:"")+". Set automatically from the session schedule when you open submissions.";
+  g1.append(snum);
+  const hint = tdy!=null && tdy!==live ? "next Open starts today's "+sessLabel(tdy) : tdy!=null ? "today" : haveSchedule() ? "today isn't scheduled" : "";
+  if(hint) g1.append(Object.assign(el("span","sm mut"),{textContent:hint,style:"margin-left:6px"}));
+  bar.append(g1);
   const rsecs=rosterSections();
   if(rsecs.length){
     bar.append(el("div","ab-spacer"));
@@ -3905,11 +4096,11 @@ function sessionTile(){
     const cur=curMSection();
     if(rsecs.length===1){
       // Only one section — nothing to choose; show it as a static label.
-      const chip=el("span","rnum"); chip.textContent=rsecs[0]; chip.title="This course has one section; all submissions are tagged S"+curSession()+"."+rsecs[0]; g2.append(chip);
+      const chip=el("span","rnum"); chip.textContent=rsecs[0]; chip.title="This course has one section; all submissions are tagged with it"; g2.append(chip);
     } else {
       const mkSec=(val)=>{ const b=el("button","ghost-btn"); b.textContent=val; b.style.padding="6px 12px";
         if(cur===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
-        b.title="Section meeting now (switching starts it at Round 1; submissions tagged S"+curSession()+"."+val+")";
+        b.title="Section meeting now (switching starts it at Round 1; its session comes from the schedule when you open submissions)";
         // Switching section starts that section's meeting fresh: reset the round to 1.
         b.onclick=()=>{ if(cur!==val) writeControl({section:val, round:1, phase:"waiting"}); }; return b; };
       rsecs.forEach(s=> g2.append(mkSec(s)));
@@ -4110,7 +4301,7 @@ function teacherConsole(){
     const b=el("button","gp"+(control&&control.activeGame===k?" on":""));
     b.append(Object.assign(el("span","ic"),{textContent:GAMES[k].icon}));
     const tx=el("div"); tx.append(el("div","n",GAMES[k].name),el("div","d",GAMES[k].blurb)); b.append(tx);
-    b.onclick=()=>writeControl({activeGame:k, round:1, phase:"waiting"});
+    b.onclick=()=>{ histSel=null; writeControl({activeGame:k, round:1, phase:"waiting"}); };
     gp.append(b);
   });
   // Interactive lessons live in the same picker, gold-shaded and grouped under a divider.
@@ -4125,6 +4316,8 @@ function teacherConsole(){
   // "Course config" page (top-bar ⚙); Log out is a top-bar button (#logoutBtn).
 
   const main=el("div","stack");
+  // A past meeting opens on its own read-only page — none of the live controls appear with it.
+  if(histSel){ main.append(historyPage()); c.append(main); return c; }
   if(hasGame){
     // Parameters stacks directly below Choose exercise, at the top of the centre panel. Round flow
     // (round ±, open/close, reveal, next round, clear) lives in the action bar further down.
@@ -4164,6 +4357,7 @@ function teacherConsole(){
     main.append(mon);
   }
   if(control&&control.activeGame&&(haveRoster()||analysisSubs().length)) main.append(attendanceCard());
+  const hc=historyCard(); if(hc) main.append(hc);
   c.append(main);
   return c;
 }
@@ -4173,7 +4367,7 @@ function syncRollBtn(){
   const b=$("#rollBtn"); if(!b) return;
   const show = isTeacher() && haveRoster() && !rollMode && !presentMode && !lessonMode && !cfgMode;
   b.hidden=!show;
-  if(show) b.onclick=()=>{ rollSection=curMSection(); rollSearch=""; rollMode=true; render(); };
+  if(show) b.onclick=()=>{ rollSection=curMSection(); rollSess=null; rollSearch=""; rollMode=true; render(); };
 }
 /* Show/hide the top-bar "Course config" button (instructor, not already in a full-screen mode)
    and wire it. Opens the full-screen course-setup page (roster/schedule/course/data). */
@@ -4360,7 +4554,7 @@ function exportCSV(){
     const rn = roster[sid.toLowerCase()];
     const enrolled = s.guest ? "no" : (rn ? (rn.drop?"drop":rn.audit?"audit":"yes") : "no");
     const resp = subValue(s);
-    out.push([ROOM, (s.session!=null?"S"+s.session:""), s.game||"", (s.round!=null?s.round:""), s.roundKey||"", idEmail, s.name||"", s.sid||"", s.area||"", secOf(s), enrolled, resp, (s.ts?new Date(s.ts).toISOString():"")].map(csvCell).join(","));
+    out.push([ROOM, (s.session!=null?sessLabel(s.session):""), s.game||"", (s.round!=null?s.round:""), s.roundKey||"", idEmail, s.name||"", s.sid||"", s.area||"", secOf(s), enrolled, resp, (s.ts?new Date(s.ts).toISOString():"")].map(csvCell).join(","));
   });
   try{
     const blob=new Blob([out.join("\r\n")],{type:"text/csv;charset=utf-8"});
@@ -4391,12 +4585,103 @@ function sectionScopeBar(){
   const mk=(val,label)=>{ const b=el("button","ghost-btn"); b.textContent=label;
     if(eff===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
     b.onclick=()=>{ sectionScope=val; render(); }; return b; };
-  secs.forEach(s=> row.append(mk(s,"Session S"+curSession()+"."+s)));
+  secs.forEach(s=> row.append(mk(s,"Session "+sessLabel(curSession())+"."+s)));
   row.append(mk("BOTH","Both sections"));
   card.append(row);
   const running=curMSection();
-  card.append(Object.assign(el("div","sm mut"),{textContent:"Each submission is tagged with the section running when it came in"+(running?(" (now S"+curSession()+"."+running+")"):"")+". Switch scope to review one section's meeting or combine both.",style:"margin-top:6px"}));
+  card.append(Object.assign(el("div","sm mut"),{textContent:"Each submission is tagged with the section running when it came in"+(running?(" (now "+sessLabel(curSession())+"."+running+")"):"")+". Switch scope to review one section's meeting or combine both.",style:"margin-top:6px"}));
   return card;
+}
+/* ── Past results (instructor, READ-ONLY). Every meeting with submissions, grouped by game, newest first.
+   One opens on its own page with NO live controls — Open / Reveal / Next round only ever appear next to
+   the live meeting — so looking at history can never act on (or close) today's game. This replaces
+   stepping the session back, which used to close submissions for the whole class. ── */
+let histSel=null;   // {game, session, round, scope}  scope = a section letter, "" (no sections) or "BOTH"
+const shortDate = iso=> fmtSchedDate(iso).replace(",","").replace(/ \d{4}$/,"");   // "Thu 9 Oct"
+function pastMeetings(){
+  const m={};
+  Object.values(allSubs).forEach(s=>{ if(!s || !s.roundKey || !isDone(s) || s.bot) return;
+    const pk=parseRoundKey(s.roundKey); if(!pk) return;
+    const k=pk.game+"|"+pk.session+"|"+pk.round;
+    const e=m[k]||(m[k]={game:pk.game, session:pk.session, round:pk.round, secs:{}, n:0, ts:Infinity});
+    e.secs[pk.section]=(e.secs[pk.section]||0)+1; e.n++; if(s.ts && s.ts<e.ts) e.ts=s.ts; });
+  return Object.values(m);
+}
+const meetDate = ts=> (ts && ts<Infinity) ? shortDate(todayISO(new Date(ts))) : "";
+function historyCard(){
+  const all=pastMeetings(); if(!all.length) return null;
+  const card=el("div","card stage");
+  card.append(el("div","eyebrow","Past results"));
+  card.append(Object.assign(el("p","sm mut"),{textContent:"Every meeting with submissions, by game. Opens read-only — it never changes what students see.",style:"margin:4px 0 6px"}));
+  GAME_ORDER.forEach(g=>{
+    const ms=all.filter(m=>m.game===g); if(!ms.length) return;
+    ms.sort((a,b)=> (sessOrd(b.session)-sessOrd(a.session)) || (b.round-a.round));   // newest first
+    const perSess={}; ms.forEach(m=>{ perSess[m.session]=(perSess[m.session]||0)+1; });
+    const det=el("details"); det.style.margin="6px 0"; if(control && control.activeGame===g) det.open=true;
+    det.append(Object.assign(el("summary"),{textContent:((GAMES[g]||{}).name||g)+"  ("+ms.length+")",style:"cursor:pointer;font-weight:600"}));
+    ms.forEach(m=>{
+      const row=el("div","res-list"); row.style.cssText="margin:6px 0 0 6px;align-items:center";
+      row.append(Object.assign(el("span","tinylabel"),{textContent:sessLabel(m.session)+(meetDate(m.ts)?" · "+meetDate(m.ts):"")+(perSess[m.session]>1?" · R"+m.round:"")}));
+      const secs=Object.keys(m.secs).sort();
+      const pick=scope=>{ histSel={game:g, session:m.session, round:m.round, scope}; window.scrollTo(0,0); render(); };
+      secs.forEach(sc=>{ const b=el("button","res-btn"); b.type="button"; b.textContent=(sc?"Section "+sc:"Results")+" · "+m.secs[sc]; b.onclick=()=>pick(sc); row.append(b); });
+      if(secs.length>1){ const b=el("button","res-btn"); b.type="button"; b.textContent=secs.join("+")+" combined"; b.onclick=()=>pick("BOTH"); row.append(b); }
+      det.append(row);
+    });
+    card.append(det);
+  });
+  return card;
+}
+function historyPage(){
+  const h=histSel, c=el("div","stack");
+  const inMeeting=s=>{ const pk=s&&parseRoundKey(s.roundKey); return pk && pk.game===h.game && pk.session===h.session && pk.round===h.round ? pk : null; };
+  const all=Object.values(allSubs).filter(s=> s && isDone(s) && !s.bot && inMeeting(s));
+  const secs=[...new Set(all.map(s=>inMeeting(s).section))].sort();
+  const list=all.filter(s=> h.scope==="BOTH" || inMeeting(s).section===h.scope);
+  const ts=list.reduce((a,s)=>Math.min(a, s.ts||Infinity), Infinity);
+  const scLbl = h.scope==="BOTH" ? " · "+secs.join("+")+" combined" : h.scope ? "."+h.scope : "";
+  const title=((GAMES[h.game]||{}).name||h.game)+" · "+sessLabel(h.session)+scLbl+(meetDate(ts)?" · "+meetDate(ts):"")+" · Round "+h.round;
+  const head=el("div","card stage");
+  const hr=el("div","row"); hr.style.cssText="justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap";
+  const hl=el("div");
+  hl.append(el("div","eyebrow gold","Past results · read-only"),
+    Object.assign(el("h2"),{textContent:(GAMES[h.game]||{}).name||h.game,style:"font-size:1.7rem;margin-top:4px"}),
+    Object.assign(el("div","sm mut"),{textContent:sessLabel(h.session)+scLbl+(meetDate(ts)?" · "+meetDate(ts):"")+" · Round "+h.round+" · "+list.length+" response"+(list.length===1?"":"s"),style:"margin-top:2px"}));
+  const back=el("button","btn neutral","← Back to live"); back.onclick=()=>{ histSel=null; render(); };
+  hr.append(hl, back); head.append(hr);
+  if(secs.length>1){
+    const sr=el("div","res-list"); sr.style.marginTop="10px"; sr.append(el("span","tinylabel","Section"));
+    secs.forEach(sc=>{ const b=el("button","res-btn"+(h.scope===sc?" on":"")); b.type="button"; b.textContent=sc||"—"; b.onclick=()=>{ histSel=Object.assign({},h,{scope:sc}); render(); }; sr.append(b); });
+    const bb=el("button","res-btn"+(h.scope==="BOTH"?" on":"")); bb.type="button"; bb.textContent="Combined"; bb.onclick=()=>{ histSel=Object.assign({},h,{scope:"BOTH"}); render(); }; sr.append(bb);
+    head.append(sr);
+  }
+  c.append(head);
+  if(!list.length){ c.append(Object.assign(el("div","card stage center mut"),{textContent:"No submissions recorded for this meeting."})); }
+  else {
+    c.append(analysisBody(h.game, list, true));
+    const who=el("div","card stage"); who.append(el("div","eyebrow","Who submitted"), submittedTable(list)); c.append(who);
+  }
+  // Clear exactly this meeting (one section's record key), with a confirmation that names it.
+  const danger=el("div","card stage");
+  if(h.scope==="BOTH"){ danger.append(Object.assign(el("div","sm mut"),{textContent:"To clear a meeting, pick one section above — each section's meeting is cleared separately."})); }
+  else {
+    const rk="S"+h.session+(h.scope||"")+"-"+h.game+"-"+h.round;
+    const nAll=Object.values(allSubs).filter(s=>s&&s.roundKey===rk).length;
+    const b=el("button","ghost-btn ab-clear","Clear this meeting…");
+    b.onclick=async()=>{ if(!confirm("Permanently delete all "+nAll+" submission"+(nAll===1?"":"s")+" for “"+title+"”?\n\nThis can't be undone.")) return;
+      await clearMeeting(rk); histSel=null; render(); };
+    danger.append(b, Object.assign(el("div","sm mut"),{textContent:"Deletes every submission recorded for "+title+".",style:"margin-top:6px"}));
+  }
+  c.append(danger);
+  return c;
+}
+/* Delete one meeting's records (by its record key) — any meeting, not just the live one. Also wipes its
+   live pairing node, like clearRound. */
+async function clearMeeting(rk){
+  const ks=Object.keys(allSubs).filter(k=>allSubs[k] && allSubs[k].roundKey===rk);
+  let n=0; for(const k of ks){ try{ await fb.ref(SUBS_PATH()+"/"+k).remove(); n++; }catch(e){} }
+  try{ await fb.ref(LIVE_ROOT(rk)).remove(); }catch(e){}
+  toast(n ? ("Cleared "+n+" submission"+(n===1?"":"s")) : "Nothing to clear");
 }
 function submittedTable(list){
   const rows=(list||subs).slice().sort((a,b)=>a.ts-b.ts);

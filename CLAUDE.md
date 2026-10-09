@@ -24,8 +24,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   (e.g. `…/?class=pgp-2026`). Sections are NOT separate rooms — a section is a field on each
   roster entry, so a student attending another section is still enrolled and combined/cross
   analysis works. Firebase rules are room-generic (`$room`, not `main`).
-- **Session + section (a "meeting")** — `control.session` (S1, S2…) is bumped per class
-  meeting; `control.section` (`"" | "A" | "B" | …`) marks which section is meeting *now* —
+- **Session + section (a "meeting")** — `control.session` (S1, S2…) identifies the class
+  meeting and is **automatic** (see *Automatic session* below — there is no session stepper);
+  `control.section` (`"" | "A" | "B" | …`, chosen by the instructor) marks which section is meeting *now* —
   when unset but the roster defines sections, `curMSection()` defaults to the first section
   (there is no "None" option once a roster has sections). Both
   fold into the record key so a section's meeting and a replay never collide:
@@ -81,12 +82,44 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - `‹room›/schedule` — optional array of `{ date:"YYYY-MM-DD", session, section? }` mapping class
   dates to a meeting. `parseSchedule` accepts ISO or day-first (DD/MM/YYYY) dates, optional `S`
   prefix on the session, and an optional single-letter section (header row and junk lines skipped).
-  When today's date matches, `scheduleBanner()` (top of the console main pane) offers a **tap-to-apply**
-  reminder — one button per scheduled `(session, section)`, or a session-only button when no section is
-  listed — that `writeControl`s the session/section. It **never auto-writes** `control`; the instructor
-  taps to apply (or `dismiss`). Section-less rows nag only on a session mismatch (the common
-  both-sections-same-day case); section rows also nag if the running section isn't scheduled that day.
-  Edited via the console's **Session schedule** card (`scheduleEditor`, paste like the roster).
+  The schedule is the **single source of truth for which session a date is** (see *Automatic session*).
+  Edited via the Course config **Session schedule** card (`scheduleEditor`, paste like the roster; the
+  textarea is pre-filled from the stored schedule, so in-app edits keep app-made changes).
+- **Automatic session** — the instructor never sets the session:
+  - **Games:** EVERY path that opens submissions (Open, Next round →, Reopen — console and present view)
+    goes through `openMeeting(patch)`, which takes today's row for the running section
+    (`todaySession(sec)` → `schedRowOn(date,sec)`: a row naming the section beats a shared row) and, if it
+    differs from `control.session`, writes it with `round:1`. So a game can never be opened into a past
+    session, and Reopen on a later day starts today's meeting (no late submissions to a past meeting).
+    `openMeeting` is the ONLY writer of `control.session` (plus `undoSchedChoice` restoring it). The
+    console's Session control is a read-only label (`sessionTile`) with a hint ("next Open starts today's S9").
+  - **Unscheduled day** (`resolveTodaySession` → blocking `chooseModal`, `#chooseModal`; also a non-blocking
+    console banner `unschedBanner` and an inline chooser in roll call): "which class is this?" —
+    `unschedChoices(sec)` offers the **next scheduled session** ("S9 — moved from Thu 16 Oct", the usual case:
+    a moved class whose row wasn't updated), the **most recent past session if nothing is recorded** for it
+    (`sessRecorded`: roll-call ticks or subs; postponed class), a **New session S‹N+1›** when there's no
+    future row (or no schedule at all — then that's the only option), and a minor **Extra class (S8.5)**.
+    `applySchedChoice` writes it straight into the schedule (moving a row's date; a **shared** row is split so
+    only this section moves) and sets `_schedUndo` → an **Undo** banner (`schedUndoBanner`, console + roll call)
+    that works only while nothing is recorded under it. Only these two candidates are offered: a lecture with
+    no roll call/game also looks "empty", so older sessions would be clutter.
+  - **Extra classes** are stored as integer codes `1000+10·after+k` (`extraCode`; S8.5 = 1085, S8.6 = 1086)
+    because the session is inside record keys, live-room names and roll-call keys and Firebase forbids "." in
+    keys. `sessLabel(n)` renders "S8.5", `sessOrd(n)` sorts chronologically (S8 < S8.5 < S9),
+    `isExtraSess(n)`. `parseSchedule` reads "S8.5". **Always label sessions with `sessLabel`, never "S"+n**
+    (keys stay "S"+n).
+  - **Schedule save checks** (`scheduleSaveOK`): refuses a session on two dates for one section (two classes
+    would share a record key and a replayed game would overwrite); warns (confirm) when a save changes the
+    date of a session that already has records (e.g. re-pasting an older spreadsheet after an in-app move);
+    keeps recorded extra-class rows that a re-paste dropped.
+  - **Past results** (`historyCard` in the console → `historyPage`, local `histSel`): every
+    session·section·round with submissions (`pastMeetings`), grouped by game, newest first, dated from the
+    subs' timestamps, plus "A+B combined". The page is **read-only — no live controls** (Open/Reveal/Next
+    round appear only beside the live meeting) and writes nothing to `control`; **Clear this meeting…**
+    (`clearMeeting(rk)`, confirm names the meeting) deletes exactly one section's record key + its live node.
+    This replaced stepping the session back, which closed submissions for the whole class.
+  - `pairSubs` (G1 pairing) seeds from the meeting's own roundKey, so a past meeting re-pairs exactly as it
+    did live (it used to use the live `curKey`).
 - **Students on hold** — `control.hold` (boolean). When true it freezes the **live class** only: the
   Class tab shows a neutral "your instructor will start shortly" screen (checked at the top of
   `studentView`, overriding game/phase/reveal); instructors are unaffected. When the **hub is on**,
@@ -112,8 +145,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   button (`#rollBtn`, shown/wired by `syncRollBtn()` for an instructor with a roster): a section-wise,
   searchable tick list built from the roster, in the roster's **saved order** (`setAttend`/
   `setAttendMany` write `control/attend/…` directly; audit members are shown but excluded from the
-  "X of N enrolled present" count via `enrolledRoster`). The header carries the session −/+ stepper
-  inline and shows the meeting's **date** from the session schedule (`schedDateFor`/`fmtSchedDate`,
+  "X of N enrolled present" count via `enrolledRoster`). **Roll call is fully independent of the game:**
+  it has its own local session `rollSess` (null = today's, from the schedule via `todaySession`) and never
+  reads or writes `control.session` (it used to write it with `phase:"waiting"`, which closed the live game
+  mid-class). Its header −/+ stepper only changes what you're viewing ("back to today" link); on an
+  unscheduled day it shows the "which class is this?" chooser and hides the tick list until settled. The
+  header shows the meeting's **date** from the session schedule (`schedDateFor`/`fmtSchedDate`,
   matched on session+section). A meeting's roll is "taken" once it has any entry; a listed student
   without an entry counts **absent**. Helpers: `attendMap`, `attendKeyFor`,
   `parseAttendKey`, `isPresent`. Each tick re-renders (attendance is in `control`), so `_rollScroll`
@@ -124,7 +161,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     **P/A history string** (`.roll-hist`, e.g. `PPAP` — green P / red A) across every *taken* session
     for that section (`attendSessions(sec)`), so you can see a student's attendance pattern at a glance.
   - **All sessions** — an **Excel-like grid** (`.att-grid`): students (roster order, name **+ PGP id**
-    `sid`) × every session `1..N` (`gridSessions(sec)` — covers taken, scheduled and current). Sticky
+    `sid`) × every regular session `1..N` plus extra classes, in date order (`gridSessions(sec)` over
+    `knownSessions(sec)` — scheduled, taken or played; S8.5 sits between S8 and S9). Sticky
     header row + sticky name column. Tap a **cell** to toggle that student present/absent for that
     session (`setAttend`); tap a **session header** to mark — or clear — the whole column
     (`setAttendMany`). Its scroll (both axes) is preserved across the per-tick re-render via
@@ -466,7 +504,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   `grid-template-areas:"top" "main"`, **no side rail**): a **full-width Choose exercise** picker
   (`.console-top` — the G1–G6 game tiles + the IL1 Pareto lesson) over the **main** panel. The
   chosen game's **Parameters** card stacks at the **top of the main panel** (first card, full width),
-  followed by session/round controls, instructor preview/analysis and the attendance card.
+  followed by the unscheduled-day/Undo banner, the session label + section/hold bar (`sessionTile`, no
+  session stepper), round controls, instructor preview/analysis, the attendance card and **Past results**
+  (`historyCard`). A picked past meeting replaces the main panel with its read-only `historyPage`.
 - **Top bar** (`.topbar`, a flex **column** of `.tb-row`s) — **Row 1:** the brand (left) +
   (`.tb-actions`, right-aligned) the phase pill, **Log out** (`#logoutBtn`/`syncLogoutBtn`,
   instructor-only → `logOut`) and the theme toggle. **Row 2** (`.tb-sub`): the **course picker**
