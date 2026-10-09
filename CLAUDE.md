@@ -91,8 +91,21 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     (`todaySession(sec)` → `schedRowOn(date,sec)`: a row naming the section beats a shared row) and, if it
     differs from `control.session`, writes it with `round:1`. So a game can never be opened into a past
     session, and Reopen on a later day starts today's meeting (no late submissions to a past meeting).
-    `openMeeting` is the ONLY writer of `control.session` (plus `undoSchedChoice` restoring it). The
-    console's Session control is a read-only label (`sessionTile`) with a hint ("next Open starts today's S9").
+    `openMeeting` is the ONLY writer of `control.session` (plus `undoSchedChoice` restoring it).
+  - **The console shows TODAY's meeting** (`liveSess()` = today's schedule row for the running section, else
+    `control.session`; `liveRound()`; `todayStarted()` = students are already in it). Before today's first Open
+    `control.session` still holds the last meeting, so the session label (`sessionTile`, read-only: "S5 · today ·
+    starts when you open submissions"), `analysisSubs`, result headers, the present view and the attendance card
+    all use `liveSess/liveRound` — round shows 1, and Reveal/Clear/round ± are locked until it starts.
+  - **Stale round auto-close** (`maybeCloseStaleRound`, from `render()`, once per day per instructor console,
+    only after BOTH control and the schedule have loaded — `scheduleLoaded`): a round still OPEN from an earlier
+    session (control.session ≠ today's row, or today unscheduled) is closed, so no late submissions reach a past
+    meeting. Never today's round; never in a course with no schedule.
+  - **Freeze while submissions are open** (`isOpenNow()`, `lockIf(node,cond,reason)`, `OPEN_LOCK(what)`): game
+    tiles, section switch, round ±, Next round →, Undo, Parameters (inputs disabled + note), schedule Save/Clear
+    and Clear are dimmed and a tap toasts the reason; a 🔒 line above the round bar says so. The only ways
+    forward are **Close submissions** and **Reveal**; **Hold** stays available (it pauses without losing
+    anything). Normal flow is unchanged: Reveal → Next round works because submissions are closed by then.
   - **Unscheduled day** (`resolveTodaySession` → blocking `chooseModal`, `#chooseModal`; also a non-blocking
     console banner `unschedBanner` and an inline chooser in roll call): "which class is this?" —
     `unschedChoices(sec)` offers the **next scheduled session** ("S9 — moved from Thu 16 Oct", the usual case:
@@ -112,12 +125,16 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     would share a record key and a replayed game would overwrite); warns (confirm) when a save changes the
     date of a session that already has records (e.g. re-pasting an older spreadsheet after an in-app move);
     keeps recorded extra-class rows that a re-paste dropped.
-  - **Past results** (`historyCard` in the console → `historyPage`, local `histSel`): every
-    session·section·round with submissions (`pastMeetings`), grouped by game, newest first, dated from the
-    subs' timestamps, plus "A+B combined". The page is **read-only — no live controls** (Open/Reveal/Next
-    round appear only beside the live meeting) and writes nothing to `control`; **Clear this meeting…**
-    (`clearMeeting(rk)`, confirm names the meeting) deletes exactly one section's record key + its live node.
-    This replaced stepping the session back, which closed submissions for the whole class.
+  - **Analyze bar = live + past, for the selected game** (`analyzeBar`; replaced the old `sectionScopeBar` and
+    the separate Past-results card/page): a **Today · S5** row (Section A / B / Both → `sectionScope`) and one
+    **Past · S3 (date)** row per earlier session·round of the *selected game* that has submissions
+    (`pastMeetings`, newest first, round shown only when a session had several), each with per-section chips
+    (with counts) and Both. A past chip sets local `histSel` → the results area shows `historyPanel` (read-only:
+    analysis, who submitted, **Clear this meeting…** → `clearMeeting(rk)`, confirm names the meeting, single
+    section only) and the round controls **collapse to "Viewing past results — ← Back to today"**, so nothing on
+    screen can act on today's round meanwhile; the attendance card is hidden. Writes nothing to `control`.
+    Other games' history: pick that game up top (frozen while a round is open). This replaced stepping the
+    session back, which closed submissions for the whole class.
   - `pairSubs` (G1 pairing) seeds from the meeting's own roundKey, so a past meeting re-pairs exactly as it
     did live (it used to use the live `curKey`).
 - **Students on hold** — `control.hold` (boolean). When true it freezes the **live class** only: the
@@ -505,8 +522,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   (`.console-top` — the G1–G6 game tiles + the IL1 Pareto lesson) over the **main** panel. The
   chosen game's **Parameters** card stacks at the **top of the main panel** (first card, full width),
   followed by the unscheduled-day/Undo banner, the session label + section/hold bar (`sessionTile`, no
-  session stepper), round controls, instructor preview/analysis, the attendance card and **Past results**
-  (`historyCard`). A picked past meeting replaces the main panel with its read-only `historyPage`.
+  session stepper), the 🔒 line when open, round controls (or the "Back to today" line), the **Analyze** bar
+  (today + this game's past meetings), then live preview/analysis or the read-only `historyPanel`, and the
+  attendance card.
 - **Top bar** (`.topbar`, a flex **column** of `.tb-row`s) — **Row 1:** the brand (left) +
   (`.tb-actions`, right-aligned) the phase pill, **Log out** (`#logoutBtn`/`syncLogoutBtn`,
   instructor-only → `logOut`) and the theme toggle. **Row 2** (`.tb-sub`): the **course picker**

@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-09.003";
+const APP_VERSION = "2026-10-09.004";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -991,8 +991,29 @@ function secOf(s){ return (s.section || (roster[String(s.studentId||"").toLowerC
    "A"/"B" = that section's meeting; "BOTH" = combine both for this session+game+round. */
 let sectionScope=null;
 function effScope(){ return sectionScope!=null ? sectionScope : curMSection(); }
+/* The meeting the CONSOLE presents as current: today's scheduled session for the running section.
+   control.session (where students write) only moves there when submissions open, so before today's first
+   Open it still holds the last meeting — which must not be shown as today's. todayStarted() = students are
+   already in today's meeting. No schedule row for today → fall back to control.session (old behaviour). */
+function liveSess(){ const t=todaySession(curMSection()); return t!=null ? t : curSession(); }
+function todayStarted(){ return liveSess()===curSession(); }
+function liveRound(){ return todayStarted() ? ((control&&control.round)||1) : 1; }   // a new meeting starts at round 1
+const isOpenNow = ()=> !!(control && control.phase==="open");
+/* A round left OPEN from an earlier session (nobody closed it last class) would keep taking submissions
+   into that past meeting. Close it the first time an instructor console loads on a new day — once the
+   schedule is loaded, and never today's round (a round opened today always has today's schedule row). */
+let _staleDay=null;
+function maybeCloseStaleRound(){
+  if(!control || !controlLoaded || !scheduleLoaded || diagOn() || !isTeacher()) return;
+  const day=todayISO(); if(_staleDay===day) return; _staleDay=day;
+  if(control.phase!=="open" || !haveSchedule()) return;
+  const t=todaySession(curMSection());
+  if(t!=null && t===curSession()) return;
+  writeControl({phase:"waiting"});
+  toast("Closed a round left open from "+sessLabel(curSession())+" — today is a new meeting");
+}
 function analysisSubs(){
-  const sc=effScope(), s=curSession(), g=control&&control.activeGame, r=control&&control.round;
+  const sc=effScope(), s=liveSess(), g=control&&control.activeGame, r=liveRound();
   return Object.values(allSubs).filter(x=> x && x.session===s && x.game===g && x.round===r
     && (sc==="BOTH" || String(x.msection||"").toUpperCase()===sc));
 }
@@ -1095,7 +1116,8 @@ function onSubGone(snap){ if(snap&&snap.key){ delete allSubs[snap.key]; schedule
 let _subsRenderT=null;
 function scheduleSubsRender(){ if(_subsRenderT) return; _subsRenderT=setTimeout(()=>{ _subsRenderT=null; recompute(); render(); }, 60); }   // coalesce the initial burst + live changes into one render per frame
 function onRoster(snap){ setRoster(snap.val()); render(); }
-function onSchedule(snap){ setSchedule(snap.val()); render(); }
+let scheduleLoaded=false;   // the stale-round check must never run before the schedule has arrived
+function onSchedule(snap){ setSchedule(snap.val()); scheduleLoaded=true; render(); }
 function onCourses(snap){ courses = snap.val()||{}; render(); }
 function onEnroll(snap){ enroll = snap.val()||{}; maybeAutoRoute(); render(); }
 function attachData(){
@@ -1115,7 +1137,7 @@ function detachData(){
   if(!listenersOn) return; listenersOn=false;
   try{ fb.ref(CTRL_PATH()).off(); fb.ref(SUBS_PATH()).off(); fb.ref(ROSTER_PATH()).off(); fb.ref(SCHEDULE_PATH()).off(); fb.ref(COURSES_PATH).off(); }catch(e){}
   if(_subsRenderT){ clearTimeout(_subsRenderT); _subsRenderT=null; }
-  control=null; controlLoaded=false; allSubs={}; roster={}; rosterList=[]; schedule=[]; courses={}; enroll={}; recompute();
+  control=null; controlLoaded=false; allSubs={}; roster={}; rosterList=[]; schedule=[]; scheduleLoaded=false; courses={}; enroll={}; recompute();
 }
 /* My enrolled course ids, from the enrollment index (signed-in students only). */
 function myCourses(){ return enroll && typeof enroll==="object" ? Object.keys(enroll).filter(k=>enroll[k]) : []; }
@@ -1428,7 +1450,7 @@ let gameDraft={};
 function draftFor(k){ if(!gameDraft[k]) gameDraft[k]={}; return gameDraft[k]; }
 function render(){
   applyIdentity();
-  maybePublishVersion();
+  maybePublishVersion(); maybeCloseStaleRound();
   syncVersionBanner();
   syncPhasePill();
   syncBrand();
@@ -3051,10 +3073,10 @@ function analysisView(teacher){
   const list = teacher ? analysisSubs() : subs;   // meeting-scope is instructor-only
   const sc = teacher ? effScope() : "";
   const scLbl = sc==="BOTH" ? " · both sections" : sc ? " · Section "+sc : "";
-  const meetLbl = "Session "+sessLabel(curSession())+(sc&&sc!=="BOTH"?"."+sc:"");
+  const meetLbl = "Session "+sessLabel(teacher?liveSess():curSession())+(sc&&sc!=="BOTH"?"."+sc:"");
   const c=el("div","stack");
   const head=el("div","card stage");
-  head.append(el("div","eyebrow gold","Results · "+meetLbl+" · Round "+control.round),
+  head.append(el("div","eyebrow gold","Results · "+meetLbl+" · Round "+(teacher?liveRound():control.round)),
     Object.assign(el("h2"),{textContent:GAMES[g].name,style:"font-size:1.7rem;margin-top:4px"}));
   const n=list.length;
   head.append(el("p","lead", n+" "+(n===1?"response":"responses")+" in"+scLbl+". "+revealNarr(g)));
@@ -3718,21 +3740,34 @@ function courseCard(){
   return wrap;
 }
 
-/* Live-round controls at the top of the main panel (below the Session tile), so the
-   instructor runs the round from the main pane rather than hunting in the rail. */
+/* Freeze a control: dimmed, and a tap explains why instead of acting. While submissions are OPEN, every
+   action that would close or disrupt the round (game, section, round ±, Next round, Undo, parameters,
+   schedule save, Clear) is frozen — the only ways forward are Close submissions and Reveal. A dead button
+   on a projector looks broken, hence the toast. */
+function lockIf(node, cond, reason){
+  if(!cond || !node) return node;
+  node.style.opacity=".45"; node.style.cursor="not-allowed"; node.setAttribute("aria-disabled","true");
+  node.title=reason; node.onclick=e=>{ if(e){ e.preventDefault(); e.stopPropagation(); } toast(reason); };
+  return node;
+}
+const OPEN_LOCK = what=> "Submissions are open — close them first to "+what+".";
+/* Live-round controls at the top of the main panel (below the Session tile). They always act on TODAY's
+   meeting; before today's first Open that meeting hasn't started, so it shows round 1 and there's nothing
+   to reveal or clear yet. */
 function roundActionBar(){
-  const phase=control.phase;
+  const phase=control.phase, open=phase==="open", started=todayStarted();
   const bar=el("div","actionbar");
   const grp=el("div","ab-grp");
   grp.append(el("span","tinylabel","Round"));
   const minus=el("button","ghost-btn","–"); minus.onclick=()=>{ if(control.round>1) writeControl({round:control.round-1,phase:"waiting"}); };
-  const rnum=el("span","rnum"); rnum.textContent=control.round;
+  const rnum=el("span","rnum"); rnum.textContent=liveRound();
   const plus=el("button","ghost-btn","+"); plus.onclick=()=>writeControl({round:control.round+1,phase:"waiting"});
+  [minus,plus].forEach(b=>{ lockIf(b, open, OPEN_LOCK("change the round")); lockIf(b, !open && !started, "Today's meeting starts at round 1 when you open submissions."); });
   grp.append(minus,rnum,plus); bar.append(grp);
   bar.append(el("div","ab-spacer"));
-  const openBtn=el("button","btn"+(phase==="open"?" neutral":""), phase==="open"?"Close submissions":"Open submissions");
+  const openBtn=el("button","btn"+(open?" neutral":""), open?"Close submissions":"Open submissions");
   // Opening a round auto-launches the class-facing collection screen (participation only).
-  openBtn.onclick=async()=>{ if(phase==="open"){ writeControl({phase:"waiting"}); return; }
+  openBtn.onclick=async()=>{ if(open){ writeControl({phase:"waiting"}); return; }
     if(await openMeeting({})){ presentMode=true; render(); } };   // session comes from today's schedule
   // Reveal ↔ Hide toggle. Hiding returns to "waiting" — results hidden from the class,
   // submissions stay closed (does NOT reopen the round).
@@ -3740,12 +3775,17 @@ function roundActionBar(){
   const revealBtn=el("button","btn"+(revealed?" neutral":" gold"), revealed?"Hide results":"Reveal results");
   revealBtn.title=revealed?"Hide results from the class (submissions stay closed)":"Show results to the class";
   revealBtn.onclick=()=>{ if(revealed){ writeControl({phase:"waiting"}); } else { doReveal(); } };
+  if(!revealed) lockIf(revealBtn, !started, "Nothing to reveal yet — today's meeting starts when you open submissions.");
   const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>openMeeting({round:control.round+1});
+  lockIf(nextR, open, OPEN_LOCK("move to the next round (Reveal, then Next round)"));
+  lockIf(nextR, !open && !started, "Today's meeting starts at round 1 — use Open submissions.");
   const presentBtn=el("button","ghost-btn","Present ⛶"); presentBtn.title="Show the class the full-screen collection screen (no results)";
   presentBtn.onclick=()=>{ presentMode=true; render(); };
   const clr=el("button","ghost-btn ab-clear","Clear"); clr.title="Clear this meeting's submissions";
   clr.onclick=()=>{ const mtg=(GAMES[control.activeGame]||{}).name+" · "+sessLabel(curSession())+(curMSection()?"."+curMSection():"")+" · Round "+control.round;
     if(confirm("Clear all submissions for “"+mtg+"”? This also resets any in-progress card match and can't be undone.")) clearRound(); };
+  lockIf(clr, open, OPEN_LOCK("clear (Close, then Clear, then Open again)"));
+  lockIf(clr, !open && !started, "Nothing recorded in today's meeting yet. To clear an earlier meeting, open it under Analyze.");
   bar.append(openBtn,revealBtn,nextR,presentBtn,clr);
   return bar;
 }
@@ -3956,7 +3996,7 @@ function presentView(){
   const head=el("div","present-head");
   const cn=courseName(); if(cn) head.append(el("div","present-course",cn));
   head.append(el("div","present-game",GAMES[g].name),
-    el("div","present-meta","Session "+sessLabel(curSession())+(curMSection()?"."+curMSection():"")+" · Round "+control.round));
+    el("div","present-meta","Session "+sessLabel(liveSess())+(curMSection()?"."+curMSection():"")+" · Round "+liveRound()));
   wrap.append(head);
 
   const body=el("div","present-body");
@@ -3964,7 +4004,7 @@ function presentView(){
   const statusTxt = open?"Submissions open" : revealed?"Results revealed" : "Submissions closed";
   const status=el("div","present-status"+(open?" live":"")); status.append(el("span","dot"), document.createTextNode(statusTxt));
   cnt.append(status);
-  const n=subs.filter(s=>isDone(s)&&!s.bot).length;
+  const n=todayStarted() ? subs.filter(s=>isDone(s)&&!s.bot).length : 0;   // today's meeting only
   const rl = curMSection() ? enrolledRoster().filter(e=>e.section===curMSection()) : enrolledRoster();
   const num=el("div","present-num"); num.textContent=n; cnt.append(num);
   cnt.append(el("div","present-numlabel", haveRoster() ? ("of "+rl.length+" "+(curMSection()?"in Section "+curMSection():"enrolled")+" submitted") : (n===1?"response in":"responses in")));
@@ -4009,7 +4049,7 @@ function schedUndoBanner(){
   const box=el("div","note-box gold"); box.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap";
   box.append(Object.assign(el("div"),{innerHTML:"Today's class"+(u.sec?" (Section "+esc(u.sec)+")":"")+" is recorded as <b>"+esc(u.label)+"</b> in the schedule."}));
   const r=el("div","row"); r.style.gap="8px";
-  const un=el("button","ghost-btn","Undo"); un.onclick=undoSchedChoice;
+  const un=el("button","ghost-btn","Undo"); un.onclick=undoSchedChoice; lockIf(un, isOpenNow(), OPEN_LOCK("undo this"));
   const ok=el("button","linkbtn","dismiss"); ok.type="button"; ok.onclick=()=>{ _schedUndo=null; render(); };
   r.append(un,ok); box.append(r);
   return box;
@@ -4024,7 +4064,7 @@ function unschedBanner(sec){
   top.append(x); box.append(top);
   const btns=el("div","row"); btns.style.cssText="gap:8px;flex-wrap:wrap";
   opts.forEach(o=>{ const b=el("button", o.minor?"ghost-btn":("btn"+(o.primary?" gold":"")), o.label); b.title=o.sub||"";
-    b.onclick=async()=>{ await applySchedChoice(o, sec); render(); }; btns.append(b); });
+    b.onclick=async()=>{ await applySchedChoice(o, sec); render(); }; lockIf(b, isOpenNow(), OPEN_LOCK("change today's session")); btns.append(b); });
   box.append(btns);
   return box;
 }
@@ -4071,8 +4111,9 @@ function scheduleEditor(){
   }
   const save=el("button","btn wide","Save schedule"); save.style.marginTop="2px";
   save.onclick=async()=>{ const list=parseSchedule(ta.value); if(!scheduleSaveOK(list)) return; const ok=await writeSchedule(list); if(ok) toast(list.length?(list.length+" meetings saved"):"Schedule saved (empty)"); };
+  lockIf(save, isOpenNow(), OPEN_LOCK("change the session schedule"));
   wrap.append(save);
-  if(haveSchedule()){ const clr=el("button","ghost-btn","Clear schedule"); clr.style.marginTop="6px"; clr.onclick=removeSchedule; wrap.append(clr); }
+  if(haveSchedule()){ const clr=el("button","ghost-btn","Clear schedule"); clr.style.marginTop="6px"; clr.onclick=removeSchedule; lockIf(clr, isOpenNow(), OPEN_LOCK("change the session schedule")); wrap.append(clr); }
   return wrap;
 }
 function sessionTile(){
@@ -4081,11 +4122,12 @@ function sessionTile(){
   // Session is AUTOMATIC (no stepper): set from today's schedule row whenever submissions open.
   // Shown read-only, with a hint when the next Open will start a different (today's) session.
   g1.append(el("span","tinylabel","Session"));
-  const live=curSession(), lsec=curMSection(), tdy=todaySession(lsec);
-  const snum=el("span","rnum"); snum.textContent=sessLabel(live);
-  const ldate=schedDateFor(live, lsec); snum.title="The meeting students are in now"+(ldate?" — scheduled "+ldate:"")+". Set automatically from the session schedule when you open submissions.";
+  const lsec=curMSection(), tdy=todaySession(lsec), unsched=haveSchedule() && tdy==null;
+  const snum=el("span","rnum"); snum.textContent = unsched ? "—" : sessLabel(liveSess());
+  const ldate=schedDateFor(liveSess(), lsec);
+  snum.title="Today's meeting"+(ldate?" — "+ldate:"")+". Taken automatically from the session schedule.";
   g1.append(snum);
-  const hint = tdy!=null && tdy!==live ? "next Open starts today's "+sessLabel(tdy) : tdy!=null ? "today" : haveSchedule() ? "today isn't scheduled" : "";
+  const hint = unsched ? "today isn't in the schedule" : tdy!=null ? ("today"+(todayStarted()?"":" · starts when you open submissions")) : "";
   if(hint) g1.append(Object.assign(el("span","sm mut"),{textContent:hint,style:"margin-left:6px"}));
   bar.append(g1);
   const rsecs=rosterSections();
@@ -4102,7 +4144,8 @@ function sessionTile(){
         if(cur===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
         b.title="Section meeting now (switching starts it at Round 1; its session comes from the schedule when you open submissions)";
         // Switching section starts that section's meeting fresh: reset the round to 1.
-        b.onclick=()=>{ if(cur!==val) writeControl({section:val, round:1, phase:"waiting"}); }; return b; };
+        b.onclick=()=>{ if(cur!==val) writeControl({section:val, round:1, phase:"waiting"}); };
+        if(cur!==val) lockIf(b, isOpenNow(), OPEN_LOCK("switch section")); return b; };
       rsecs.forEach(s=> g2.append(mkSec(s)));
     }
     bar.append(g2);
@@ -4302,6 +4345,7 @@ function teacherConsole(){
     b.append(Object.assign(el("span","ic"),{textContent:GAMES[k].icon}));
     const tx=el("div"); tx.append(el("div","n",GAMES[k].name),el("div","d",GAMES[k].blurb)); b.append(tx);
     b.onclick=()=>{ histSel=null; writeControl({activeGame:k, round:1, phase:"waiting"}); };
+    lockIf(b, isOpenNow(), OPEN_LOCK("switch game"));
     gp.append(b);
   });
   // Interactive lessons live in the same picker, gold-shaded and grouped under a divider.
@@ -4316,14 +4360,17 @@ function teacherConsole(){
   // "Course config" page (top-bar ⚙); Log out is a top-bar button (#logoutBtn).
 
   const main=el("div","stack");
-  // A past meeting opens on its own read-only page — none of the live controls appear with it.
-  if(histSel){ main.append(historyPage()); c.append(main); return c; }
   if(hasGame){
     // Parameters stacks directly below Choose exercise, at the top of the centre panel. Round flow
     // (round ±, open/close, reveal, next round, clear) lives in the action bar further down.
     const s3=el("div","rail-sec");
     s3.append(Object.assign(el("h3"),{textContent:"Parameters"}));
-    s3.append(paramEditor());
+    const pe=paramEditor(); s3.append(pe);
+    if(isOpenNow()){   // changing settings mid-round makes the answers already in inconsistent
+      pe.querySelectorAll("input,select,button,textarea").forEach(x=>{ x.disabled=true; });
+      pe.style.opacity=".55";
+      s3.append(Object.assign(el("div","sm mut"),{textContent:"Locked while submissions are open — close them to change the settings.",style:"margin-top:6px"}));
+    }
     main.append(s3);
   }
   if(control&&control.hold){
@@ -4333,13 +4380,29 @@ function teacherConsole(){
   }
   const sBan=scheduleBanner(); if(sBan) main.append(sBan);
   main.append(sessionTile());
-  if(control&&control.activeGame) main.append(roundActionBar());
-  if(control&&control.activeGame && rosterSections().length>1) main.append(sectionScopeBar());
-  if(!control||!control.activeGame){
+  const g=control&&control.activeGame;
+  if(histSel && histSel.game!==g) histSel=null;   // a different game is selected now
+  if(g){
+    if(histSel){
+      // Viewing a past meeting: the live round controls collapse to one line, so nothing on screen can act
+      // on today's round while you look at an old one.
+      const bk=el("div","actionbar");
+      bk.append(Object.assign(el("div","sm"),{innerHTML:"<b>Viewing past results</b> (read-only)"+(isOpenNow()?" · today's round is still open for submissions":"")+".",style:"flex:1"}));
+      const b=el("button","btn neutral","← Back to today"); b.onclick=()=>{ histSel=null; render(); }; bk.append(b);
+      main.append(bk);
+    } else {
+      if(isOpenNow()) main.append(Object.assign(el("div","sm mut"),{textContent:"🔒 Submissions are open — game, section, round, settings and Clear are locked until you close them.",style:"margin:-4px 2px 0"}));
+      main.append(roundActionBar());
+    }
+    const ab=analyzeBar(); if(ab) main.append(ab);
+  }
+  if(!g){
     const w=el("div","card stage center"); w.style.padding="60px 30px";
     w.append(el("div","eyebrow","Ready"),Object.assign(el("h2"),{textContent:"Pick an exercise to begin",style:"font-size:1.6rem;margin:8px 0"}),
-      el("p","lead","Choose a game from the left, open submissions, and share the link. Live responses and the full analysis appear here."));
+      el("p","lead","Choose a game above, open submissions, and share the link. Live responses and the full analysis appear here."));
     main.append(w);
+  } else if(histSel){
+    main.append(historyPanel());
   } else if(analysisSubs().length){
     // Instructor always sees live results — before, during, or after reveal.
     const nsc=analysisSubs().length;
@@ -4351,13 +4414,12 @@ function teacherConsole(){
     main.append(analysisView(true));
   } else {
     const mon=el("div","card stage");
-    mon.append(el("div","eyebrow gold",GAMES[control.activeGame].name+" · Round "+control.round));
-    mon.append(Object.assign(el("h2"),{textContent: control.phase==="open"?"Submissions are open — waiting for responses":"Round set up — not open yet",style:"font-size:1.6rem;margin:6px 0 4px"}));
-    mon.append(Object.assign(el("p","lead"),{textContent: control.phase==="open"?"Share the link and watch responses arrive. Results appear here live — for your eyes only — until you reveal.":"Click “Open submissions” when the class is ready.",style:"margin-top:8px"}));
+    mon.append(el("div","eyebrow gold",GAMES[g].name+" · "+sessLabel(liveSess())+" · Round "+liveRound()));
+    mon.append(Object.assign(el("h2"),{textContent: isOpenNow()?"Submissions are open — waiting for responses":"Round set up — not open yet",style:"font-size:1.6rem;margin:6px 0 4px"}));
+    mon.append(Object.assign(el("p","lead"),{textContent: isOpenNow()?"Share the link and watch responses arrive. Results appear here live — for your eyes only — until you reveal.":"Click “Open submissions” when the class is ready.",style:"margin-top:8px"}));
     main.append(mon);
   }
-  if(control&&control.activeGame&&(haveRoster()||analysisSubs().length)) main.append(attendanceCard());
-  const hc=historyCard(); if(hc) main.append(hc);
+  if(g && !histSel && (haveRoster()||analysisSubs().length)) main.append(attendanceCard());
   c.append(main);
   return c;
 }
@@ -4574,28 +4636,10 @@ function subValue(s){
   if(s.game==="attackdefend"){ const seq=String(s.seq||"").split(",").filter(Boolean); return "["+seq.join(" ")+"] vs "+(s.partnerName||"?"); }
   return s.value!=null?String(s.value):"—";   // guess23 and default
 }
-/* Meeting-scope toggle: which section's meeting to analyze (A / B / … / Both).
-   Sets sectionScope, which effScope()/analysisSubs() read. null follows the running
-   section (curMSection); the buttons let the instructor override it after the fact. */
-function sectionScopeBar(){
-  const secs=rosterSections(); const eff=effScope();
-  const card=el("div","card"); card.style.padding="12px 14px";
-  const row=el("div","row"); row.style.gap="8px"; row.style.alignItems="center"; row.style.flexWrap="wrap";
-  row.append(el("span","tinylabel","Analyze"));
-  const mk=(val,label)=>{ const b=el("button","ghost-btn"); b.textContent=label;
-    if(eff===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
-    b.onclick=()=>{ sectionScope=val; render(); }; return b; };
-  secs.forEach(s=> row.append(mk(s,"Session "+sessLabel(curSession())+"."+s)));
-  row.append(mk("BOTH","Both sections"));
-  card.append(row);
-  const running=curMSection();
-  card.append(Object.assign(el("div","sm mut"),{textContent:"Each submission is tagged with the section running when it came in"+(running?(" (now "+sessLabel(curSession())+"."+running+")"):"")+". Switch scope to review one section's meeting or combine both.",style:"margin-top:6px"}));
-  return card;
-}
-/* ── Past results (instructor, READ-ONLY). Every meeting with submissions, grouped by game, newest first.
-   One opens on its own page with NO live controls — Open / Reveal / Next round only ever appear next to
-   the live meeting — so looking at history can never act on (or close) today's game. This replaces
-   stepping the session back, which used to close submissions for the whole class. ── */
+/* ── Past results (instructor, READ-ONLY), reached from the Analyze bar for the selected game. While one is
+   shown the live round controls collapse to "Back to today", so looking at history can never act on (or
+   close) today's game. This replaces stepping the session back, which used to close submissions for the
+   whole class. ── */
 let histSel=null;   // {game, session, round, scope}  scope = a section letter, "" (no sections) or "BOTH"
 const shortDate = iso=> fmtSchedDate(iso).replace(",","").replace(/ \d{4}$/,"");   // "Thu 9 Oct"
 function pastMeetings(){
@@ -4608,31 +4652,41 @@ function pastMeetings(){
   return Object.values(m);
 }
 const meetDate = ts=> (ts && ts<Infinity) ? shortDate(todayISO(new Date(ts))) : "";
-function historyCard(){
-  const all=pastMeetings(); if(!all.length) return null;
-  const card=el("div","card stage");
-  card.append(el("div","eyebrow","Past results"));
-  card.append(Object.assign(el("p","sm mut"),{textContent:"Every meeting with submissions, by game. Opens read-only — it never changes what students see.",style:"margin:4px 0 6px"}));
-  GAME_ORDER.forEach(g=>{
-    const ms=all.filter(m=>m.game===g); if(!ms.length) return;
-    ms.sort((a,b)=> (sessOrd(b.session)-sessOrd(a.session)) || (b.round-a.round));   // newest first
-    const perSess={}; ms.forEach(m=>{ perSess[m.session]=(perSess[m.session]||0)+1; });
-    const det=el("details"); det.style.margin="6px 0"; if(control && control.activeGame===g) det.open=true;
-    det.append(Object.assign(el("summary"),{textContent:((GAMES[g]||{}).name||g)+"  ("+ms.length+")",style:"cursor:pointer;font-weight:600"}));
-    ms.forEach(m=>{
-      const row=el("div","res-list"); row.style.cssText="margin:6px 0 0 6px;align-items:center";
-      row.append(Object.assign(el("span","tinylabel"),{textContent:sessLabel(m.session)+(meetDate(m.ts)?" · "+meetDate(m.ts):"")+(perSess[m.session]>1?" · R"+m.round:"")}));
-      const secs=Object.keys(m.secs).sort();
-      const pick=scope=>{ histSel={game:g, session:m.session, round:m.round, scope}; window.scrollTo(0,0); render(); };
-      secs.forEach(sc=>{ const b=el("button","res-btn"); b.type="button"; b.textContent=(sc?"Section "+sc:"Results")+" · "+m.secs[sc]; b.onclick=()=>pick(sc); row.append(b); });
-      if(secs.length>1){ const b=el("button","res-btn"); b.type="button"; b.textContent=secs.join("+")+" combined"; b.onclick=()=>pick("BOTH"); row.append(b); }
-      det.append(row);
-    });
-    card.append(det);
+/* Analyze bar (instructor): TODAY's meeting (live) and the selected game's PAST meetings, each by section or
+   combined — one place for both. A past chip swaps the results area for a read-only view and collapses the
+   live round controls to a "Back to today" line; a Today chip returns. Only this game's sessions are
+   listed (usually one to three), newest first. */
+function analyzeBar(){
+  const g=control.activeGame, secs=rosterSections(), today=liveSess(), eff=effScope();
+  const past=pastMeetings().filter(m=>m.game===g && m.session!==today)
+    .sort((a,b)=> (sessOrd(b.session)-sessOrd(a.session)) || (b.round-a.round));
+  if(secs.length<=1 && !past.length) return null;   // nothing to choose between
+  const card=el("div","card"); card.style.padding="12px 14px";
+  const chip=(label,on,fn)=>{ const b=el("button","ghost-btn"); b.textContent=label; b.style.padding="5px 11px";
+    if(on){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
+    b.onclick=fn; return b; };
+  const row=(title, chips)=>{ const r=el("div","row"); r.style.cssText="gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0";
+    r.append(Object.assign(el("span","tinylabel"),{textContent:title,style:"min-width:150px"})); chips.forEach(c=>r.append(c)); return r; };
+  card.append(Object.assign(el("div","eyebrow"),{textContent:"Analyze",style:"margin-bottom:4px"}));
+  const toToday=sc=>()=>{ histSel=null; sectionScope=sc; render(); };
+  const tChips = secs.length>1
+    ? secs.map(sc=>chip("Section "+sc, !histSel && eff===sc, toToday(sc))).concat([chip("Both", !histSel && eff==="BOTH", toToday("BOTH"))])
+    : [chip("Live results", !histSel, toToday(null))];
+  card.append(row("Today · "+sessLabel(today)+" ("+shortDate(todayISO())+")", tChips));
+  const perSess={}; past.forEach(m=>{ perSess[m.session]=(perSess[m.session]||0)+1; });
+  past.forEach(m=>{
+    const ss=Object.keys(m.secs).sort();
+    const on=sc=> !!histSel && histSel.session===m.session && histSel.round===m.round && histSel.scope===sc;
+    const go=sc=>()=>{ histSel={game:g, session:m.session, round:m.round, scope:sc}; render(); };
+    const chips=ss.map(sc=>chip((sc?"Section "+sc:"Results")+" · "+m.secs[sc], on(sc), go(sc)));
+    if(ss.length>1) chips.push(chip("Both", on("BOTH"), go("BOTH")));
+    card.append(row("Past · "+sessLabel(m.session)+(meetDate(m.ts)?" ("+meetDate(m.ts)+")":"")+(perSess[m.session]>1?" · R"+m.round:""), chips));
   });
+  if(past.length) card.append(Object.assign(el("div","sm mut"),{textContent:"Past meetings open read-only — they never change what students see.",style:"margin-top:4px"}));
   return card;
 }
-function historyPage(){
+/* Read-only results of one past meeting (histSel), shown in the results area under the Analyze bar. */
+function historyPanel(){
   const h=histSel, c=el("div","stack");
   const inMeeting=s=>{ const pk=s&&parseRoundKey(s.roundKey); return pk && pk.game===h.game && pk.session===h.session && pk.round===h.round ? pk : null; };
   const all=Object.values(allSubs).filter(s=> s && isDone(s) && !s.bot && inMeeting(s));
@@ -4642,19 +4696,9 @@ function historyPage(){
   const scLbl = h.scope==="BOTH" ? " · "+secs.join("+")+" combined" : h.scope ? "."+h.scope : "";
   const title=((GAMES[h.game]||{}).name||h.game)+" · "+sessLabel(h.session)+scLbl+(meetDate(ts)?" · "+meetDate(ts):"")+" · Round "+h.round;
   const head=el("div","card stage");
-  const hr=el("div","row"); hr.style.cssText="justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap";
-  const hl=el("div");
-  hl.append(el("div","eyebrow gold","Past results · read-only"),
+  head.append(el("div","eyebrow gold","Past results · read-only"),
     Object.assign(el("h2"),{textContent:(GAMES[h.game]||{}).name||h.game,style:"font-size:1.7rem;margin-top:4px"}),
     Object.assign(el("div","sm mut"),{textContent:sessLabel(h.session)+scLbl+(meetDate(ts)?" · "+meetDate(ts):"")+" · Round "+h.round+" · "+list.length+" response"+(list.length===1?"":"s"),style:"margin-top:2px"}));
-  const back=el("button","btn neutral","← Back to live"); back.onclick=()=>{ histSel=null; render(); };
-  hr.append(hl, back); head.append(hr);
-  if(secs.length>1){
-    const sr=el("div","res-list"); sr.style.marginTop="10px"; sr.append(el("span","tinylabel","Section"));
-    secs.forEach(sc=>{ const b=el("button","res-btn"+(h.scope===sc?" on":"")); b.type="button"; b.textContent=sc||"—"; b.onclick=()=>{ histSel=Object.assign({},h,{scope:sc}); render(); }; sr.append(b); });
-    const bb=el("button","res-btn"+(h.scope==="BOTH"?" on":"")); bb.type="button"; bb.textContent="Combined"; bb.onclick=()=>{ histSel=Object.assign({},h,{scope:"BOTH"}); render(); }; sr.append(bb);
-    head.append(sr);
-  }
   c.append(head);
   if(!list.length){ c.append(Object.assign(el("div","card stage center mut"),{textContent:"No submissions recorded for this meeting."})); }
   else {
@@ -4663,7 +4707,7 @@ function historyPage(){
   }
   // Clear exactly this meeting (one section's record key), with a confirmation that names it.
   const danger=el("div","card stage");
-  if(h.scope==="BOTH"){ danger.append(Object.assign(el("div","sm mut"),{textContent:"To clear a meeting, pick one section above — each section's meeting is cleared separately."})); }
+  if(h.scope==="BOTH"){ danger.append(Object.assign(el("div","sm mut"),{textContent:"To clear a meeting, pick one section in Analyze — each section's meeting is cleared separately."})); }
   else {
     const rk="S"+h.session+(h.scope||"")+"-"+h.game+"-"+h.round;
     const nAll=Object.values(allSubs).filter(s=>s&&s.roundKey===rk).length;
