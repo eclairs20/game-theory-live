@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-08.007";
+const APP_VERSION = "2026-10-09.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -3189,7 +3189,7 @@ function pairName(s){ return (s&&s.name||"?")+(s&&s.proxy?" (unconfirmed)":""); 
 function orphanWarning(list, pairs){
   const paired=new Set(); pairs.forEach(p=>{ paired.add(String(p[0].studentId)); paired.add(String(p[1].studentId)); });
   const byId={}; list.forEach(s=>{ byId[String(s.studentId)]=s; });
-  const orphans=list.filter(s=> s && !s.bot && !paired.has(String(s.studentId)));
+  const orphans=list.filter(s=> s && !s.bot && !paired.has(String(s.studentId)) && !String(s.partner||"").startsWith("bot:"));
   if(!orphans.length) return null;
   const warn=el("div","note-box"); warn.style.cssText="border-color:var(--bad); background:color-mix(in srgb, var(--bad) 8%, transparent); margin-top:4px";
   let html="<b>⚠ "+orphans.length+" unpaired — partner not recorded.</b> Their hands still count in the mixes above, but they can't form a pair because the partner they named has no submission. Have each re-record with their partner so both sides save.<ul style='margin:6px 0 0 18px'>";
