@@ -255,7 +255,18 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     two people at once — if the inviter was claimed first, the acceptor bails cleanly ("just paired
     with someone else"); if the acceptor was, it releases the inviter's claim. `liveInvite` keeps only
     ONE outstanding invite (clears the previous), so you can't have two people accept you at once.
-    `guardDb` passes `transaction` through (a no-op that never commits in read-only view-as-student). The
+    `guardDb` passes `transaction` through (a no-op that never commits in read-only view-as-student).
+    **Every way of becoming "occupied" claims `of` by transaction** — not just `liveAccept`:
+    the **practice bot** claims `of/<me>` = `BOT_OF` (`"bot"`) (`liveEnterBot` withdraws your open invite;
+    `botSync`, run from `studentPair` each render, claims it, so `onMyPair` drops you from the lobby and the
+    heartbeat/`liveTick` stops re-adding presence), and `liveExitBot` releases it (a reload mid-practice
+    releases the stale claim too). A **real pair pointer always wins** over the bot (`botSync` drops the bot
+    game). Record-mode `recPairWith` claims both pointers the same way, refusing a partner already in
+    another pair or practising. Without this, a student playing the bot stayed "free" in the waiting room
+    and could be paired underneath it, orphaning the partner. **A real match only resumes a saved sub
+    played against THIS partner** (`mySubWith(partner)` in `adMatch`/`pairMatch`) — otherwise an earlier
+    practice-bot game at the same roundKey preloaded as "already placed", the student never re-saved, and
+    their record kept `partner:"bot:…"` so the real pair could never zip. The
     listeners attach via `ensureLive(mc)` and are torn down by `detachLive()` (which also removes
     your lobby presence) whenever `render()` sees you're no longer on an open pair game.
     **Waiting-room liveness:** the realtime `.on()` listeners get throttled/dropped on a backgrounded
@@ -282,6 +293,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     into a match against a locally-generated ~Nash opponent (`botRBSeq`/`botPiles`), revealed hand
     by hand as you play; on completion `saveBot()` writes a synthetic `"bot:<myId>"` opponent sub so
     the analysis sees a full pair. Bot docs are `bot:true`/`guest:true`, excluded from counts.
+    `orphanWarning` skips subs whose `partner` is `"bot:…"` (a solo practice game isn't an unpaired student).
     **Both synthetic-partner writers (`saveBot` and `saveRecPartner`) stamp `email` = the signed-in
     recorder's address** — the lockdown rules reject any sub whose `email` ≠ the writer's, so without
     it these opponent subs silently fail to save and the pair never zips. The `email` field is only a

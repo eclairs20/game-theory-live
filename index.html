@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-09.001";
+const APP_VERSION = "2026-10-09.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1039,6 +1039,10 @@ async function submit(payload){
   lastViewKey=null; render();
 }
 function mySub(){ return subs.find(s=>s.studentId===myId) || null; }
+/* My saved sub, but only if it was played against THIS partner — a real match must never resume moves
+   from a practice-bot game (or an earlier partner) at the same roundKey: they'd preload as "already
+   placed", the record would keep the old partner, and the real pair could never zip. */
+function mySubWith(partner){ const m=mySub(); return (m && String(m.partner)===String(partner)) ? m : null; }
 /* A submission counts as "in" once done!==false. Older games never set done, so
    they are always done; the pair card games write done:false while still tapping. */
 function isDone(s){ return !!s && s.done!==false; }
@@ -1941,6 +1945,10 @@ const LOBBY_DOC = (mc,id)=> LIVE_ROOT(mc)+"/lobby/"+encodeKey(id);
 const INVITE_DOC = (mc,id)=> LIVE_ROOT(mc)+"/invite/"+encodeKey(id);   // invite addressed TO id
 const OF_DOC = (mc,id)=> LIVE_ROOT(mc)+"/of/"+encodeKey(id);           // id → pairId
 const PAIR_DOC = (mc,pid)=> LIVE_ROOT(mc)+"/pairs/"+pid;
+// `of` value meaning "I'm playing the practice bot". Starting a bot game CLAIMS your `of` pointer with
+// it (by transaction, exactly like liveAccept), so nobody can pair with you while you practise.
+const BOT_OF="bot";
+const BOT_RESET_KEYS=["seq","piles","adBot","botSeq","botPiles","flips","plc","plcRound","role","_loaded","_build","suit","botSuit","color","ack"];
 let liveCtx=null, lobby={}, invIn=null, invSent=null, myPairId=null, pairData=null, _pairRef=null, _hbT=null, liveErr=null, _liveVisHook=false;
 function attachLive(mc){
   liveCtx=mc; lobby={}; invIn=null; myPairId=null; pairData=null; _pairRef=null; liveErr=null;
@@ -1960,7 +1968,7 @@ function attachLive(mc){
 /* One waiting-room heartbeat: re-assert my presence (re-creating it if a flaky disconnect dropped it),
    then poll the lobby/invite/pair so the list and incoming invites stay live without a page refresh. */
 async function liveTick(mc){
-  try{ await fb.ref(LOBBY_DOC(mc,myId)).update({id:myId,name:myName||"Player",guest:!!meGuest,ts:Date.now()}); }catch(e){}
+  if(!myPairId){ try{ await fb.ref(LOBBY_DOC(mc,myId)).update({id:myId,name:myName||"Player",guest:!!meGuest,ts:Date.now()}); }catch(e){} }   // paired or practising → stay out of the lobby
   livePoll(mc);
 }
 /* Fallback poll for the waiting room: read the lobby, my invite and my pair pointer directly, in case
@@ -1981,7 +1989,8 @@ async function livePoll(mc){
 function onMyPair(mc, pid){
   if(_pairRef){ try{ fb.ref(_pairRef).off(); }catch(e){} _pairRef=null; }
   myPairId = pid||null; pairData=null;
-  if(pid){ _pairRef=PAIR_DOC(mc,pid); fb.ref(_pairRef).on("value", s=>{ pairData=s.val()||null; render(); }, e=>{});
+  if(pid===BOT_OF){ try{ fb.ref(LOBBY_DOC(mc,myId)).remove(); }catch(e){} render(); }   // practising: out of the waiting room, no pair node
+  else if(pid){ _pairRef=PAIR_DOC(mc,pid); fb.ref(_pairRef).on("value", s=>{ pairData=s.val()||null; render(); }, e=>{});
     try{ fb.ref(LOBBY_DOC(mc,myId)).remove(); }catch(e){} }
   else render();
 }
@@ -2019,7 +2028,8 @@ async function liveAccept(mc,fromId,fromName){
   try{
     await fb.ref(PAIR_DOC(mc,pid)).set({a:ids[0],b:ids[1],colors,suits,names,ts:Date.now()});   // write first so whoever's `of` lands here can load it immediately
     const r1 = await claim(OF_DOC(mc,fromId));
-    if(!r1.committed){ toast((fromName||"They")+" just paired with someone else — pick another classmate"); try{ await fb.ref(INVITE_DOC(mc,myId)).remove(); }catch(e){} render(); return; }
+    if(!r1.committed){ const busy=r1.snapshot&&r1.snapshot.val?r1.snapshot.val():null;
+      toast((fromName||"They")+(busy===BOT_OF?" is playing the practice bot":" just paired with someone else")+" — pick another classmate"); try{ await fb.ref(INVITE_DOC(mc,myId)).remove(); }catch(e){} render(); return; }
     const r2 = await claim(OF_DOC(mc,myId));
     if(!r2.committed){ try{ await fb.ref(OF_DOC(mc,fromId)).transaction(cur => cur===pid ? null : undefined); }catch(e){} render(); return; }
     await fb.ref(INVITE_DOC(mc,myId)).remove();
@@ -2029,6 +2039,31 @@ async function liveAccept(mc,fromId,fromName){
   }catch(e){ toast("Couldn't pair"); }
 }
 async function liveDecline(mc){ try{ await fb.ref(INVITE_DOC(mc,myId)).remove(); }catch(e){} }
+/* Practice bot is a claim in the waiting room, like a pair: entering it withdraws your open invite and
+   lets botSync() claim `of` = BOT_OF (so you drop out of the lobby and nobody can pair with you);
+   exiting releases it. A REAL pair pointer always wins over the bot (botSync). */
+function liveEnterBot(mc, d){
+  BOT_RESET_KEYS.forEach(k=>delete d[k]); d.bot=true;
+  if(invSent) liveCancelInvite(mc);
+  render();
+}
+const botRelease = mc => fb.ref(OF_DOC(mc,myId)).transaction(cur => cur===BOT_OF ? null : undefined);
+async function liveExitBot(mc, dk){
+  const d=gameDraft[dk]; if(d) d.bot=false; delete gameDraft[dk];
+  if(!diagOn()){ try{ await botRelease(mc); }catch(e){} }
+  if(liveCtx===mc) liveJoin(mc);         // back into the waiting room
+  render();
+}
+let _botClaimAt=0, _botRelAt=0;
+/* Reconcile my draft's bot state with my `of` pointer (called from studentPair on every render). */
+function botSync(mc, d){
+  if(liveCtx!==mc || diagOn()) return;
+  if(d.bot && myPairId && myPairId!==BOT_OF){ BOT_RESET_KEYS.forEach(k=>delete d[k]); d.bot=false; return; }   // claimed by a real pair first → go to it
+  if(d.bot && !myPairId && Date.now()-_botClaimAt>3000){ _botClaimAt=Date.now();
+    fb.ref(OF_DOC(mc,myId)).transaction(cur => (cur==null||cur===BOT_OF) ? BOT_OF : undefined).catch(()=>{}); return; }
+  if(!d.bot && myPairId===BOT_OF && Date.now()-_botRelAt>3000){ _botRelAt=Date.now();   // reloaded mid-practice → release the stale claim
+    botRelease(mc).then(()=>{ if(liveCtx===mc) liveJoin(mc); }).catch(()=>{}); }
+}
 async function liveLeaveMatch(mc){
   if(!confirm("Restart this match? The hands you've entered are cleared and you go back to set up the match again.")) return;
   const pid=myPairId;
@@ -2089,8 +2124,8 @@ function studentPair(c, game){
   const mc=curKey, cf=cfg(game), R=cf.rounds||(game==="redblack"?20:5);
   const dk=game+"-"+mc, d=draftFor(dk);
   c.append(Object.assign(el("h2"),{textContent:GAMES[game].name,style:"font-size:1.4rem;margin:6px 0 4px"}));
+  ensureLive(mc); botSync(mc, d);
   if(d.bot){ if(game==="attackdefend"){ adMatch(c, R, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", mc}); return; } pairMatch(c, game, R, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", myColor:(d.color||(d.color=Math.random()<0.5?"red":"black")), mc}); return; }
-  ensureLive(mc);
   if(pairData && pairData.ended){
     c.append(hintLine("Your partner left the match."));
     const b=el("button","btn wide","Back to the waiting room"); b.style.marginTop="10px"; b.style.maxWidth="320px";
@@ -2173,8 +2208,16 @@ async function recPairWith(mc, partnerId, partnerName, solo){
   try{
     await fb.ref(PAIR_DOC(mc,pid)).set({a:ids[0], b:ids[1], names, ts:Date.now(), mode:"record",
       rec:{by:String(myId), byName:myName||"Player", solo:!!solo}});
-    await fb.ref(OF_DOC(mc,myId)).set(pid);
-    if(!solo) await fb.ref(OF_DOC(mc,partnerId)).set(pid);   // real partner finds the pair when they open the game
+    // Claim the `of` pointers by TRANSACTION (as liveAccept does) — never overwrite a partner who is
+    // already in another pair or playing the practice bot; that would silently orphan their game.
+    const claim = path => fb.ref(path).transaction(cur => (cur==null||cur===pid) ? pid : undefined);
+    if(!solo){   // real partner finds the pair when they open the game
+      const r1=await claim(OF_DOC(mc,partnerId));
+      if(!r1.committed){ const busy=r1.snapshot&&r1.snapshot.val?r1.snapshot.val():null;
+        toast((partnerName||"They")+(busy===BOT_OF?" is playing the practice bot":" is already paired with someone else")+" — check who you played with"); render(); return; }
+    }
+    const r2=await claim(OF_DOC(mc,myId));
+    if(!r2.committed){ if(!solo){ try{ await fb.ref(OF_DOC(mc,partnerId)).transaction(cur => cur===pid ? null : undefined); }catch(e){} } render(); return; }
     try{ await fb.ref(LOBBY_DOC(mc,myId)).remove(); }catch(e){}
   }catch(e){ toast("Couldn't start — the Firebase live rules may need publishing"); }
 }
@@ -2262,12 +2305,12 @@ function pairLobby(c, game, mc, R, d){
     b.onclick=()=>{ if(!sel) liveInvite(mc,p.id,p.name); }; list.append(b); });
   wr.append(list);
   const botB=el("button","pair-name bot","🤖 Practice bot — play solo"); botB.style.marginTop="12px";
-  botB.onclick=()=>{ ["seq","piles","adBot","botSeq","botPiles","flips","plc","plcRound","role","_loaded","_build","suit","botSuit","color","ack"].forEach(k=>delete d[k]); d.bot=true; render(); }; wr.append(botB);   // start a clean bot game
+  botB.onclick=()=>liveEnterBot(mc, d); wr.append(botB);   // a clean bot game, claimed so nobody can pair with you meanwhile
   c.append(wr);
   c.append(liveCount());
 }
 function pairMatch(c, game, R, d, opts){
-  const {partner, partnerName, myColor, mc, bot, practice, onExit}=opts, cur=(practice||bot)?null:mySub();   // bot/practice games never resume a persisted sub
+  const {partner, partnerName, myColor, mc, bot, practice, onExit}=opts, cur=(practice||bot)?null:mySubWith(partner);   // bot/practice games never resume a persisted sub
   // my moves store
   if(game==="redblack"){
     if(cur && d._loaded!==true && cur.seq){ d.seq=String(cur.seq).split(",").map(x=>{x=x.trim();return x===""?undefined:x;}); }
@@ -2367,7 +2410,7 @@ function pairMatch(c, game, R, d, opts){
   // controls
   if(practice){ const lv=el("button","ghost-btn","Stop practice"); lv.style.marginTop="14px"; lv.onclick=()=> onExit ? onExit() : render(); c.append(lv); }
   else if(!bot){ const lv=el("button","btn danger","Restart"); lv.style.marginTop="14px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
-  else { const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="14px"; lv.onclick=()=>{ d.bot=false; const dk=game+"-"+curKey; delete gameDraft[dk]; render(); }; c.append(lv); }
+  else { const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="14px"; lv.onclick=()=>liveExitBot(mc, game+"-"+curKey); c.append(lv); }
 }
 
 /* ═══════════════════════ G7 · COLONEL BLOTTO ═══════════════════════
@@ -2456,7 +2499,7 @@ function adMatch(c, R, d, opts){
   // A practice-bot game is a fresh throwaway — never resume a persisted submission (a prior real or
   // bot game at this roundKey). Loading it would start the match with your old moves already placed,
   // so the bot "plays against your previous submission" and every round resolves at once.
-  const cur=bot?null:mySub();
+  const cur=bot?null:mySubWith(partner);
   if(cur && d._loaded!==true && cur.seq){ d.seq=String(cur.seq).split(",").map(x=>{x=x.trim();return x===""?undefined:x;}); }
   if(!Array.isArray(d.seq)) d.seq=[]; d.seq.length=R; d._loaded=true;
   const a = bot? String(myId) : String(pairData.a), b = bot? ("bot:"+myId) : String(pairData.b);
@@ -2607,7 +2650,7 @@ function adMatch(c, R, d, opts){
     c.append(hist);
   }
 
-  if(bot){ const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="16px"; lv.onclick=()=>{ d.bot=false; const dk="attackdefend-"+curKey; delete gameDraft[dk]; render(); }; c.append(lv); }
+  if(bot){ const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="16px"; lv.onclick=()=>liveExitBot(mc, "attackdefend-"+curKey); c.append(lv); }
   else if(k<R){ const lv=el("button","btn danger","Restart"); lv.style.marginTop="16px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
   // After the final round the Restart button is GONE — the match is over and a stray tap must not be
   // able to wipe a completed result.
