@@ -282,7 +282,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   On reveal, `analyzeCoord` shows all four results together — one compact card per question
   (`coordQResult`) with the modal answer and % on the **focal** point (`coordFocalNote`). Just
   Open → students play all four → Reveal. No pairing; whole-class.
-- `publicgoods` — Public Goods ("Maximize your marks") — now **G4**. Config `{ E, mult }` (default E=8 marks,
+- `publicgoods` — Public Goods ("Maximize your marks") — labelled **G20**. Config `{ E, mult }` (default E=8 marks,
   mult=1.5). The **whole pot is multiplied by `mult` and split equally among the N players**, so
   each player receives `mult·total/N` (your own share of a contributed mark is `mult/N`, which
   shrinks as the class grows). Payoff = `(E − contribution) + mult·total/N`. Nash = keep everything
@@ -539,6 +539,44 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   Matches tile "N rounds each (announced)", the % Low by round chart captioned for the end-game, and a
   backward-induction lesson note (unique SPNE = High every round) with the class's Low rate before vs in
   the last round.
+
+- `robot` — **Robot Tournament** (**G10**; Public Goods is now labelled **G20**) — an Axelrod-style
+  tournament on the G8/G9 Advertising Game (`RP_PAY`; Low = cooperate). **Teams** build one robot each; when
+  the instructor presses **⚔ Fight** every robot plays every other one. Config `{ teamsMin:3, buildMin:10,
+  teamMax:4, rounds:50, noise:5, house:true }` (`rbCfg()`, `paramEditor`).
+  - **Phases** live in `control.robot = {rk, teamsEnd, finalized, buildEnd, fought}` (rk must equal `curKey`;
+    `rbPhase()` → idle / teams / forming / build / locked / fought, from **server time** `srvNow()` via
+    `.info/serverTimeOffset`). `openMeeting` starts a new meeting's team timer; a 1 s ticker (`rbTick`)
+    updates `[data-cd]` countdowns in place, re-renders on a phase change (`rbPhase()` is in `viewKey`),
+    heartbeats student presence, and lets the instructor console run `rbFinalize` when team time is up.
+    Console card `rbConsoleCard` (+1 min / End now / Lock robots now / Fight, teams list with robots,
+    click a member to make captain); the round bar's Reveal becomes **⚔ Fight!** (`robotFight`); the
+    Present view shows `rbPresentBody` (phase, big timer, team names — never robot settings).
+  - **Teams** in the meeting's live node: `live/<mc>/rt/<tid>` = `{name, captain, members:{enc(id):{id,name}},
+    bot, auto?}`, `rm/<enc(id)>` = one-team-per-student pointer claimed by **transaction** (create/join),
+    `rp/<enc(id)>` = presence `{id,name,ts}` (15 s heartbeat; read with `.once`, never listened to).
+    Listener `rbEnsure`/`rbDetach` on `rt` only. Join = transaction on `members` (cap `teamMax`).
+    **No solos:** `rbFinalize` dissolves 1-member teams, pools them with present-but-unteamed students,
+    and deals the pool into `ceil(n/max)` random teams ("Team Falcons"…, `auto:true`, random captain); a
+    single leftover joins the smallest team (even past the cap). Late students can join a team with space
+    during build. Clear also removes `control.robot`.
+  - **Captain-only editing**: the captain's draft (`draftFor("robot-"+mc)`) is written to `rt/<tid>/bot`
+    (debounced 300 ms); teammates see a live read-only builder. Captain hands over by tapping a teammate;
+    **"Captain offline? Take over"** succeeds only if the captain's presence is >60 s old.
+  - **Robot = Calm/Angry state machine** (`rbNorm`): `open` (≤3 opening moves), `calm` L/H/P (P = Low but High
+    `probe`%), `trig` row/total/never with `n`, `angry` 1/2/3/5/"until"/"forever", `forgive`% (rolled at the
+    start of each angry round). Engine `rbDecide`/`rbUpdate`/`rbPlay` (verified: TFT copies, grim, TF2T,
+    grudge). Presets `RB_PRESETS` (Always Low/High, TFT, Grim, TF2T, Generous TFT, Grim+forgiveness, Prober,
+    Grudge holder); plain-English `rbSentence`; family `rbFamily` (`RB_FAMS`). Builder (`rbBuilder`) is all
+    tap-chips (no selects, survives live re-renders) + a 10-round **test drive** vs Always Low/High/TFT.
+  - **Fight** snapshots one sub per member: `{game:"robot", team, teamName, captain, robot:<JSON>,
+    teamMembers, defaultBot, house, rounds, noise, …}` — the field is **`robot`, never `bot`** (`s.bot`
+    marks practice-bot subs and is filtered out everywhere). Unconfigured teams fight as Tit-for-tat.
+  - `analyzeRobot`: dedupe by team, add house robots (`RB_HOUSE`), seeded round-robin `rbTournament`
+    (`rbRng` mulberry32; randomised robots / mistakes replayed 5×; cached), **mistakes toggle** (`rbNoiseOn`,
+    flips each move with `noise`%), tiles, full-height leaderboard (own team highlighted; members
+    instructor-only; each robot's sentence), score by type, type-vs-type heatmap, **evolution chart**
+    (`rbEvolution` replicator dynamics over families, `rbLineChart`), Axelrod lesson note.
 
 ## Interactive lessons (no submissions)
 - **Pareto optimality** (`paretoLesson`, local `lessonMode="pareto"` + `PZ` state) — an
