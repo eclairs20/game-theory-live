@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-14.001";
+const APP_VERSION = "2026-10-15.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -596,7 +596,7 @@ const GAMES = {
   attackdefend: { name:"Colonel Blotto", short:"G7", icon:"G7",
     blurb:"Two roads, one town — attacker vs defender, round by round with your neighbour." },
   adwar: { name:"Advertising War", short:"G8", icon:"G8",
-    blurb:"High or Low advertising against a rival, round after round — nobody knows when the market closes." },
+    blurb:"High or Low advertising against the same rival, round after round." },
   publicgoods: { name:"Public Goods", short:"G10", icon:"G10",
     blurb:"Contribute to a shared fund that pays everyone." }
 };
@@ -2419,7 +2419,7 @@ function pairLobby(c, game, mc, R, d){
   c.append(pairRules(title,
     game==="adwar" ? [
       "Pair up with a neighbour — you are two rival firms. Each round you both choose High or Low advertising at the same time.",
-      "After every round the market continues with a "+Math.round(rpCfg().p*100)+"% chance. Nobody knows which round will be the last — your score is your total over all rounds."
+      "You keep playing the same rival, round after round. Your score is your total profit over all the rounds you play."
     ] : game==="attackdefend" ? [
       "Pair up with a neighbour — one of you is dealt the ATTACKER (2 divisions), the other the DEFENDER (3). Your role is fixed for all "+R+" rounds.",
       "Each round you place your units across the two roads; once you BOTH commit, the battle resolves and we score it live."
@@ -2981,7 +2981,7 @@ function rpMatch(c, d, opts){
   if(d.seq.length>n+1) d.seq.length=n+1;      // never more than one move ahead of the lockstep
 
   const head=el("div"); head.style.cssText="margin:6px 0 4px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--accent) 10%,transparent);border:1px solid var(--accent)";
-  head.innerHTML="<b>Your firm vs "+esc(partnerName)+"</b><div style='font-size:.82rem;color:var(--muted);margin-top:2px'>After every round the market continues with a <b>"+Math.round(p*100)+"%</b> chance — nobody knows which round is the last.</div>";
+  head.innerHTML="<b>Your firm vs "+esc(partnerName)+"</b><div style='font-size:.82rem;color:var(--muted);margin-top:2px'>The same rival, round after round. Your score is your total profit over all rounds.</div>";
   c.append(head);
   const sb=el("div","scorebar");
   const mk=(lbl,v,cls)=>{ const t=el("div","score"+(cls?" "+cls:"")); t.append(Object.assign(el("div","score-k"),{textContent:lbl})); t.append(Object.assign(el("div","score-v"),{textContent:v})); return t; };
@@ -3004,19 +3004,16 @@ function rpMatch(c, d, opts){
   if(over){
     finish();
     const box=el("div","note-box teal"); box.style.marginTop="14px";
-    box.innerHTML="<b>📉 The market closed after round "+n+".</b> Your total profit: <b>"+me+"</b> ("+fmt(me/n,2)+" per round) · "+esc(partnerName)+": <b>"+them+"</b>."+(bot?" (The practice bot plays tit-for-tat: Low first, then copies your last move.)":" Results appear when your instructor reveals.");
+    box.innerHTML="<b>🏁 The game is over after round "+n+".</b> Your total profit: <b>"+me+"</b> ("+fmt(me/n,2)+" per round) · "+esc(partnerName)+": <b>"+them+"</b>."+(bot?" (The practice bot plays tit-for-tat: Low first, then copies your last move.)":" Results appear when your instructor reveals.");
     c.append(box);
     roundCard(n-1);
   } else if(needAck){
     roundCard(lastSeen);
-    const draw=el("div","note-box"); draw.style.cssText="margin-top:12px;border-color:var(--good)";
-    draw.innerHTML="🎲 <b>The market continues</b> — there will be a round "+(n+1)+". (Each round it continues with a "+Math.round(p*100)+"% chance.)";
-    c.append(draw);
     const cont=el("button","btn wide","Continue to round "+(n+1)+" ▶"); cont.style.cssText="margin-top:12px;max-width:300px";
     cont.onclick=()=>{ d.ack=lastSeen; render(); }; c.append(cont);
   } else if(d.seq[n]==null){
     c.append(Object.assign(el("div","tinylabel"),{textContent:"Round "+(n+1)+" — choose your advertising budget",style:"margin-top:16px"}));
-    if(n===0) c.append(rpMatrix());
+    c.append(rpMatrix());
     const row=el("div","row"); row.style.cssText="gap:10px;margin-top:10px;flex-wrap:wrap";
     [["H","📢 High advertising"],["L","🤫 Low advertising"]].forEach(([v,l])=>{
       const bt=el("button","btn wide",l); bt.style.cssText="flex:1;min-width:150px;max-width:240px;"+(v==="H"?"background:#b5651d":"background:#2e8b57");
@@ -3026,7 +3023,7 @@ function rpMatch(c, d, opts){
   } else {
     const w=el("div","note-box"); w.style.marginTop="16px";
     w.innerHTML="<b>Round "+(n+1)+" — you chose "+RP_NAME[d.seq[n]]+".</b> Waiting for <b>"+esc(partnerName)+"</b> to choose… the round resolves the moment they do.";
-    c.append(w);
+    c.append(w); c.append(rpMatrix());
   }
 
   if(n>0){
@@ -3108,7 +3105,7 @@ function analyzeAdWar(list){
   const mcard=el("div","chart-card"); mcard.append(Object.assign(el("h3"),{textContent:"The stage game"})); mcard.append(rpMatrix()); wrap.append(mcard);
 
   const note=el("div","note-box"); note.style.marginTop="4px";
-  note.innerHTML="<b>The lesson.</b> Played once, High is a dominant strategy (6 &gt; 5 and 4 &gt; 3), so the only equilibrium is the ad war at 4 each. With a <b>"+Math.round(pUsed*100)+"%</b> chance of another round, the shadow of the future changes that: under <b>grim trigger</b> (Low until the rival goes High, then High forever) deviating gains 6 − 5 = 1 today but loses 5 − 4 = 1 every future round, so Low is sustainable when p ≥ (6−5)/(6−4) = <b>"+Math.round(thr*100)+"%</b>"+(pUsed>=thr?" — here it is.":" — at "+Math.round(pUsed*100)+"% it is not.")+" Nobody knew which round was last, so there was no last round to unravel backwards from. (Tit-for-tat is also a Nash equilibrium here, though it is not subgame perfect at p = 75%: after a slip, punishing costs more than forgiving.)";
+  note.innerHTML="<b>The lesson.</b> Played once, High is a dominant strategy (6 &gt; 5 and 4 &gt; 3), so the only equilibrium is the ad war at 4 each. With a <b>"+Math.round(pUsed*100)+"%</b> chance of another round, the shadow of the future changes that: under <b>grim trigger</b> (Low until the rival goes High, then High forever) deviating gains 6 − 5 = 1 today but loses 5 − 4 = 1 every future round, so Low is sustainable when p ≥ (6−5)/(6−4) = <b>"+Math.round(thr*100)+"%</b>"+(pUsed>=thr?" — here it is.":" — at "+Math.round(pUsed*100)+"% it is not.")+" Nobody knew which round was last, so there was no last round to unravel backwards from. (Tit-for-tat is also a Nash equilibrium once p ≥ 50%, but it is subgame perfect only at exactly p = 50%: above that, once both are stuck in an ad war, offering Low again beats punishing forever.)";
   wrap.append(note);
 
   wrap.append(pairingsCard(pairs, pr=>{ const xs=rpSeq(pr[0]), ys=rpSeq(pr[1]), L=Math.min(xs.length,ys.length); let px=0,py=0; for(let i=0;i<L;i++){ px+=RP_PAY[xs[i]][ys[i]]; py+=RP_PAY[ys[i]][xs[i]]; }
@@ -3309,7 +3306,7 @@ function revealNarr(g){
   if(g==="quatro") return "Which card orderings did the class favour, and did any win more?";
   if(g==="redblack") return "How did the class play each card — and does it match the equilibrium?";
   if(g==="attackdefend") return "How did the class attack and defend Blotto's town — and how often did it fall?";
-  if(g==="adwar") return "Did the chance of another round keep rivals advertising Low?";
+  if(g==="adwar") return "Did facing the same rival again and again keep firms advertising Low?";
   return "How close did the group get to the socially optimal outcome?";
 }
 function analyzeGuess(teacher,list){
@@ -5013,7 +5010,7 @@ function paramEditor(){
     const grid=el("div","paramgrid");
     grid.append(mk("Chance the market continues after each round (%)","cont",cf.cont), mk("Hidden cap (max rounds)","cap",cf.cap)); wrap.append(grid);
     const {p,cap}=rpCfg(), thr=rpThreshold();
-    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Pairs play High/Low advertising (the slide's payoffs) round after round; after each round the market continues with this chance, so matches average about "+fmt(rpExpLen(p,cap),1)+" rounds. The cap is never shown to students — a match simply ends at round "+cap+" if it gets that far. Low (5,5) is sustainable by grim trigger when the chance is at least "+Math.round(thr*100)+"%"+(p>=thr?" — it is.":" — at "+Math.round(p*100)+"% it is not, so only High is an equilibrium outcome."),style:"margin-top:6px"})); }
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Pairs play High/Low advertising (the slide's payoffs) round after round; after each round the market continues with this chance, so matches average about "+fmt(rpExpLen(p,cap),1)+" rounds. Students see neither the chance nor the cap — to them it is an endlessly repeated game; a match simply ends (“the game is over”) at round "+cap+" if it gets that far. Low (5,5) is sustainable by grim trigger when the chance is at least "+Math.round(thr*100)+"%"+(p>=thr?" — it is.":" — at "+Math.round(p*100)+"% it is not, so only High is an equilibrium outcome."),style:"margin-top:6px"})); }
   else if(g==="attackdefend"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Colonel Blotto: two roads, one town. In each pair one student is dealt the attacker (2 divisions), the other the defender (3) — roles are fixed for the match. They place units each round and, once both commit, the battle resolves in lockstep. Set how many rounds each pair plays; results aggregate on reveal.",style:"margin-top:6px"})); }
