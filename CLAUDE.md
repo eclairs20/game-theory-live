@@ -502,31 +502,32 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - `adwar` — **Advertising War** (**G8**) — an **indefinitely repeated Prisoner's Dilemma** teaching
   repeated games / the shadow of the future. Two rival firms choose **High** or **Low** advertising each
   round; stage payoffs `RP_PAY[mine][theirs]` = (High,High) 4,4 · (High,Low) 6,3 · (Low,High) 3,6 ·
-  (Low,Low) 5,5 (T=6,R=5,P=4,S=3; High is dominant one-shot). Config `{ cont, cap }` (`paramEditor`,
-  `rpCfg()`): **`cont`** = % chance the market continues after each round (default **75**), **`cap`** =
-  a **hidden** max number of rounds (default **12**). **Students see neither** — the game is presented as
+  (Low,Low) 5,5 (T=6,R=5,P=4,S=3; High is dominant one-shot). Config `{ cont, min, cap }` (`paramEditor`,
+  `rpCfg()`): **`cont`** = % chance the market continues after each round (default **75**), **`min`** = a
+  **hidden** minimum number of rounds every pair plays (default **10**; no stop draw before it; clamped to
+  ≤ cap), **`cap`** = a **hidden** max number of rounds (default **15**). **Students see neither** — the game is presented as
   infinitely repeated ("the same rival, round after round"); no probability, "last round" or dice wording
   appears anywhere on the student side, and an ending just reads "🏁 The game is over after round N". The
   chance is only revealed in the post-reveal analysis note. The param note shows the
-  expected length `rpExpLen(p,cap)` (= (1−p^cap)/(1−p)) and whether grim trigger sustains Low
+  expected length `rpExpLen(p,cap,min)` (= min + p + p² + … + p^(cap−min); 12.3 at the defaults) and whether grim trigger sustains Low
   (`rpThreshold()` = (T−R)/(T−P) = **½**).
   - Live pairs via the shared lobby (`studentPair("adwar")` → `pairLobby` → **`rpMatch`**, self-contained,
     like `adMatch`; live-only via `wantLive`). **Lockstep**: n = rounds both have played; you choose for
     round n+1 only once round n resolved (waiting note otherwise). After each round the **continuation
-    draw** `rpEnds(seed,i,mine,theirs,p,cap)` is deterministic — `adSeedFloat` of sorted pair ids + `mc` +
-    the pair's `ts` (bot: a per-game nonce) + round + both moves — so both phones agree; it always ends at
+    draw** `rpEnds(seed,i,mine,theirs,p,cap,min)` is deterministic — `adSeedFloat` of sorted pair ids + `mc` +
+    the pair's `ts` (bot: a per-game nonce) + round + both moves — so both phones agree; never before `min`, always at
     the cap. The **payoff matrix (`rpMatrix`) is on every screen** — above the High/Low buttons each round, on
     the waiting note, and in each round result (played cell outlined). One screen at a time: round result →
     **Continue to round N** (`d.ack`). When the match ends: "🏁 The game is over after round N" + totals,
     `done:true` saved once (`d._doneSaved`), Restart removed.
-  - Each player's sub: `seq` = `"L,H,L,…"` (own moves), `mode:"rep"`, `cont`, `cap`, partner fields.
+  - Each player's sub: `seq` = `"L,H,L,…"` (own moves), `mode:"rep"`, `cont`, `min`, `cap`, partner fields.
     `done:false` while playing. Match length = the pair's (equal) seq length — the analysis never
     re-draws. **Practice bot** = tit-for-tat (Low first, then copies your last move); `saveBot` writes its
     sequence at the end.
   - `analyzeAdWar`: tiles (matches + avg length vs expected, both-Low %, both-High %, avg profit/round vs
     4 and 5), % Low by round, % Low after rival Low vs after rival High, a strategy classification
     (`rpStrategy`: Always Low / Tit-for-tat / Grim trigger / Always High / Other), the stage matrix, a
-    theory note (threshold ½ vs the `cont` used; TFT is NE but not SPNE at 75%), `pairingsCard` with
+    theory note (threshold ½ vs the `cont` used; TFT is NE for p ≥ ½ but SPNE only at exactly ½), `pairingsCard` with
     totals + sequences, and `orphanWarning`.
 
 ## Interactive lessons (no submissions)
