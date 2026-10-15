@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-15.002";
+const APP_VERSION = "2026-10-15.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -595,8 +595,10 @@ const GAMES = {
     blurb:"Card duel with your neighbour — tap the card you played each hand." },
   attackdefend: { name:"Colonel Blotto", short:"G7", icon:"G7",
     blurb:"Two roads, one town — attacker vs defender, round by round with your neighbour." },
-  adwar: { name:"Advertising War", short:"G8", icon:"G8",
+  adwar: { name:"Advertising Game (Infinite)", short:"G8", icon:"G8",
     blurb:"High or Low advertising against the same rival, round after round." },
+  adfin: { name:"Advertising Game (Finite)", short:"G9", icon:"G9",
+    blurb:"High or Low advertising against the same rival for a known, fixed number of rounds." },
   publicgoods: { name:"Public Goods", short:"G10", icon:"G10",
     blurb:"Contribute to a shared fund that pays everyone." }
 };
@@ -607,7 +609,8 @@ const DEFAULT_CONFIG = {
   quatro:{ rounds:5 },
   redblack:{ rounds:20, mode:"record" },   // mode: "record" (real cards, one enters + partner verifies) | "live" (real-time on phones)
   attackdefend:{ rounds:10 },   // Colonel Blotto: fixed roles (attacker 2 / defender 3), this many lockstep rounds per pair
-  adwar:{ cont:75, min:10, cap:15 },    // Advertising War: % chance the market continues after each round (from the minimum on); hidden min / max rounds
+  adwar:{ cont:75, min:10, cap:15 },    // Advertising Game (Infinite): % chance the market continues after each round (from the minimum on); hidden min / max rounds
+  adfin:{ rounds:10 },                  // Advertising Game (Finite): a fixed, announced number of rounds
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -1482,7 +1485,7 @@ function render(){
   if(cfgMode){ app.replaceChildren(courseConfig()); return; }
   // Leave the waiting room / release presence when we're not actively on an open pair game
   // (also when a hub-enabled student is browsing "My page" rather than the live class).
-  const wantLive = !isTeacher() && control && control.phase==="open" && (control.activeGame==="quatro"||control.activeGame==="redblack"||control.activeGame==="attackdefend"||control.activeGame==="adwar") && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class";
+  const wantLive = !isTeacher() && control && control.phase==="open" && (control.activeGame==="quatro"||control.activeGame==="redblack"||control.activeGame==="attackdefend"||control.activeGame==="adwar"||control.activeGame==="adfin") && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class";
   if(!wantLive && liveCtx) detachLive();
   let next;
   if(REQUIRE_GOOGLE && !authUser){
@@ -1812,6 +1815,7 @@ function studentView(){
   else if(g==="redblack") studentRedBlack(c);
   else if(g==="attackdefend") studentAttackDefend(c);
   else if(g==="adwar") studentPair(c,"adwar");
+  else if(g==="adfin") studentPair(c,"adfin");
   else studentPG(c);
   return c;
 }
@@ -2282,7 +2286,7 @@ function studentPair(c, game){
   c.append(Object.assign(el("h2"),{textContent:GAMES[game].name,style:"font-size:1.4rem;margin:6px 0 4px"}));
   ensureLive(mc); botSync(mc, d);
   if(d.bot){ if(game==="attackdefend"){ adMatch(c, R, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", mc}); return; }
-    if(game==="adwar"){ rpMatch(c, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", mc}); return; } pairMatch(c, game, R, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", myColor:(d.color||(d.color=Math.random()<0.5?"red":"black")), mc}); return; }
+    if(game==="adwar"||game==="adfin"){ rpMatch(c, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", mc, fin:game==="adfin"}); return; } pairMatch(c, game, R, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", myColor:(d.color||(d.color=Math.random()<0.5?"red":"black")), mc}); return; }
   if(pairData && pairData.ended){
     c.append(hintLine("Your partner left the match."));
     const b=el("button","btn wide","Back to the waiting room"); b.style.marginTop="10px"; b.style.maxWidth="320px";
@@ -2295,7 +2299,7 @@ function studentPair(c, game){
     const pid=[String(myId),String(partner)].map(encodeKey).sort().join("~");
     if(game==="redblack" && (cf.mode||"record")==="record"){ pairRecorded(c, R, d, {partner, partnerName, mc, pid}); return; }
     if(game==="attackdefend"){ adMatch(c, R, d, {partner, partnerName, mc}); return; }
-    if(game==="adwar"){ rpMatch(c, d, {partner, partnerName, mc}); return; }
+    if(game==="adwar"||game==="adfin"){ rpMatch(c, d, {partner, partnerName, mc, fin:game==="adfin"}); return; }
     pairMatch(c, game, R, d, {partner, partnerName, myColor, suits:pairData.suits, mc}); return;
   }
   // Recorded mode is asynchronous (real cards played offline, then one person enters), so it
@@ -2415,9 +2419,12 @@ async function saveRecBoth(partnerId, partnerName, myPayload, partnerPayload){
 }
 function pairLobby(c, game, mc, R, d){
   const rbRecord = game==="redblack" && (cfg("redblack").mode||"record")==="record";
-  const title = game==="redblack"?"Red vs Black" : game==="attackdefend"?"Colonel Blotto" : game==="adwar"?"Advertising War" : "Quatro Uno";
+  const title = game==="redblack"?"Red vs Black" : game==="attackdefend"?"Colonel Blotto" : game==="adwar"?"Advertising Game" : game==="adfin"?"Advertising Game" : "Quatro Uno";
   c.append(pairRules(title,
-    game==="adwar" ? [
+    game==="adfin" ? [
+      "Pair up with a neighbour — you are two rival firms. Each round you both choose High or Low advertising at the same time.",
+      "You play the same rival for exactly "+rpFinRounds()+" rounds. Your score is your total profit over all "+rpFinRounds()+" rounds."
+    ] : game==="adwar" ? [
       "Pair up with a neighbour — you are two rival firms. Each round you both choose High or Low advertising at the same time.",
       "You keep playing the same rival, round after round. Your score is your total profit over all the rounds you play."
     ] : game==="attackdefend" ? [
@@ -2432,7 +2439,7 @@ function pairLobby(c, game, mc, R, d){
         : "Pair up, then each hand tap your pile order. We work out who won, live.",
       "Playing with real cards at your desk? Still pair up here and record each hand for live scoring."]));
   if(game==="attackdefend") c.append(adScenario());
-  if(game==="adwar") c.append(rpMatrix());
+  if(game==="adwar"||game==="adfin") c.append(rpMatrix());
   const wr=el("div","lobby"); wr.style.marginTop="14px";
   if(invIn){
     const inv=el("div","invite-in");
@@ -2922,7 +2929,7 @@ function analyzeAttackDefend(list){
   return wrap;
 }
 
-/* ── G8 Advertising War — an indefinitely repeated Prisoner's Dilemma ─────────────────────────
+/* ── G8 Advertising Game (Infinite) — an indefinitely repeated Prisoner's Dilemma (G9 = the finite twin) ─────────────────────────
    Two rival firms choose High or Low advertising each round (the slide's payoffs). After every
    round the market continues with probability p (config.cont %), so nobody knows which round is
    the last; a hidden cap (config.cap) bounds the match and is never shown to students. Lockstep
@@ -2959,10 +2966,14 @@ function rpMatrix(played){
   return wrap;
 }
 function studentAdWar(c){ studentPair(c,"adwar"); }
+// G9 (finite): the announced, fixed number of rounds
+function rpFinRounds(){ return Math.max(1,Math.min(50,Math.round(+cfg("adfin").rounds||10))); }
 
 function rpMatch(c, d, opts){
-  const {partner, partnerName, mc, bot}=opts;
-  const {p, cap, min}=rpCfg();
+  const {partner, partnerName, mc, bot, fin}=opts;
+  const {p, cap, min}=rpCfg(), R=fin? rpFinRounds() : null, gk=fin?"adfin":"adwar";
+  // what each save carries: the infinite game's hidden parameters, or the finite game's round count
+  const meta = fin ? {mode:"rep", fin:true, rounds:R} : {mode:"rep", cont:Math.round(p*100), min, cap};
   // A practice-bot game is a fresh throwaway (never resumes a saved sub); a real match only resumes
   // a sub played against THIS partner.
   const cur=bot?null:mySubWith(partner);
@@ -2979,22 +2990,22 @@ function rpMatch(c, d, opts){
   let n=0, over=false, me=0, them=0;
   while(d.seq[n]!=null && theirs(n)!=null){
     me+=RP_PAY[d.seq[n]][theirs(n)]; them+=RP_PAY[theirs(n)][d.seq[n]];
-    const end=rpEnds(seed, n, d.seq[n], theirs(n), p, cap, min); n++;
+    const end= fin ? (n+1>=R) : rpEnds(seed, n, d.seq[n], theirs(n), p, cap, min); n++;
     if(end){ over=true; break; }
   }
   if(d.seq.length>n+1) d.seq.length=n+1;      // never more than one move ahead of the lockstep
 
   const head=el("div"); head.style.cssText="margin:6px 0 4px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--accent) 10%,transparent);border:1px solid var(--accent)";
-  head.innerHTML="<b>Your firm vs "+esc(partnerName)+"</b><div style='font-size:.82rem;color:var(--muted);margin-top:2px'>The same rival, round after round. Your score is your total profit over all rounds.</div>";
+  head.innerHTML="<b>Your firm vs "+esc(partnerName)+"</b><div style='font-size:.82rem;color:var(--muted);margin-top:2px'>"+(fin?"The same rival for exactly <b>"+R+" rounds</b>. Your score is your total profit over all "+R+" rounds.":"The same rival, round after round. Your score is your total profit over all rounds.")+"</div>";
   c.append(head);
   const sb=el("div","scorebar");
   const mk=(lbl,v,cls)=>{ const t=el("div","score"+(cls?" "+cls:"")); t.append(Object.assign(el("div","score-k"),{textContent:lbl})); t.append(Object.assign(el("div","score-v"),{textContent:v})); return t; };
-  sb.append(mk("Your profit",me,"me"), mk(partnerName||"Rival",them,"them"), mk("Rounds",n)); c.append(sb);
+  sb.append(mk("Your profit",me,"me"), mk(partnerName||"Rival",them,"them"), mk("Rounds",fin?(n+" / "+R):n)); c.append(sb);
 
   const finish=()=>{
     if(d._doneSaved) return; d._doneSaved=true;
-    savePair({partner, partnerName, seq:d.seq.slice(0,n).join(","), mode:"rep", cont:Math.round(p*100), min, cap}, true);
-    if(bot) saveBot({ partnerName:myName||"You", seq:d.seq.slice(0,n).map((x,i)=>i===0?"L":d.seq[i-1]).join(","), mode:"rep", cont:Math.round(p*100), min, cap });
+    savePair(Object.assign({partner, partnerName, seq:d.seq.slice(0,n).join(",")}, meta), true);
+    if(bot) saveBot(Object.assign({ partnerName:myName||"You", seq:d.seq.slice(0,n).map((x,i)=>i===0?"L":d.seq[i-1]).join(",") }, meta));
   };
   const roundCard=(i)=>{ const mv=d.seq[i], tv=theirs(i), mine=RP_PAY[mv][tv], his=RP_PAY[tv][mv];
     const both=mv===tv, col= mv==="L"&&tv==="L" ? "#2e8b57" : mv==="H"&&tv==="H" ? "#8a6d1f" : mine>his ? "#2c6fb0" : "#b03030";
@@ -3008,25 +3019,25 @@ function rpMatch(c, d, opts){
   if(over){
     finish();
     const box=el("div","note-box teal"); box.style.marginTop="14px";
-    box.innerHTML="<b>🏁 The game is over after round "+n+".</b> Your total profit: <b>"+me+"</b> ("+fmt(me/n,2)+" per round) · "+esc(partnerName)+": <b>"+them+"</b>."+(bot?" (The practice bot plays tit-for-tat: Low first, then copies your last move.)":" Results appear when your instructor reveals.");
+    box.innerHTML="<b>🏁 The game is over after "+(fin?"all "+n+" rounds":"round "+n)+".</b> Your total profit: <b>"+me+"</b> ("+fmt(me/n,2)+" per round) · "+esc(partnerName)+": <b>"+them+"</b>."+(bot?" (The practice bot plays tit-for-tat: Low first, then copies your last move.)":" Results appear when your instructor reveals.");
     c.append(box);
     roundCard(n-1);
   } else if(needAck){
     roundCard(lastSeen);
-    const cont=el("button","btn wide","Continue to round "+(n+1)+" ▶"); cont.style.cssText="margin-top:12px;max-width:300px";
+    const cont=el("button","btn wide","Continue to round "+(n+1)+(fin?" of "+R:"")+" ▶"); cont.style.cssText="margin-top:12px;max-width:300px";
     cont.onclick=()=>{ d.ack=lastSeen; render(); }; c.append(cont);
   } else if(d.seq[n]==null){
-    c.append(Object.assign(el("div","tinylabel"),{textContent:"Round "+(n+1)+" — choose your advertising budget",style:"margin-top:16px"}));
+    c.append(Object.assign(el("div","tinylabel"),{textContent:"Round "+(n+1)+(fin?" of "+R+(n+1===R?" — the FINAL round":""):"")+" — choose your advertising budget",style:"margin-top:16px"}));
     c.append(rpMatrix());
     const row=el("div","row"); row.style.cssText="gap:10px;margin-top:10px;flex-wrap:wrap";
     [["H","📢 High advertising"],["L","🤫 Low advertising"]].forEach(([v,l])=>{
       const bt=el("button","btn wide",l); bt.style.cssText="flex:1;min-width:150px;max-width:240px;"+(v==="H"?"background:#b5651d":"background:#2e8b57");
-      bt.onclick=()=>{ d.seq[n]=v; savePair({partner, partnerName, seq:d.seq.join(","), mode:"rep", cont:Math.round(p*100), min, cap}, false); render(); };
+      bt.onclick=()=>{ d.seq[n]=v; savePair(Object.assign({partner, partnerName, seq:d.seq.join(",")}, meta), false); render(); };
       row.append(bt); });
     c.append(row);
   } else {
     const w=el("div","note-box"); w.style.marginTop="16px";
-    w.innerHTML="<b>Round "+(n+1)+" — you chose "+RP_NAME[d.seq[n]]+".</b> Waiting for <b>"+esc(partnerName)+"</b> to choose… the round resolves the moment they do.";
+    w.innerHTML="<b>Round "+(n+1)+(fin?" of "+R:"")+" — you chose "+RP_NAME[d.seq[n]]+".</b> Waiting for <b>"+esc(partnerName)+"</b> to choose… the round resolves the moment they do.";
     c.append(w); c.append(rpMatrix());
   }
 
@@ -3038,7 +3049,7 @@ function rpMatch(c, d, opts){
     const t=el("table","matrix"); t.style.fontSize=".82rem"; t.innerHTML=html;
     const sc=el("div","tablescroll"); sc.style.marginTop="6px"; sc.append(t); c.append(sc);
   }
-  if(bot){ const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="16px"; lv.onclick=()=>liveExitBot(mc, "adwar-"+curKey); c.append(lv); }
+  if(bot){ const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="16px"; lv.onclick=()=>liveExitBot(mc, gk+"-"+curKey); c.append(lv); }
   else if(!over){ const lv=el("button","btn danger","Restart"); lv.style.marginTop="16px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
 }
 
@@ -3053,8 +3064,9 @@ function rpStrategy(mine, theirs){
   if(grim) return "Grim trigger";
   return "Other";
 }
-function analyzeAdWar(list){
+function analyzeAdWar(list, fin){
   list=list.filter(s=>isDone(s)&&!s.bot);
+  const finR = fin ? (()=>{ const v=list.map(s=>+s.rounds).filter(x=>x>0); return v.length? v[0] : rpFinRounds(); })() : null;
   const pairs=mutualPairs(list);
   const {p,cap,min}=rpCfg(), thr=rpThreshold();
   const minUsed = (()=>{ const v=list.map(s=>+s.min).filter(x=>x>0); return v.length? v[0] : min; })();
@@ -3078,7 +3090,7 @@ function analyzeAdWar(list){
   const wrap=el("div","stack");
   const tiles=el("div","stats");
   tiles.append(
-    statTile("Matches", String(pairs.length), lens.length?("avg "+fmt(avgLen,1)+" rounds (expected "+fmt(rpExpLen(pUsed,capUsed,minUsed),1)+")"):"no complete pairs yet"),
+    statTile("Matches", String(pairs.length), !lens.length?"no complete pairs yet" : fin?(finR+" rounds each (announced)") : ("avg "+fmt(avgLen,1)+" rounds (expected "+fmt(rpExpLen(pUsed,capUsed,minUsed),1)+")")),
     statTile("Both Low", rounds?pct(bothL/rounds):"—", "rounds the pair cooperated", rounds&&bothL/rounds>=0.5?"good":null),
     statTile("Ad war (both High)", rounds?pct(bothH/rounds):"—", "rounds both advertised", rounds&&bothH/rounds>=0.5?"bad":null),
     statTile("Avg profit / round", firmRounds?fmt(pay/firmRounds,2):"—", "Nash 4 · both Low 5", true)
@@ -3088,7 +3100,7 @@ function analyzeAdWar(list){
   if(byRound.length){
     const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Who kept advertising Low, round by round"}));
     card.append(barChart(byRound.map((r,i)=>({label:"R"+(i+1), value:Math.round(1000*r.low/r.n)/10, color:"#2e8b57"})), 100, true, "%"));
-    card.append(Object.assign(el("div","cap"),{textContent:"% of firms choosing Low in each round (later rounds have fewer matches still running: "+byRound.map(r=>r.n/2).join(", ")+" pairs)."}));
+    card.append(Object.assign(el("div","cap"),{textContent: fin ? "% of firms choosing Low in each round. Backward induction predicts 0% everywhere — watch whether cooperation collapses as the announced last round ("+finR+") approaches." : "% of firms choosing Low in each round (later rounds have fewer matches still running: "+byRound.map(r=>r.n/2).join(", ")+" pairs)."}));
     wrap.append(card);
   }
   if(resp.afterL[1]+resp.afterH[1]){
@@ -3110,8 +3122,14 @@ function analyzeAdWar(list){
   const mcard=el("div","chart-card"); mcard.append(Object.assign(el("h3"),{textContent:"The stage game"})); mcard.append(rpMatrix()); wrap.append(mcard);
 
   const note=el("div","note-box"); note.style.marginTop="4px";
-  note.innerHTML="<b>The lesson.</b> Played once, High is a dominant strategy (6 &gt; 5 and 4 &gt; 3), so the only equilibrium is the ad war at 4 each. With a <b>"+Math.round(pUsed*100)+"%</b> chance of another round, the shadow of the future changes that: under <b>grim trigger</b> (Low until the rival goes High, then High forever) deviating gains 6 − 5 = 1 today but loses 5 − 4 = 1 every future round, so Low is sustainable when p ≥ (6−5)/(6−4) = <b>"+Math.round(thr*100)+"%</b>"+(pUsed>=thr?" — here it is.":" — at "+Math.round(pUsed*100)+"% it is not.")+" Nobody knew which round was last, so there was no last round to unravel backwards from. (Tit-for-tat is also a Nash equilibrium once p ≥ 50%, but it is subgame perfect only at exactly p = 50%: above that, once both are stuck in an ad war, offering Low again beats punishing forever.)";
+  note.innerHTML= fin ? finNote() : "<b>The lesson.</b> Played once, High is a dominant strategy (6 &gt; 5 and 4 &gt; 3), so the only equilibrium is the ad war at 4 each. With a <b>"+Math.round(pUsed*100)+"%</b> chance of another round, the shadow of the future changes that: under <b>grim trigger</b> (Low until the rival goes High, then High forever) deviating gains 6 − 5 = 1 today but loses 5 − 4 = 1 every future round, so Low is sustainable when p ≥ (6−5)/(6−4) = <b>"+Math.round(thr*100)+"%</b>"+(pUsed>=thr?" — here it is.":" — at "+Math.round(pUsed*100)+"% it is not.")+" Nobody knew which round was last, so there was no last round to unravel backwards from. (Tit-for-tat is also a Nash equilibrium once p ≥ 50%, but it is subgame perfect only at exactly p = 50%: above that, once both are stuck in an ad war, offering Low again beats punishing forever.)";
   wrap.append(note);
+  function finNote(){
+    const last=byRound[finR-1], early=byRound.slice(0,Math.max(1,finR-1)).filter(Boolean);
+    const eLow=early.reduce((a,r)=>a+r.low,0), eN=early.reduce((a,r)=>a+r.n,0);
+    const obs = last&&eN ? " In class, <b>"+pct(eLow/eN)+"</b> chose Low before the last round and <b>"+pct(last.low/last.n)+"</b> in round "+finR+"." : "";
+    return "<b>The lesson.</b> Played once, High is a dominant strategy (6 &gt; 5 and 4 &gt; 3). With a <b>known last round</b> ("+finR+"), think backwards: in round "+finR+" there is no future to protect, so both play High. Then round "+(finR-1)+" is effectively the last round that matters — High again — and so on back to round 1. <b>Backward induction</b> makes (High, High) every round the unique subgame-perfect equilibrium, however many rounds are announced."+obs+" Compare the infinite game, where no last round exists to unravel from and Low can be sustained.";
+  }
 
   wrap.append(pairingsCard(pairs, pr=>{ const xs=rpSeq(pr[0]), ys=rpSeq(pr[1]), L=Math.min(xs.length,ys.length); let px=0,py=0; for(let i=0;i<L;i++){ px+=RP_PAY[xs[i]][ys[i]]; py+=RP_PAY[ys[i]][xs[i]]; }
     return pairName(pr[0])+" ("+px+")  ↔  "+pairName(pr[1])+" ("+py+") · "+L+" round"+(L===1?"":"s")+" · "+xs.slice(0,L).join("")+" / "+ys.slice(0,L).join(""); }));
@@ -3302,6 +3320,7 @@ function analysisBody(g, list, teacher){
   if(g==="redblack") return analyzeRedBlack(list);
   if(g==="attackdefend") return analyzeAttackDefend(list);
   if(g==="adwar") return analyzeAdWar(list);
+  if(g==="adfin") return analyzeAdWar(list, true);
   return analyzePG(list);
 }
 function revealNarr(g){
@@ -3312,6 +3331,7 @@ function revealNarr(g){
   if(g==="redblack") return "How did the class play each card — and does it match the equilibrium?";
   if(g==="attackdefend") return "How did the class attack and defend Blotto's town — and how often did it fall?";
   if(g==="adwar") return "Did facing the same rival again and again keep firms advertising Low?";
+  if(g==="adfin") return "Did knowing the last round make cooperation unravel?";
   return "How close did the group get to the socially optimal outcome?";
 }
 function analyzeGuess(teacher,list){
@@ -4843,7 +4863,7 @@ function subValue(s){
   if(s.game==="redblack"){ const seq=rbSeq(s); return (s.color==="red"?"Red":s.color==="black"?"Black":"?")+" ["+seq.join(" ")+"] vs "+(s.partnerName||"?"); }
   if(s.game==="quatro"){ try{ return JSON.parse(s.piles||"[]").join(" ")+" vs "+(s.partnerName||"?"); }catch(e){ return "—"; } }
   if(s.game==="attackdefend"){ const seq=String(s.seq||"").split(",").filter(Boolean); return "["+seq.join(" ")+"] vs "+(s.partnerName||"?"); }
-  if(s.game==="adwar"){ const seq=rpSeq(s); return "["+seq.join(" ")+"] vs "+(s.partnerName||"?"); }
+  if(s.game==="adwar"||s.game==="adfin"){ const seq=rpSeq(s); return "["+seq.join(" ")+"] vs "+(s.partnerName||"?"); }
   return s.value!=null?String(s.value):"—";   // guess23 and default
 }
 /* ── Past results (instructor, READ-ONLY), reached from the Analyze bar for the selected game. While one is
@@ -5011,6 +5031,9 @@ function paramEditor(){
     wrap.append(list);
     const grid=el("div","paramgrid"); grid.append(mk("Split pot ($)","pot",cf.pot)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Question 4 splits this pot; the focal answer is half of it. Just Open → students play all four → Reveal (all four results show together)."})); }
+  else if(g==="adfin"){
+    const grid=el("div","paramgrid"); grid.append(mk("Rounds played (announced to students)","rounds",cf.rounds)); wrap.append(grid);
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Same High/Low advertising game as G8, but every pair plays exactly this many rounds and students are told so (\"Round 3 of "+rpFinRounds()+"\", with the final round flagged). Backward induction predicts High in every round; compare the class's play near the end with G8.",style:"margin-top:6px"})); }
   else if(g==="adwar"){
     const grid=el("div","paramgrid");
     grid.append(mk("Chance the market continues after each round (%)","cont",cf.cont), mk("Minimum rounds (hidden)","min",cf.min), mk("Maximum rounds (hidden)","cap",cf.cap)); wrap.append(grid);

@@ -499,7 +499,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     rounds, town breached %, town held %, **game value 67%**), a lesson note, and a `pairingsCard` +
     `orphanWarning`. `subValue` renders `[tokens] vs partner`; `paramEditor` exposes **Rounds played**.
 
-- `adwar` — **Advertising War** (**G8**) — an **indefinitely repeated Prisoner's Dilemma** teaching
+- `adwar` — **Advertising Game (Infinite)** (**G8**) — an **indefinitely repeated Prisoner's Dilemma** teaching
   repeated games / the shadow of the future. Two rival firms choose **High** or **Low** advertising each
   round; stage payoffs `RP_PAY[mine][theirs]` = (High,High) 4,4 · (High,Low) 6,3 · (Low,High) 3,6 ·
   (Low,Low) 5,5 (T=6,R=5,P=4,S=3; High is dominant one-shot). Config `{ cont, min, cap }` (`paramEditor`,
@@ -529,6 +529,16 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     (`rpStrategy`: Always Low / Tit-for-tat / Grim trigger / Always High / Other), the stage matrix, a
     theory note (threshold ½ vs the `cont` used; TFT is NE for p ≥ ½ but SPNE only at exactly ½), `pairingsCard` with
     totals + sequences, and `orphanWarning`.
+
+- `adfin` — **Advertising Game (Finite)** (**G9**) — the **finitely repeated** twin of G8, teaching
+  **backward induction / end-game unravelling**. Same stage game, same `rpMatch` (called with `fin:true`;
+  `studentPair` routes both `adwar` and `adfin` there), same lobby, bot (tit-for-tat) and lockstep. Config
+  `{ rounds }` (default **10**, `rpFinRounds()`), **announced to students**: lobby/header "exactly N rounds",
+  "Round k of N", the last one flagged "— the FINAL round", scoreboard "k / N"; the match ends after round N
+  (no draw). Subs carry `mode:"rep", fin:true, rounds` (no `cont/min/cap`). `analyzeAdWar(list, true)`:
+  Matches tile "N rounds each (announced)", the % Low by round chart captioned for the end-game, and a
+  backward-induction lesson note (unique SPNE = High every round) with the class's Low rate before vs in
+  the last round.
 
 ## Interactive lessons (no submissions)
 - **Pareto optimality** (`paretoLesson`, local `lessonMode="pareto"` + `PZ` state) — an
