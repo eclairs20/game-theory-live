@@ -329,7 +329,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     **5s heartbeat** (`liveTick`) re-asserts presence AND actively **re-polls** the lobby/invite/pair
     (`livePoll`, `.once()` reads) as a safety net; a `visibilitychange` hook re-syncs the instant the
     tab regains focus; and the lobby has a manual **↻ Refresh** button. All three update the globals and
-    re-render (or enter the match if `of/<me>` now points at a pid) without a reload.
+    re-render (or enter the match if `of/<me>` now points at a pid) without a reload. **Redraw only on a
+    visible change** (`lobbyViewSig` = present players + incoming invite, excluding heartbeat `ts`; `pairLobby`
+    records it in `_lobbySig`, `lobbyRender` skips identical redraws) — redrawing on every heartbeat made the
+    chip you'd just tapped (the invitee you're waiting on) blink; that chip is now highlighted (`.pair-name.sel`).
   - **Live match** (`pairMatch`): the pair is **locked** — no changing partner or colour mid-game;
     an explicit **Leave match** clears your sub + `of` pointer and marks the pair `ended` (the
     partner is offered "back to the waiting room"). Play is **strictly sequential** — only the
@@ -503,13 +506,13 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   repeated games / the shadow of the future. Two rival firms choose **High** or **Low** advertising each
   round; stage payoffs `RP_PAY[mine][theirs]` = (High,High) 4,4 · (High,Low) 6,3 · (Low,High) 3,6 ·
   (Low,Low) 5,5 (T=6,R=5,P=4,S=3; High is dominant one-shot). Config `{ cont, min, cap }` (`paramEditor`,
-  `rpCfg()`): **`cont`** = % chance the market continues after each round (default **75**), **`min`** = a
-  **hidden** minimum number of rounds every pair plays (default **10**; no stop draw before it; clamped to
-  ≤ cap), **`cap`** = a **hidden** max number of rounds (default **15**). **Students see neither** — the game is presented as
+  `rpCfg()`): **`cont`** = % chance the market continues after each round (default **50**), **`min`** = a
+  **hidden** minimum number of rounds every pair plays (default **20**; no stop draw before it; clamped to
+  ≤ cap), **`cap`** = a **hidden** max number of rounds (default **35**). **Students see neither** — the game is presented as
   infinitely repeated ("the same rival, round after round"); no probability, "last round" or dice wording
   appears anywhere on the student side, and an ending just reads "🏁 The game is over after round N". The
   chance is only revealed in the post-reveal analysis note. The param note shows the
-  expected length `rpExpLen(p,cap,min)` (= min + p + p² + … + p^(cap−min); 12.3 at the defaults) and whether grim trigger sustains Low
+  expected length `rpExpLen(p,cap,min)` (= min + p + p² + … + p^(cap−min); ≈21 at the defaults — and 50% sits exactly on the grim-trigger threshold) and whether grim trigger sustains Low
   (`rpThreshold()` = (T−R)/(T−P) = **½**).
   - Live pairs via the shared lobby (`studentPair("adwar")` → `pairLobby` → **`rpMatch`**, self-contained,
     like `adMatch`; live-only via `wantLive`). **Lockstep**: n = rounds both have played; you choose for
@@ -533,7 +536,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - `adfin` — **Advertising Game (Finite)** (**G9**) — the **finitely repeated** twin of G8, teaching
   **backward induction / end-game unravelling**. Same stage game, same `rpMatch` (called with `fin:true`;
   `studentPair` routes both `adwar` and `adfin` there), same lobby, bot (tit-for-tat) and lockstep. Config
-  `{ rounds }` (default **10**, `rpFinRounds()`), **announced to students**: lobby/header "exactly N rounds",
+  `{ rounds }` (default **6**, `rpFinRounds()`), **announced to students**: lobby/header "exactly N rounds",
   "Round k of N", the last one flagged "— the FINAL round", scoreboard "k / N"; the match ends after round N
   (no draw). Subs carry `mode:"rep", fin:true, rounds` (no `cont/min/cap`). `analyzeAdWar(list, true)`:
   Matches tile "N rounds each (announced)", the % Low by round chart captioned for the end-game, and a
@@ -555,7 +558,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - **Teams** in the meeting's live node: `live/<mc>/rt/<tid>` = `{name, captain, members:{enc(id):{id,name}},
     bot, auto?}`, `rm/<enc(id)>` = one-team-per-student pointer claimed by **transaction** (create/join),
     `rp/<enc(id)>` = presence `{id,name,ts}` (15 s heartbeat; read with `.once`, never listened to).
-    Listener `rbEnsure`/`rbDetach` on `rt` only. Join = transaction on `members` (cap `teamMax`).
+    Listener `rbEnsure`/`rbDetach` on `rt` only, plus a **4 s poll** (`rbPollTeams`, `.once`, redraw only if the
+    JSON changed) and a `visibilitychange` re-read, so a dropped/throttled phone socket still shows new teams;
+    while a student types a team name the list holds still (render guard) and catches up on blur (`rbNewName` keeps the text). Join = transaction on `members` (cap `teamMax`).
     **No solos:** `rbFinalize` dissolves 1-member teams, pools them with present-but-unteamed students,
     and deals the pool into `ceil(n/max)` random teams ("Team Falcons"…, `auto:true`, random captain); a
     single leftover joins the smallest team (even past the cap). Late students can join a team with space
