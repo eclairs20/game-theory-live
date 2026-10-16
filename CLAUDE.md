@@ -559,7 +559,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     **No solos:** `rbFinalize` dissolves 1-member teams, pools them with present-but-unteamed students,
     and deals the pool into `ceil(n/max)` random teams ("Team Falcons"…, `auto:true`, random captain); a
     single leftover joins the smallest team (even past the cap). Late students can join a team with space
-    during build. Clear also removes `control.robot`.
+    during build. Clear also removes `control.robot`. **↺ Reset tournament** (`rbReset`, on the console card in
+    every phase, NOT frozen while open) deletes the meeting's teams/robots (live node), any robot subs and
+    `control.robot`, so the card returns to "Start team formation" — the way out of a test run with no teams.
   - **Captain-only editing**: the captain's draft (`draftFor("robot-"+mc)`) is written to `rt/<tid>/bot`
     (debounced 300 ms); teammates see a live read-only builder. Captain hands over by tapping a teammate;
     **"Captain offline? Take over"** succeeds only if the captain's presence is >60 s old.

@@ -575,7 +575,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-15.004";
+const APP_VERSION = "2026-10-16.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -3425,6 +3425,19 @@ async function rbFinalize(){
   }catch(e){ console.warn("robot finalize", e); }
   finally{ _rbFinalizing=false; }
 }
+/* Start the tournament over for this meeting: delete all teams/robots (live node), any robot subs already
+   saved, and the phase state — the console goes back to "Start team formation". Works mid-phase and while
+   submissions are open (it's the tournament's own control, not a round change). */
+async function rbReset(){
+  if(!confirm("Reset the Robot Tournament for this meeting? All teams and robots are deleted and team formation starts over.")) return;
+  const key=curKey;
+  for(const s of subs.slice()){ try{ await fb.ref(SUB_DOC(key,s.studentId)).remove(); }catch(e){} }
+  try{ await fb.ref(LIVE_ROOT(key)).remove(); }catch(e){}
+  delete gameDraft["robot-"+key]; rbTeams={}; rbPresence={}; _rbPresSig=null; rbNoiseOn=false;
+  await writeControl({robot:null});
+  toast("Tournament reset — start team formation when ready");
+  render();
+}
 function rbAdjust(patch){ const r=rbCtl(); if(r) writeControl({robot:Object.assign({}, r, patch)}); }
 /* FIGHT: snapshot every team's robot into one sub per member (so history/CSV/My page keep it), mark the
    tournament fought and reveal. Teams whose captain never configured a robot fight as Tit-for-tat. */
@@ -3450,7 +3463,7 @@ async function robotFight(){
       else doc.guest=true;
       upd[mc+"__"+encodeKey(id)]=doc; });
   });
-  if(!Object.keys(upd).length){ toast("No teams to fight yet."); return; }
+  if(!Object.keys(upd).length){ toast("No teams were formed — use ↺ Reset tournament to start over."); return; }
   try{ await fb.ref(SUBS_PATH()).update(upd); }catch(e){ toast("Couldn't save the robots — try again"); return; }
   rbNoiseOn=false; rbFightAnimUntil=Date.now()+1800;
   await writeControl({robot:Object.assign({}, r, {fought:true, buildEnd:Math.min(r.buildEnd||now, now)})});
@@ -3640,6 +3653,9 @@ function rbConsoleCard(){
   } else if(ph==="locked"){
     const f=el("button","btn gold big","⚔ Fight!"); f.onclick=()=>robotFight(); btns.append(f);
   }
+  if(ph!=="idle" || rbTeamList().length){
+    const rs=el("button","ghost-btn","↺ Reset tournament"); rs.title="Delete all teams and robots and start team formation again";
+    rs.style.marginLeft="auto"; rs.onclick=()=>rbReset(); btns.append(rs); }
   if(btns.childNodes.length) card.append(btns);
   // teams overview
   const list=rbTeamList(), inTeams=new Set();
