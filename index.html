@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-16.002";
+const APP_VERSION = "2026-10-17.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1130,8 +1130,29 @@ function onCtrl(snap){
    `allSubs` is maintained incrementally and keeps identical semantics for all downstream code. */
 function onSubChild(snap){ if(snap&&snap.key){ allSubs[snap.key]=snap.val(); scheduleSubsRender(); } }
 function onSubGone(snap){ if(snap&&snap.key){ delete allSubs[snap.key]; scheduleSubsRender(); } }
-let _subsRenderT=null;
-function scheduleSubsRender(){ if(_subsRenderT) return; _subsRenderT=setTimeout(()=>{ _subsRenderT=null; recompute(); render(); }, 60); }   // coalesce the initial burst + live changes into one render per frame
+let _subsRenderT=null, _subsDrawnSig=null, _teacherSubsAt=0;
+/* In a live pair match (G5–G9) a student's screen depends only on their OWN sub, their partner's sub and the
+   class "submitted" count — but every classmate's move fires a subs change, and redrawing the whole screen on
+   each one (≈10×/s with a full class mid-match) replaced the buttons under the student's finger, so taps never
+   landed ("can't click after round 10"). Redraw only when what this student sees changed; null = no gating. */
+function studentSubsSig(){
+  if(isTeacher() || !control || control.phase!=="open" || !liveCtx) return null;
+  const pick=x=> x ? [x.seq||"", x.piles||"", x.done, x.partner||"", x.color||"", x.proxy?1:0].join("|") : "-";
+  const partner = pairData ? (String(pairData.a)===String(myId)?pairData.b:pairData.a) : null;
+  const mine=subs.find(x=>String(x.studentId)===String(myId));
+  const theirs=partner!=null ? subs.find(x=>String(x.studentId)===String(partner)) : null;
+  return [pick(mine), pick(theirs), subs.filter(x=>isDone(x)&&!x.bot).length, myPairId||""].join("#");
+}
+function scheduleSubsRender(){
+  if(_subsRenderT) return;
+  // The instructor console legitimately changes with every sub (live preview), so cap it at ~1 redraw/s
+  // instead of one per classmate move — otherwise its own buttons are just as hard to hit mid-game.
+  const wait = isTeacher() ? Math.max(60, 1000-(Date.now()-_teacherSubsAt)) : 60;
+  _subsRenderT=setTimeout(()=>{ _subsRenderT=null; recompute();
+    const sg=studentSubsSig(); if(sg!==null && sg===_subsDrawnSig) return;
+    if(isTeacher()) _teacherSubsAt=Date.now();
+    render(); }, wait);
+}   // coalesce the initial burst + live changes into one render per frame
 function onRoster(snap){ setRoster(snap.val()); render(); }
 let scheduleLoaded=false;   // the stale-round check must never run before the schedule has arrived
 function onSchedule(snap){ setSchedule(snap.val()); scheduleLoaded=true; render(); }
@@ -1525,6 +1546,7 @@ function render(){
   if(typing && key===lastViewKey) return;
   lastViewKey=key;
   app.replaceChildren(next);
+  _subsDrawnSig=studentSubsSig();   // what the student's screen now reflects (see scheduleSubsRender)
 }
 function connectingScreen(){
   const c=el("div","card stage center"); c.style.padding="clamp(30px,6vw,60px)";

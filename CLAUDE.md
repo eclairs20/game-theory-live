@@ -239,6 +239,11 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   at ~50 students). Child listeners send only the one changed row, turning that O(N²) per-write
   fan-out into O(N). `allSubs` semantics are unchanged for all downstream readers. Don't revert to
   a whole-node `subs` value listener.
+  **That fixed the DATA load, not the redraws:** each changed row still re-rendered the whole screen, so with a
+  full class mid-match (G8) every phone redrew ~10×/s and taps never landed ("can't click after round 10").
+  `scheduleSubsRender` now (a) for a student in a live pair game redraws only when `studentSubsSig()` changes
+  (own sub, partner's sub, class done-count, pair id; `render()` records `_subsDrawnSig`), and (b) caps the
+  instructor console at ~1 sub-driven redraw per second.
 - **Version banner** (`APP_VERSION`, `maybePublishVersion`/`syncVersionBanner`, `control.appVersion`)
   — GitHub Pages/browsers cache `index.html`, so a returning student can run a stale copy. Each
   deploy **bumps `APP_VERSION`** (string-sortable: ISO date + zero-padded suffix, e.g.
