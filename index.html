@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-17.001";
+const APP_VERSION = "2026-10-17.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1121,7 +1121,17 @@ function onCtrl(snap){
   // them stranded on the hub — so they don't miss an activity that just opened.
   const sig=control?[control.activeGame,control.phase,control.round,control.session,control.section].join("|"):"";
   if(sig!==_ctrlSig){ studentTab=null; _ctrlSig=sig; }
-  recompute(); render();
+  recompute();
+  const cs=studentCtrlSig(); if(cs!==null && cs===_drawn.ctrl) return;   // e.g. a roll-call tick: nothing this student sees
+  render();
+}
+/* What a STUDENT's screen takes from `control`: everything except roll-call ticks (control.attend), which
+   only matter on My page's attendance card. null for the instructor (always redraw). */
+function studentCtrlSig(){
+  if(isTeacher() || !control) return null;
+  const c=Object.assign({}, control);
+  if(!(curStudentTab()==="hub" && hubOn() && (control.hub||{}).attendance)) delete c.attend;
+  try{ return JSON.stringify(c); }catch(e){ return null; }
 }
 /* Subs sync is per-CHILD, not whole-node. A `.on("value")` on the whole `subs` node re-delivers
    EVERY submission to EVERY connected client on every single write — O(students × submissions)
@@ -1130,7 +1140,18 @@ function onCtrl(snap){
    `allSubs` is maintained incrementally and keeps identical semantics for all downstream code. */
 function onSubChild(snap){ if(snap&&snap.key){ allSubs[snap.key]=snap.val(); scheduleSubsRender(); } }
 function onSubGone(snap){ if(snap&&snap.key){ delete allSubs[snap.key]; scheduleSubsRender(); } }
-let _subsRenderT=null, _subsDrawnSig=null, _teacherSubsAt=0;
+/* ═══ LIVE-UPDATE RENDERING RULE (applies to every game — keep it for new ones) ═══
+   render() rebuilds the whole screen. Other people's activity (a classmate's move, a team edit, a roll-call
+   tick) must NEVER redraw a student's screen unless something THAT STUDENT SEES changed — with a full class,
+   redraws arrive several times a second and replace the button under the finger, so taps are lost. Every
+   live listener therefore goes through a "view signature" check (studentSubsSig / rbViewSig / studentCtrlSig;
+   render() records each in `_drawn`), and the instructor console is throttled to ~1 redraw/s
+   (teacherRenderSoon). A new game that shows other people's live data adds its fields to the relevant sig. */
+const _drawn={subs:null, rb:null, ctrl:null};
+let _teachRT=null, _teachAt=0;
+function teacherRenderSoon(){ if(_teachRT) return;
+  _teachRT=setTimeout(()=>{ _teachRT=null; _teachAt=Date.now(); render(); }, Math.max(60, 1000-(Date.now()-_teachAt))); }
+let _subsRenderT=null;
 /* In a live pair match (G5–G9) a student's screen depends only on their OWN sub, their partner's sub and the
    class "submitted" count — but every classmate's move fires a subs change, and redrawing the whole screen on
    each one (≈10×/s with a full class mid-match) replaced the buttons under the student's finger, so taps never
@@ -1145,13 +1166,10 @@ function studentSubsSig(){
 }
 function scheduleSubsRender(){
   if(_subsRenderT) return;
-  // The instructor console legitimately changes with every sub (live preview), so cap it at ~1 redraw/s
-  // instead of one per classmate move — otherwise its own buttons are just as hard to hit mid-game.
-  const wait = isTeacher() ? Math.max(60, 1000-(Date.now()-_teacherSubsAt)) : 60;
   _subsRenderT=setTimeout(()=>{ _subsRenderT=null; recompute();
-    const sg=studentSubsSig(); if(sg!==null && sg===_subsDrawnSig) return;
-    if(isTeacher()) _teacherSubsAt=Date.now();
-    render(); }, wait);
+    if(isTeacher()){ teacherRenderSoon(); return; }   // live preview changes with every sub — capped at ~1/s
+    const sg=studentSubsSig(); if(sg!==null && sg===_drawn.subs) return;
+    render(); }, 60);
 }   // coalesce the initial burst + live changes into one render per frame
 function onRoster(snap){ setRoster(snap.val()); render(); }
 let scheduleLoaded=false;   // the stale-round check must never run before the schedule has arrived
@@ -1546,7 +1564,7 @@ function render(){
   if(typing && key===lastViewKey) return;
   lastViewKey=key;
   app.replaceChildren(next);
-  _subsDrawnSig=studentSubsSig();   // what the student's screen now reflects (see scheduleSubsRender)
+  _drawn.subs=studentSubsSig(); _drawn.rb=rbViewSig(); _drawn.ctrl=studentCtrlSig();   // what this screen now reflects (LIVE-UPDATE RENDERING RULE)
 }
 function connectingScreen(){
   const c=el("div","card stage center"); c.style.padding="clamp(30px,6vw,60px)";
@@ -3348,7 +3366,21 @@ function rbPhase(){
 function rbFmtLeft(ms){ ms=Math.max(0,ms); const s=Math.ceil(ms/1000); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
 function rbCountdown(endsAt, big){ const s=el("span"); s.dataset.cd=String(endsAt); s.textContent=rbFmtLeft(endsAt-srvNow());
   s.style.cssText="font-family:'IBM Plex Mono',monospace;font-weight:700;"+(big?"":"font-size:1.05rem"); return s; }
-function rbOnTeams(s){ rbTeams=(s&&s.val())||{}; _rbTeamsSig=JSON.stringify(rbTeams); render(); }
+function rbOnTeams(s){ rbTeams=(s&&s.val())||{}; _rbTeamsSig=JSON.stringify(rbTeams); rbTeamsRender(); }
+/* What a student sees of the teams: while picking a team, every team's name + members + captain (not robots);
+   once in a team (build/locked), only that team, robot included. Other captains editing their robots must not
+   redraw everyone's screen (LIVE-UPDATE RENDERING RULE). */
+function rbViewSig(){
+  if(isTeacher() || !rbCtx) return null;
+  const mine=rbMyTeam(), ph=rbPhase();
+  if(mine && (ph==="build"||ph==="locked")){
+    // The captain draws their robot from the local draft, so the echo of their OWN saved edit (arriving ~0.3 s
+    // later, right as they tap the next chip) must not redraw — leave the robot out of the captain's signature.
+    const t=Object.assign({}, mine.t); if(ph==="build" && String(t.captain)===String(myId)) delete t.bot;
+    return "T|"+JSON.stringify(t); }
+  return "L|"+(mine?mine.tid:"")+"|"+rbTeamList().map(([tid,t])=>tid+":"+(t.name||"")+":"+(t.captain||"")+":"+Object.keys(t.members||{}).sort().join(",")).join(";");
+}
+function rbTeamsRender(){ if(isTeacher()){ teacherRenderSoon(); return; } const sg=rbViewSig(); if(sg!==null && sg===_drawn.rb) return; render(); }
 /* Safety net for the teams list: phones throttle/drop the realtime socket (backgrounded tab, screen lock),
    so a team a classmate just created might not appear without a refresh. Re-read the teams every few
    seconds (and the moment the tab is visible again) and re-render only if something changed. */
@@ -3356,7 +3388,7 @@ let _rbTeamsSig="{}", _rbPollAt=0, _rbVisHook=false, rbNewName="";
 function rbPollTeams(){
   const mc=rbCtx; if(!mc) return; _rbPollAt=Date.now();
   fb.ref(LIVE_ROOT(mc)+"/rt").once("value").then(s=>{ if(rbCtx!==mc) return; const v=(s&&s.val())||{}, sg=JSON.stringify(v);
-    if(sg!==_rbTeamsSig){ rbTeams=v; _rbTeamsSig=sg; render(); } }).catch(()=>{});
+    if(sg!==_rbTeamsSig){ rbTeams=v; _rbTeamsSig=sg; rbTeamsRender(); } }).catch(()=>{});
 }
 function rbEnsure(mc){ if(rbCtx===mc) return; rbDetach(); rbCtx=mc; rbTeams={}; _rbTeamsSig="{}"; _rbHbAt=0; _rbPresAt=0;
   if(!_rbVisHook){ _rbVisHook=true; try{ document.addEventListener("visibilitychange",()=>{ if(!document.hidden && rbCtx) rbPollTeams(); }); }catch(e){} }

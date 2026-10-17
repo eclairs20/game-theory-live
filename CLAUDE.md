@@ -239,11 +239,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   at ~50 students). Child listeners send only the one changed row, turning that O(N²) per-write
   fan-out into O(N). `allSubs` semantics are unchanged for all downstream readers. Don't revert to
   a whole-node `subs` value listener.
-  **That fixed the DATA load, not the redraws:** each changed row still re-rendered the whole screen, so with a
-  full class mid-match (G8) every phone redrew ~10×/s and taps never landed ("can't click after round 10").
-  `scheduleSubsRender` now (a) for a student in a live pair game redraws only when `studentSubsSig()` changes
-  (own sub, partner's sub, class done-count, pair id; `render()` records `_subsDrawnSig`), and (b) caps the
-  instructor console at ~1 sub-driven redraw per second.
+  **That fixed the DATA load, not the redraws** — see the *Live-update rendering rule* under Conventions.
 - **Version banner** (`APP_VERSION`, `maybePublishVersion`/`syncVersionBanner`, `control.appVersion`)
   — GitHub Pages/browsers cache `index.html`, so a returning student can run a stale copy. Each
   deploy **bumps `APP_VERSION`** (string-sortable: ISO date + zero-padded suffix, e.g.
@@ -649,6 +645,24 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   answer. Close/Reopen/Reveal/Fullscreen/Exit controls live on it; Reveal exits present mode.
 
 ## Conventions
+- **Live-update rendering rule (MANDATORY for every game, existing and new).** `render()` rebuilds the whole
+  screen, so a redraw replaces every button. Other people's activity — a classmate's move, another team's edit,
+  a roll-call tick, a heartbeat — must **never redraw a student's screen unless something THAT student sees
+  changed**. With a full class these events arrive several times a second; redrawing on each one replaced the
+  button under the student's finger and taps were lost (G8 "can't click after round 10", the waiting-room
+  blink). How it's enforced (keep using these, don't call `render()` straight from a shared listener):
+  - Each shared listener checks a **view signature** of what this viewer sees and returns early if it equals
+    what's on screen: `studentSubsSig()` (subs, in a live pair game: own sub, partner's sub, class done-count,
+    pair id), `rbViewSig()` (G10 teams: the team list while choosing, then only your own team; the captain's
+    own robot echo excluded), `studentCtrlSig()` (control minus roll-call `attend` unless My page shows it),
+    `lobbyViewSig()` (waiting room: present players + incoming invite, not heartbeat `ts`). `render()` records
+    the drawn signatures in `_drawn` (and `pairLobby` records `_lobbySig`).
+  - The instructor console is throttled to ~1 shared-data redraw per second (`teacherRenderSoon`).
+  - Local actions (your own tap) may call `render()` directly; echoes of your own write must not cause a second
+    redraw if the screen already shows them (draw from the local draft and leave that field out of the sig).
+  - **A new game that shows other people's live data must add exactly those fields to the relevant signature**,
+    and be checked under load: simulate ~20 shared writes/s and confirm human-speed taps (mouse down → 120 ms →
+    up) all register and that genuinely relevant changes (partner's move, your team) still appear instantly.
 - Theme-aware: light/dark via CSS tokens on `:root`, `:root[data-theme=...]`, and
   `prefers-color-scheme`. Keep BOTH themes working when you touch styles.
 - Fonts: Fraunces (display), IBM Plex Sans (body), IBM Plex Mono (numbers/data).
@@ -668,6 +682,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 ## Likely next tasks
 - Add a game (sealed-bid auction, Cournot/Bertrand): extend `GAMES`, `DEFAULT_CONFIG`, add a
   `student<Game>()` view, an `analyze<Game>()` function, and a branch in `paramEditor()`.
+  Follow the **Live-update rendering rule** (view signatures + load test) for anything that listens to
+  other people's data; prefer self-contained function blocks (like `adMatch`/`rpMatch`/`rb*`).
 - Optional hardening: tighten Firebase rules or add Firebase App Check to limit who can write.
 - A per-round CSV export, or a persistent leaderboard across rounds.
 
