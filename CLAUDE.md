@@ -546,14 +546,24 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 
 - `robot` — **Robot Tournament** (**G10**; Public Goods is now labelled **G20**) — an Axelrod-style
   tournament on the G8/G9 Advertising Game (`RP_PAY`; Low = cooperate). **Teams** build one robot each; when
-  the instructor presses **⚔ Fight** every robot plays every other one. Config `{ teamsMin:3, buildMin:10,
-  teamMax:4, rounds:50, noise:5, house:true }` (`rbCfg()`, `paramEditor`).
-  - **Phases** live in `control.robot = {rk, teamsEnd, finalized, buildEnd, fought}` (rk must equal `curKey`;
-    `rbPhase()` → idle / teams / forming / build / locked / fought, from **server time** `srvNow()` via
+  the instructor presses **⚔ Fight** every robot plays every other one. Config `{ capMin:2, joinMin:2, buildMin:10,
+  teamMax:4, teams:0, rounds:50, noise:5, house:true }` (`rbCfg()` → `nTeams` = number of teams, 0 = no limit).
+  **Flow: captains → join → build → fight.** (1) **Captains** (`capMin`): anyone taps *Become captain* and names a
+  team (`rbCreateTeam`, blocked once `nTeams` teams exist); captains can rename (`rbRename`) or step down; the
+  instructor can remove a team (`rbRemoveTeam`). At the timer the console runs **`rbLockCaptains`**: keeps the first
+  `nTeams` teams by creation time (later ones dropped, their captains become players) and, if nobody volunteered,
+  appoints random captains from the students present (`ceil(present/max)`, capped by `nTeams`, auto names). (2) **Join**
+  (`joinMin`): non-captains join or **switch** teams (`rbSwitch`, cap `teamMax` incl. captain, enforced by
+  transaction) until it locks. At the timer **`rbFinalize`** places every present-but-unteamed student into the
+  smallest team (so captain-only teams fill first; past the cap if needed — nobody is left out); a captain still
+  alone joins another team as a player (no solos). (3) **Build** and (4) **Fight** as below.
+  - **Phases** live in `control.robot = {rk, capEnd, capLocked, joinEnd, finalized, buildEnd, fought}` (rk must equal `curKey`;
+    `rbPhase()` → idle / captains / caplock / join / forming / build / locked / fought — a legacy state with only
+    `teamsEnd` reads as past captains; from **server time** `srvNow()` via
     `.info/serverTimeOffset`). `openMeeting` starts a new meeting's team timer; a 1 s ticker (`rbTick`)
     updates `[data-cd]` countdowns in place, re-renders on a phase change (`rbPhase()` is in `viewKey`),
-    heartbeats student presence, and lets the instructor console run `rbFinalize` when team time is up.
-    Console card `rbConsoleCard` (+1 min / End now / Lock robots now / Fight, teams list with robots,
+    heartbeats student presence, and lets the instructor console run `rbLockCaptains` / `rbFinalize` when each timer
+    is up. Console card `rbConsoleCard` (+1 min / Lock captains now / Lock teams now / Lock robots now / Fight, teams list with robots,
     click a member to make captain); the round bar's Reveal becomes **⚔ Fight!** (`robotFight`); the
     Present view shows `rbPresentBody` (phase, big timer, team names — never robot settings).
   - **Teams** in the meeting's live node: `live/<mc>/rt/<tid>` = `{name, captain, members:{enc(id):{id,name}},
@@ -562,10 +572,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     Listener `rbEnsure`/`rbDetach` on `rt` only, plus a **4 s poll** (`rbPollTeams`, `.once`, redraw only if the
     JSON changed) and a `visibilitychange` re-read, so a dropped/throttled phone socket still shows new teams;
     while a student types a team name the list holds still (render guard) and catches up on blur (`rbNewName` keeps the text). Join = transaction on `members` (cap `teamMax`).
-    **No solos:** `rbFinalize` dissolves 1-member teams, pools them with present-but-unteamed students,
-    and deals the pool into `ceil(n/max)` random teams ("Team Falcons"…, `auto:true`, random captain); a
-    single leftover joins the smallest team (even past the cap). Late students can join a team with space
-    during build. Clear also removes `control.robot`. **↺ Reset tournament** (`rbReset`, on the console card in
+    **No solos** (see the flow above; if no team exists at all at join lock, the present students are dealt into
+    `ceil(n/max)` random teams). Late students can join a team with space during build. Clear also removes `control.robot`. **↺ Reset tournament** (`rbReset`, on the console card in
     every phase, NOT frozen while open) deletes the meeting's teams/robots (live node), any robot subs and
     `control.robot`, so the card returns to "Start team formation" — the way out of a test run with no teams.
   - **Captain-only editing**: the captain's draft (`draftFor("robot-"+mc)`) is written to `rt/<tid>/bot`

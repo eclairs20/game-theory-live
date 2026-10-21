@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-17.002";
+const APP_VERSION = "2026-10-21.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -614,7 +614,7 @@ const DEFAULT_CONFIG = {
   attackdefend:{ rounds:10 },   // Colonel Blotto: fixed roles (attacker 2 / defender 3), this many lockstep rounds per pair
   adwar:{ cont:50, min:20, cap:35 },    // Advertising Game (Infinite): % chance the market continues after each round (from the minimum on); hidden min / max rounds
   adfin:{ rounds:6 },                  // Advertising Game (Finite): a fixed, announced number of rounds
-  robot:{ teamsMin:3, buildMin:10, teamMax:4, rounds:50, noise:5, house:true },   // Robot Tournament: phase timers (min), team size cap, rounds per match, mistake % for the results toggle, house robots
+  robot:{ capMin:2, joinMin:2, buildMin:10, teamMax:4, teams:0, rounds:50, noise:5, house:true },   // Robot Tournament: captains / join / build timers (min), team size cap, number of teams (0 = no limit), rounds per match, mistake % for the results toggle, house robots
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -996,7 +996,7 @@ async function openMeeting(patch){
   // Robot Tournament: opening a new meeting starts its team-formation timer (a Reopen of the same meeting keeps it).
   if(control.activeGame==="robot"){
     const rk="S"+(p.session!=null?p.session:curSession())+curMSection()+"-robot-"+(p.round!=null?p.round:(control.round||1));
-    if(!(control.robot && control.robot.rk===rk)) p.robot={rk, teamsEnd: srvNow()+rbCfg().teamsMin*60000};
+    if(!(control.robot && control.robot.rk===rk)) p.robot={rk, capEnd: srvNow()+rbCfg().capMin*60000};
   }
   return await writeControl(p);
 }
@@ -3352,17 +3352,25 @@ let rbCtx=null, rbTeams={}, rbPresence={}, _rbPresSig=null, _rbLastPh=null, _rbH
 let rbNoiseOn=false, rbFightAnimUntil=0, _rbBotT=null, srvOffset=0;
 const srvNow = ()=> Date.now()+(srvOffset||0);
 function rbCfg(){ const cf=cfg("robot"); return {
-  teamsMin: Math.max(0.5, +cf.teamsMin||3), buildMin: Math.max(0.5, +cf.buildMin||10),
+  capMin: Math.max(0.5, +cf.capMin||2), joinMin: Math.max(0.5, +cf.joinMin||2), buildMin: Math.max(0.5, +cf.buildMin||10),
+  nTeams: Math.max(0, Math.min(40, Math.round(+cf.teams||0))),
   max: Math.max(2, Math.min(10, Math.round(+cf.teamMax||4))), rounds: Math.max(5, Math.min(500, Math.round(+cf.rounds||50))),
   noise: Math.max(0, Math.min(50, +cf.noise||0)), house: cf.house!==false }; }
 function rbCtl(){ const r=control&&control.robot; return (r && r.rk===curKey) ? r : null; }
-/* idle → teams → forming (timer up; the instructor console groups leftovers) → build → locked → fought */
+/* idle → captains (anyone can found a team) → caplock (timer up; the console locks captains) → join (players
+   pick / switch teams) → forming (timer up; the console places leftovers) → build → locked → fought.
+   A legacy state with only `teamsEnd` (before the captains step existed) is treated as already past captains. */
+function rbCapEnd(r){ return r.capEnd!=null ? r.capEnd : 0; }
+function rbJoinEnd(r){ return r.joinEnd!=null ? r.joinEnd : (r.teamsEnd||0); }
 function rbPhase(){
   const r=rbCtl(); if(!r) return "idle"; if(r.fought) return "fought";
   const now=srvNow();
-  if(!r.finalized) return now < r.teamsEnd ? "teams" : "forming";
+  if(!(r.capLocked || r.capEnd==null)) return now < r.capEnd ? "captains" : "caplock";
+  if(!r.finalized) return now < rbJoinEnd(r) ? "join" : "forming";
   return now < r.buildEnd ? "build" : "locked";
 }
+const rbTimed = ph => ph==="captains"||ph==="join"||ph==="build";
+function rbPhaseEnd(r, ph){ return ph==="captains" ? rbCapEnd(r) : ph==="join" ? rbJoinEnd(r) : r.buildEnd; }
 function rbFmtLeft(ms){ ms=Math.max(0,ms); const s=Math.ceil(ms/1000); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
 function rbCountdown(endsAt, big){ const s=el("span"); s.dataset.cd=String(endsAt); s.textContent=rbFmtLeft(endsAt-srvNow());
   s.style.cssText="font-family:'IBM Plex Mono',monospace;font-weight:700;"+(big?"":"font-size:1.05rem"); return s; }
@@ -3406,8 +3414,9 @@ function rbTick(){
   if(diagOn()) return;
   if(rbCtx===curKey && ph!=="fought" && ph!=="idle" && Date.now()-_rbPollAt>4000) rbPollTeams();
   if(isTeacher()){
+    if(ph==="caplock") rbLockCaptains();
     if(ph==="forming") rbFinalize();
-    if(rbCtx===curKey && (ph==="teams"||ph==="build"||ph==="forming") && Date.now()-_rbPresAt>5000){
+    if(rbCtx===curKey && ph!=="locked" && ph!=="idle" && Date.now()-_rbPresAt>5000){
       _rbPresAt=Date.now();
       fb.ref(LIVE_ROOT(curKey)+"/rp").once("value").then(s=>{ rbPresence=(s&&s.val())||{};
         const sig=Object.keys(rbPresence).sort().join(","); if(sig!==_rbPresSig){ _rbPresSig=sig; render(); } }).catch(()=>{});
@@ -3422,6 +3431,7 @@ function rbTick(){
 async function rbCreateTeam(name){
   name=String(name||"").trim().slice(0,24);
   if(!name){ toast("Give your team a name"); return; }
+  const C=rbCfg(); if(C.nTeams && rbTeamList().length>=C.nTeams){ toast("All "+C.nTeams+" teams have captains — you'll pick a team next"); return; }
   if(Object.values(rbTeams).some(t=>t&&String(t.name||"").toLowerCase()===name.toLowerCase())){ toast("That team name is taken"); return; }
   const mc=curKey, me=encodeKey(String(myId)), tid="t"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   const res=await fb.ref(LIVE_ROOT(mc)+"/rm/"+me).transaction(cur=> cur==null ? tid : undefined);
@@ -3439,6 +3449,29 @@ async function rbJoin(tid){
     if(Object.keys(cur).length>=max) return undefined;
     const nx=Object.assign({},cur); nx[me]={id:String(myId), name:myName||String(myId)}; return nx; });
   if(!r2||!r2.committed){ await fb.ref(LIVE_ROOT(mc)+"/rm/"+me).remove(); toast("That team is full"); }
+}
+/* Join step: move to another team (or join one). The one-team pointer moves by transaction and the target's
+   size cap is enforced by transaction, so two people can't overfill a team. Captains can't switch. */
+async function rbSwitch(tid){
+  const mine=rbMyTeam(); if(!mine) return rbJoin(tid);
+  if(mine.tid===tid) return;
+  if(String(mine.t.captain)===String(myId)){ toast("Captains stay with their team"); return; }
+  const mc=curKey, me=encodeKey(String(myId)), max=rbCfg().max;
+  const r2=await fb.ref(LIVE_ROOT(mc)+"/rt/"+tid+"/members").transaction(cur=>{
+    if(cur==null) return undefined; if(cur[me]) return cur;
+    if(Object.keys(cur).length>=max) return undefined;
+    const nx=Object.assign({},cur); nx[me]={id:String(myId), name:myName||String(myId)}; return nx; });
+  if(!r2||!r2.committed){ toast("That team is full"); return; }
+  try{ await fb.ref(LIVE_ROOT(mc)+"/rt/"+mine.tid+"/members/"+me).remove(); await fb.ref(LIVE_ROOT(mc)+"/rm/"+me).set(tid); }catch(e){}
+}
+async function rbRename(tid, name){
+  name=String(name||"").trim().slice(0,24); if(!name){ toast("Give your team a name"); return; }
+  if(Object.entries(rbTeams).some(([k,t])=>k!==tid && t && String(t.name||"").toLowerCase()===name.toLowerCase())){ toast("That team name is taken"); return; }
+  try{ await fb.ref(LIVE_ROOT(curKey)+"/rt/"+tid+"/name").set(name); toast("Renamed"); }catch(e){}
+}
+async function rbRemoveTeam(tid){   // instructor: drop a team (e.g. an unsuitable name) — its members become free again
+  const t=rbTeams[tid]||{}, upd={}; upd["rt/"+tid]=null; Object.keys(t.members||{}).forEach(k=>{ upd["rm/"+k]=null; });
+  try{ await fb.ref(LIVE_ROOT(curKey)).update(upd); }catch(e){}
 }
 async function rbLeave(tid){
   const mc=curKey, me=encodeKey(String(myId)), t=rbTeams[tid]||{};
@@ -3466,8 +3499,43 @@ function rbSaveBot(mc, tid, bot){
 }
 
 /* ── instructor actions ── */
-/* Team formation time is up: dissolve one-person teams, group everyone present but unteamed into
-   random teams (sizes as even as possible, ≥2), give each a random captain, then start building. */
+function rbAutoNamer(teams){
+  const used=new Set(Object.values(teams||{}).map(t=>String((t&&t.name)||"").toLowerCase()));
+  return ()=>{ for(const nm of RB_AUTO_NAMES){ const full="Team "+nm; if(!used.has(full.toLowerCase())){ used.add(full.toLowerCase()); return full; } } return "Team "+(used.size+1); };
+}
+function rbShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const x=a[i]; a[i]=a[j]; a[j]=x; } return a; }
+/* Captains' time is up: keep the first N teams if a team limit is set (later ones are dropped — their captains
+   become players), and if nobody volunteered appoint random captains from the students present. Then open
+   the join step. */
+let _rbCapLocking=false;
+async function rbLockCaptains(){
+  const r=rbCtl(); if(_rbCapLocking || !r || r.capLocked || r.capEnd==null || r.fought) return;
+  _rbCapLocking=true;
+  try{
+    const mc=r.rk, C=rbCfg(), now=srvNow();
+    const teams=((await fb.ref(LIVE_ROOT(mc)+"/rt").once("value")).val())||{};
+    const pres=((await fb.ref(LIVE_ROOT(mc)+"/rp").once("value")).val())||{};
+    const upd={};
+    let live=Object.entries(teams).filter(([,t])=>t&&t.members&&Object.keys(t.members).length).sort((a,b)=>(a[1].ts||0)-(b[1].ts||0));
+    if(C.nTeams>0 && live.length>C.nTeams){
+      live.slice(C.nTeams).forEach(([tid,t])=>{ upd["rt/"+tid]=null; Object.keys(t.members||{}).forEach(k=>{ upd["rm/"+k]=null; }); });
+      live=live.slice(0,C.nTeams);
+    }
+    if(!live.length){
+      const pool=rbShuffle(Object.values(pres).filter(p=>p&&p.id&&now-(p.ts||0)<180000).map(p=>({id:String(p.id), name:p.name||String(p.id)})));
+      let k=Math.ceil(pool.length/C.max); if(C.nTeams>0) k=Math.min(k, C.nTeams);
+      const nm=rbAutoNamer(teams);
+      pool.slice(0,k).forEach((m,i)=>{ const tid="a"+now.toString(36)+i+Math.random().toString(36).slice(2,5), key=encodeKey(m.id), members={};
+        members[key]={id:m.id, name:m.name}; upd["rt/"+tid]={name:nm(), captain:m.id, members, ts:now+i, auto:true}; upd["rm/"+key]=tid; });
+    }
+    if(Object.keys(upd).length) await fb.ref(LIVE_ROOT(mc)).update(upd);
+    const cur=rbCtl(); if(cur && !cur.capLocked) await writeControl({robot:Object.assign({}, cur, {capLocked:true, joinEnd: srvNow()+C.joinMin*60000})});
+  }catch(e){ console.warn("robot lock captains", e); }
+  finally{ _rbCapLocking=false; }
+}
+/* Join time is up: place everyone present but unteamed into the smallest teams (teams nobody joined get them
+   first); a captain still alone after that joins another team as a player (no solo teams). If there are no
+   teams at all, group the students present into random teams. Then start building. */
 async function rbFinalize(){
   const r=rbCtl(); if(_rbFinalizing || !r || r.finalized || r.fought) return;
   _rbFinalizing=true;
@@ -3475,27 +3543,22 @@ async function rbFinalize(){
     const mc=r.rk, C=rbCfg(), now=srvNow();
     const teams=((await fb.ref(LIVE_ROOT(mc)+"/rt").once("value")).val())||{};
     const pres=((await fb.ref(LIVE_ROOT(mc)+"/rp").once("value")).val())||{};
-    const upd={}, inTeam=new Set(), pool=[], live=[];
-    Object.entries(teams).forEach(([tid,t])=>{
-      const ms=Object.values((t&&t.members)||{});
-      if(ms.length<=1){ ms.forEach(m=>pool.push({id:String(m.id), name:m.name})); upd["rt/"+tid]=null; ms.forEach(m=>{ upd["rm/"+encodeKey(String(m.id))]=null; }); }
-      else { ms.forEach(m=>inTeam.add(String(m.id))); live.push([tid,t]); }
-    });
-    Object.values(pres).forEach(p=>{ if(p && p.id && !inTeam.has(String(p.id)) && now-(p.ts||0)<180000 && !pool.some(q=>q.id===String(p.id))) pool.push({id:String(p.id), name:p.name}); });
-    for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const x=pool[i]; pool[i]=pool[j]; pool[j]=x; }
-    const used=new Set(live.map(([,t])=>String(t.name||"").toLowerCase()));
-    const autoName=()=>{ for(const nm of RB_AUTO_NAMES){ const full="Team "+nm; if(!used.has(full.toLowerCase())){ used.add(full.toLowerCase()); return full; } } return "Team "+(used.size+1); };
-    const mkTeam=(ms)=>{ const tid="a"+now.toString(36)+Math.random().toString(36).slice(2,6); const members={};
-      ms.forEach(m=>{ const k=encodeKey(m.id); members[k]={id:m.id, name:m.name||m.id}; upd["rm/"+k]=tid; });
-      upd["rt/"+tid]={name:autoName(), captain:ms[Math.floor(Math.random()*ms.length)].id, members, ts:now, auto:true}; };
-    if(pool.length===1){
-      if(live.length){   // the odd one out joins the smallest team (even past the size cap) rather than playing solo
-        const [tid,t]=live.slice().sort((a,b)=>Object.keys(a[1].members).length-Object.keys(b[1].members).length)[0];
-        const k=encodeKey(pool[0].id); upd["rt/"+tid+"/members/"+k]={id:pool[0].id, name:pool[0].name||pool[0].id}; upd["rm/"+k]=tid; void t;
-      } else mkTeam(pool);   // the only student in the room
-    } else if(pool.length>=2){
-      const k=Math.ceil(pool.length/C.max);
-      for(let g=0; g<k; g++) mkTeam(pool.filter((_,i)=>i%k===g));
+    const upd={}, inTeam=new Set(), size={}, gone=new Set();
+    const live=Object.entries(teams).filter(([,t])=>t&&t.members&&Object.keys(t.members).length);
+    live.forEach(([tid,t])=>{ size[tid]=Object.keys(t.members).length; Object.values(t.members).forEach(m=>inTeam.add(String(m.id))); });
+    const pool=rbShuffle(Object.values(pres).filter(p=>p&&p.id&&!inTeam.has(String(p.id))&&now-(p.ts||0)<180000).map(p=>({id:String(p.id), name:p.name||String(p.id)})));
+    const add=(tid,m)=>{ const k=encodeKey(m.id); upd["rt/"+tid+"/members/"+k]={id:m.id, name:m.name||m.id}; upd["rm/"+k]=tid; size[tid]++; };
+    const smallest=(skip)=> Object.keys(size).filter(t=>t!==skip && !gone.has(t)).sort((a,b)=>size[a]-size[b])[0];
+    if(live.length){
+      pool.forEach(m=>add(smallest(), m));   // smallest first → captain-only teams fill before anyone else grows
+      live.forEach(([tid,t])=>{ if(size[tid]!==1 || gone.has(tid)) return;
+        const to=smallest(tid); if(!to) return;   // the only team in the room — nothing to merge into
+        const m=Object.values(t.members)[0]; gone.add(tid); upd["rt/"+tid]=null; add(to, {id:String(m.id), name:m.name}); });
+    } else if(pool.length){
+      const nm=rbAutoNamer(teams), k=Math.max(1,Math.ceil(pool.length/C.max));
+      for(let g=0; g<k; g++){ const ms=pool.filter((_,i)=>i%k===g), tid="a"+now.toString(36)+g+Math.random().toString(36).slice(2,5), members={};
+        ms.forEach(m=>{ const key=encodeKey(m.id); members[key]={id:m.id, name:m.name}; upd["rm/"+key]=tid; });
+        upd["rt/"+tid]={name:nm(), captain:ms[Math.floor(Math.random()*ms.length)].id, members, ts:now+g, auto:true}; }
     }
     if(Object.keys(upd).length) await fb.ref(LIVE_ROOT(mc)).update(upd);
     const cur=rbCtl(); if(cur && !cur.finalized)
@@ -3576,12 +3639,14 @@ function rbMemberChips(t, opts){
 }
 function rbPhaseBanner(ph){
   const r=rbCtl(); const box=el("div","note-box"); box.style.cssText="margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap";
-  const msg = ph==="teams" ? "<b>Step 1 · Form teams.</b> Create a team or join one (2–"+rbCfg().max+" people)."
-            : ph==="forming" ? "<b>Teams are locking…</b> anyone without a team is being grouped."
-            : ph==="build" ? "<b>Step 2 · Build your robot.</b> The captain configures it; teammates watch live."
+  const msg = ph==="captains" ? "<b>Step 1 · Captains.</b> Want to lead a team? Become a captain and name your team."
+            : ph==="caplock" ? "<b>Captains are locked.</b> Teams open for joining in a moment…"
+            : ph==="join" ? "<b>Step 2 · Join a team.</b> Pick a team (up to "+rbCfg().max+" people) — you can switch until it locks."
+            : ph==="forming" ? "<b>Teams are locking…</b> anyone without a team is being placed."
+            : ph==="build" ? "<b>Step 3 · Build your robot.</b> The captain configures it; teammates watch live."
             : ph==="locked" ? "<b>🔒 Robots are locked.</b> Waiting for your instructor to start the fight…" : "";
   box.append(Object.assign(el("div"),{innerHTML:msg}));
-  if(r && (ph==="teams"||ph==="build")){ const cd=el("div"); cd.append(document.createTextNode("⏱ "), rbCountdown(ph==="teams"?r.teamsEnd:r.buildEnd)); box.append(cd); }
+  if(r && rbTimed(ph)){ const cd=el("div"); cd.append(document.createTextNode("⏱ "), rbCountdown(rbPhaseEnd(r,ph))); box.append(cd); }
   return box;
 }
 /* Builder (captain) or live read-only view (teammates). */
@@ -3659,38 +3724,70 @@ function studentRobot(c){
   intro.textContent="Your team builds a robot that plays the Advertising Game for you. When the instructor presses Fight, every robot plays every other robot ("+C.rounds+" rounds a match). Highest average profit wins.";
   c.append(intro);
   c.append(rbPhaseBanner(ph));
-  const mine=rbMyTeam();
-  if(ph==="teams"){
+  const mine=rbMyTeam(), list=rbTeamList();
+  const teamRow=(tid,t,btn)=>{ const n=Object.keys(t.members||{}).length;
+    const row=el("div"); row.style.cssText="margin-top:8px;padding:10px 12px;border:1px solid "+(mine&&mine.tid===tid?"var(--accent)":"var(--line)")+";border-radius:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap";
+    const l=el("div"); l.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(t.name||"Team")+"</b> <span class='sm mut'>· "+n+"/"+C.max+"</span>"}), rbMemberChips(t)); row.append(l);
+    if(btn) row.append(btn); return row; };
+  if(ph==="captains"||ph==="caplock"){
     if(mine){
       const box=el("div"); box.style.cssText="margin-top:14px;padding:14px;border:1px solid var(--accent);border-radius:14px";
-      box.append(Object.assign(el("div"),{innerHTML:"Your team: <b>"+esc(mine.t.name||"Team")+"</b>"}));
-      box.append(rbMemberChips(mine.t));
-      const n=Object.keys(mine.t.members||{}).length;
-      box.append(Object.assign(el("div","sm mut"),{textContent:(n<2?"Teams need at least 2 people — invite a neighbour to join. ":"")+"★ = captain (configures the robot). Anyone left without a team when the timer ends is grouped automatically.",style:"margin-top:8px"}));
-      const lv=el("button","ghost-btn","Leave team"); lv.style.marginTop="10px"; lv.onclick=()=>rbLeave(mine.tid); box.append(lv);
+      box.append(Object.assign(el("div"),{innerHTML:"★ You're the captain of <b>"+esc(mine.t.name||"Team")+"</b>"}));
+      box.append(Object.assign(el("div","sm mut"),{textContent:"Players join teams in the next step; then you configure your team's robot.",style:"margin-top:6px"}));
+      if(ph==="captains"){
+        const f=el("div"); f.style.cssText="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center";
+        const inp=el("input","input"); inp.maxLength=24; inp.value=mine.t.name||""; inp.style.maxWidth="220px"; inp.onblur=()=>setTimeout(()=>render(),0);
+        const rn=el("button","ghost-btn","Rename"); rn.onclick=()=>rbRename(mine.tid, inp.value);
+        const sd=el("button","ghost-btn","Step down"); sd.onclick=()=>{ if(confirm("Step down as captain? Your team "+(mine.t.name||"")+" is removed.")) rbLeave(mine.tid); };
+        f.append(inp,rn,sd); box.append(f);
+      }
       c.append(box);
-    } else {
-      const f=el("div"); f.style.cssText="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center";
-      const inp=el("input","input"); inp.maxLength=24; inp.placeholder="New team name"; inp.style.maxWidth="240px";
-      inp.value=rbNewName; inp.oninput=()=>{ rbNewName=inp.value; };
-      inp.onblur=()=>setTimeout(()=>render(),0);   // the list doesn't redraw while you type — catch up once you're done
-      const go=()=>{ const nm=inp.value; rbCreateTeam(nm).then(()=>{ if(rbMyTeam()) rbNewName=""; }); };
-      const b=el("button","btn","Create team"); b.onclick=go;
-      inp.onkeydown=e=>{ if(e.key==="Enter") go(); };
-      f.append(inp,b); c.append(f);
+    } else if(ph==="captains"){
+      if(C.nTeams && list.length>=C.nTeams){
+        c.append(Object.assign(el("div","note-box"),{innerHTML:"All <b>"+C.nTeams+"</b> teams have captains — you'll pick a team in the next step.",style:"margin-top:14px"}));
+      } else {
+        c.append(Object.assign(el("div","tinylabel"),{textContent:"Become a captain"+(C.nTeams?" ("+(C.nTeams-list.length)+" of "+C.nTeams+" spots left)":""),style:"margin-top:16px"}));
+        const f=el("div"); f.style.cssText="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center";
+        const inp=el("input","input"); inp.maxLength=24; inp.placeholder="Your team's name"; inp.style.maxWidth="240px";
+        inp.value=rbNewName; inp.oninput=()=>{ rbNewName=inp.value; };
+        inp.onblur=()=>setTimeout(()=>render(),0);   // the list doesn't redraw while you type — catch up once you're done
+        const go=()=>{ const nm=inp.value; rbCreateTeam(nm).then(()=>{ if(rbMyTeam()) rbNewName=""; }); };
+        const b=el("button","btn","Become captain"); b.onclick=go;
+        inp.onkeydown=e=>{ if(e.key==="Enter") go(); };
+        f.append(inp,b); c.append(f);
+        c.append(Object.assign(el("div","sm mut"),{textContent:"Not captaining? Just wait — you'll pick a team in the next step.",style:"margin-top:6px"}));
+      }
     }
+    c.append(Object.assign(el("div","tinylabel"),{textContent:"Teams so far ("+list.length+(C.nTeams?" of "+C.nTeams:"")+")",style:"margin-top:16px"}));
+    if(!list.length) c.append(Object.assign(el("div","sm mut"),{textContent:"No captains yet.",style:"margin-top:6px"}));
+    list.forEach(([tid,t])=>c.append(teamRow(tid,t,null)));
+    return;
+  }
+  if(ph==="join"){
+    const iAmCap = mine && String(mine.t.captain)===String(myId);
+    if(iAmCap){
+      const box=el("div"); box.style.cssText="margin-top:14px;padding:14px;border:1px solid var(--accent);border-radius:14px";
+      box.append(Object.assign(el("div"),{innerHTML:"★ You're the captain of <b>"+esc(mine.t.name||"Team")+"</b> — players are joining."}));
+      box.append(rbMemberChips(mine.t)); c.append(box);
+    } else c.append(Object.assign(el("div","tinylabel"),{textContent: mine ? "Your team is highlighted — tap another to switch" : "Pick a team",style:"margin-top:16px"}));
+    if(!list.length) c.append(Object.assign(el("div","sm mut"),{textContent:"No teams yet.",style:"margin-top:6px"}));
+    list.forEach(([tid,t])=>{ const n=Object.keys(t.members||{}).length, here=mine&&mine.tid===tid, full=n>=C.max;
+      let btn=null;
+      if(!iAmCap){ btn=el("button", here||full?"ghost-btn":"btn", here?"Your team ✓":full?"Full":(mine?"Switch here":"Join"));
+        if(here||full) btn.disabled=true; else btn.onclick=()=>rbSwitch(tid); }
+      c.append(teamRow(tid,t,btn)); });
+    return;
   }
   if(ph==="forming"){ if(mine){ c.append(Object.assign(el("div"),{innerHTML:"Your team: <b>"+esc(mine.t.name||"Team")+"</b>",style:"margin-top:12px"})); c.append(rbMemberChips(mine.t)); } return; }
-  if((ph==="teams" && !mine) || ((ph==="build"||ph==="locked") && !mine)){
-    const list=rbTeamList();
-    c.append(Object.assign(el("div","tinylabel"),{textContent: ph==="teams" ? "Or join a team" : "Teams are set — join one with space",style:"margin-top:16px"}));
-    if(!list.length) c.append(Object.assign(el("div","sm mut"),{textContent:"No teams yet — create one above.",style:"margin-top:6px"}));
+  if((ph==="build"||ph==="locked") && !mine){
+    c.append(Object.assign(el("div","tinylabel"),{textContent:"Teams are set — join one with space",style:"margin-top:16px"}));
+    if(!list.length) c.append(Object.assign(el("div","sm mut"),{textContent:"No teams yet.",style:"margin-top:6px"}));
     list.forEach(([tid,t])=>{ const n=Object.keys(t.members||{}).length, full=n>=C.max;
       const row=el("div"); row.style.cssText="margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap";
       const l=el("div"); l.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(t.name||"Team")+"</b> <span class='sm mut'>· "+n+"/"+C.max+"</span>"}), rbMemberChips(t)); row.append(l);
       const jb=el("button", full?"ghost-btn":"btn", full?"Full":"Join"); if(full||ph==="locked") jb.disabled=true; else jb.onclick=()=>rbJoin(tid); row.append(jb);
       c.append(row); });
-    if(ph!=="teams") c.append(Object.assign(el("div","sm mut"),{textContent:"No room anywhere? Ask your instructor.",style:"margin-top:8px"}));
+    c.append(Object.assign(el("div","sm mut"),{textContent:"No room anywhere? Ask your instructor.",style:"margin-top:8px"}));
     return;
   }
   if(ph==="build"||ph==="locked"){
@@ -3711,19 +3808,26 @@ function rbConsoleCard(){
   const card=el("div","card stage");
   card.append(el("div","eyebrow gold","Robot Tournament · "+sessLabel(liveSess())+" · Round "+liveRound()));
   const title = ph==="idle" ? (isOpenNow()?"Ready to start team formation":"Open submissions to start team formation")
-    : ph==="teams" ? "Step 1 · Teams forming" : ph==="forming" ? "Locking teams…" : ph==="build" ? "Step 2 · Robots being built"
+    : ph==="captains" ? "Step 1 · Captains signing up" : ph==="caplock" ? "Locking captains…"
+    : ph==="join" ? "Step 2 · Players joining teams" : ph==="forming" ? "Locking teams…" : ph==="build" ? "Step 3 · Robots being built"
     : ph==="locked" ? "Robots locked — ready to fight" : "Fought";
   const hr=el("div","row"); hr.style.cssText="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px";
   hr.append(Object.assign(el("h2"),{textContent:title,style:"font-size:1.5rem;margin:0"}));
-  if(r && (ph==="teams"||ph==="build")){ const cd=el("div"); cd.style.fontSize="1.8rem"; cd.append(rbCountdown(ph==="teams"?r.teamsEnd:r.buildEnd, true)); hr.append(cd); }
+  if(r && rbTimed(ph)){ const cd=el("div"); cd.style.fontSize="1.8rem"; cd.append(rbCountdown(rbPhaseEnd(r,ph), true)); hr.append(cd); }
   card.append(hr);
   const btns=el("div","row"); btns.style.cssText="gap:8px;flex-wrap:wrap;margin-top:12px";
   if(ph==="idle"){
-    card.append(Object.assign(el("p","sm mut"),{textContent:"Opening submissions starts team formation ("+C.teamsMin+" min), then robot building ("+C.buildMin+" min) follows automatically. You press Fight when you're ready.",style:"margin-top:8px"}));
-    if(isOpenNow()){ const b=el("button","btn","Start team formation"); b.onclick=()=>writeControl({robot:{rk:curKey, teamsEnd:srvNow()+C.teamsMin*60000}}); btns.append(b); }
-  } else if(ph==="teams"){
-    const p=el("button","ghost-btn","+1 min"); p.onclick=()=>rbAdjust({teamsEnd:Math.max(r.teamsEnd,srvNow())+60000});
-    const e=el("button","btn","End team formation now"); e.onclick=()=>rbAdjust({teamsEnd:srvNow()});
+    card.append(Object.assign(el("p","sm mut"),{textContent:"Opening submissions starts the captains step ("+C.capMin+" min"+(C.nTeams?", up to "+C.nTeams+" teams":"")+"), then players join teams ("+C.joinMin+" min), then robot building ("+C.buildMin+" min) — each follows automatically. You press Fight when you're ready.",style:"margin-top:8px"}));
+    if(isOpenNow()){ const b=el("button","btn","Start team formation"); b.onclick=()=>writeControl({robot:{rk:curKey, capEnd:srvNow()+C.capMin*60000}}); btns.append(b); }
+  } else if(ph==="captains"){
+    const p=el("button","ghost-btn","+1 min"); p.onclick=()=>rbAdjust({capEnd:Math.max(rbCapEnd(r),srvNow())+60000});
+    const e=el("button","btn","Lock captains now"); e.onclick=()=>rbAdjust({capEnd:srvNow()});
+    btns.append(p,e);
+  } else if(ph==="caplock"){
+    const rt=el("button","ghost-btn","Retry"); rt.onclick=()=>rbLockCaptains(); btns.append(rt);
+  } else if(ph==="join"){
+    const p=el("button","ghost-btn","+1 min"); p.onclick=()=>rbAdjust({joinEnd:Math.max(rbJoinEnd(r),srvNow())+60000});
+    const e=el("button","btn","Lock teams now"); e.onclick=()=>rbAdjust({joinEnd:srvNow()});
     btns.append(p,e);
   } else if(ph==="forming"){
     const rt=el("button","ghost-btn","Retry"); rt.onclick=()=>rbFinalize(); btns.append(rt);
@@ -3744,9 +3848,10 @@ function rbConsoleCard(){
   list.forEach(([,t])=>Object.values(t.members||{}).forEach(m=>inTeams.add(String(m.id))));
   const now=srvNow(), loose=Object.values(rbPresence||{}).filter(p=>p&&p.id&&!inTeams.has(String(p.id))&&now-(p.ts||0)<180000);
   const st=el("div","stats"); st.style.marginTop="14px";
-  st.append(statTile("Teams", String(list.length), (ph==="teams"?"forming":"")),
+  const early = ph==="captains"||ph==="caplock"||ph==="join";
+  st.append(statTile("Teams", String(list.length)+(C.nTeams?" / "+C.nTeams:""), ph==="captains"?"captains signing up":""),
     statTile("Students in teams", String(inTeams.size), ""),
-    statTile("Without a team", String(loose.length), ph==="teams"?"grouped automatically at the end":"", loose.length&&ph!=="teams"?"bad":null),
+    statTile("Without a team", String(loose.length), early?"placed automatically when teams lock":"", loose.length&&!early?"bad":null),
     statTile("Robots configured", String(list.filter(([,t])=>t.bot).length)+"/"+list.length, "others fight as Tit-for-tat"));
   card.append(st);
   if(loose.length) card.append(Object.assign(el("div","sm mut"),{textContent:"Without a team: "+loose.map(p=>p.name||p.id).join(", "),style:"margin-top:8px"}));
@@ -3754,8 +3859,11 @@ function rbConsoleCard(){
     const tbl=el("div"); tbl.style.marginTop="12px";
     list.forEach(([tid,t])=>{
       const row=el("div"); row.style.cssText="padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-top:8px";
-      row.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(t.name||"Team")+"</b>"+(t.auto?" <span class='chip'>auto</span>":"")+" <span class='sm mut'>· "+Object.keys(t.members||{}).length+" members</span>"}));
-      row.append(rbMemberChips(t, ph==="build"||ph==="teams" ? {onPick:m=>{ if(confirm("Make "+(m.name||m.id)+" captain of "+(t.name||"this team")+"?")) rbSetCaptain(tid,m.id); }, pickTitle:"Make captain"} : null));
+      const hd=el("div"); hd.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:8px";
+      hd.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(t.name||"Team")+"</b>"+(t.auto?" <span class='chip'>auto</span>":"")+" <span class='sm mut'>· "+Object.keys(t.members||{}).length+" members</span>"}));
+      if(ph==="captains"||ph==="join"){ const rm=el("button","linkbtn","remove team"); rm.type="button"; rm.onclick=()=>{ if(confirm("Remove team “"+(t.name||"")+"”? Its members become free to join another team.")) rbRemoveTeam(tid); }; hd.append(rm); }
+      row.append(hd);
+      row.append(rbMemberChips(t, ph==="build"||ph==="join" ? {onPick:m=>{ if(confirm("Make "+(m.name||m.id)+" captain of "+(t.name||"this team")+"?")) rbSetCaptain(tid,m.id); }, pickTitle:"Make captain"} : null));
       row.append(Object.assign(el("div","sm mut"),{textContent: t.bot ? ("🤖 "+(rbNorm(t.bot).name||"(unnamed)")+" · "+rbFamily(t.bot)+" — "+rbSentence(t.bot)) : "🤖 not configured yet (will fight as Tit-for-tat)",style:"margin-top:6px"}));
       tbl.append(row); });
     card.append(tbl);
@@ -3767,13 +3875,13 @@ function rbConsoleCard(){
 function rbPresentBody(){
   const ph=rbPhase(), r=rbCtl();
   const cnt=el("div","present-count");
-  const lbl = ph==="teams"?"Form your teams" : ph==="forming"?"Locking teams…" : ph==="build"?"Build your robot" : ph==="locked"?"Robots locked — fight coming" : ph==="fought"?"Fight over":"Robot Tournament";
-  const status=el("div","present-status"+(ph==="teams"||ph==="build"?" live":"")); status.append(el("span","dot"), document.createTextNode(lbl)); cnt.append(status);
+  const lbl = ph==="captains"?"Captains: start a team" : ph==="caplock"?"Captains locked" : ph==="join"?"Join a team" : ph==="forming"?"Locking teams…" : ph==="build"?"Build your robot" : ph==="locked"?"Robots locked — fight coming" : ph==="fought"?"Fight over":"Robot Tournament";
+  const status=el("div","present-status"+(rbTimed(ph)?" live":"")); status.append(el("span","dot"), document.createTextNode(lbl)); cnt.append(status);
   const num=el("div","present-num");
-  if(r && (ph==="teams"||ph==="build")) num.append(rbCountdown(ph==="teams"?r.teamsEnd:r.buildEnd, true)); else num.textContent=String(rbTeamList().length);
+  if(r && rbTimed(ph)) num.append(rbCountdown(rbPhaseEnd(r,ph), true)); else num.textContent=String(rbTeamList().length);
   cnt.append(num);
-  const list=rbTeamList();
-  cnt.append(el("div","present-numlabel", (r && (ph==="teams"||ph==="build")) ? (list.length+" team"+(list.length===1?"":"s")+" so far") : (list.length===1?"team":"teams")));
+  const list=rbTeamList(), lim=rbCfg().nTeams;
+  cnt.append(el("div","present-numlabel", (r && rbTimed(ph)) ? (list.length+(lim?" of "+lim:"")+" team"+(list.length===1&&!lim?"":"s")+(ph==="captains"?" so far":"")) : (list.length===1?"team":"teams")));
   if(list.length){ const tl=el("div"); tl.style.cssText="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;justify-content:center";
     list.forEach(([,t])=>{ const ch=el("span","chip"); ch.style.fontSize="1rem"; ch.textContent=(t.name||"Team")+" · "+Object.keys(t.members||{}).length; tl.append(ch); }); cnt.append(tl); }
   return cnt;
@@ -4753,7 +4861,7 @@ function roundActionBar(){
     const rph=rbPhase();
     if(rph!=="fought"){ revealBtn.textContent="⚔ Fight!"; revealBtn.title="Lock the robots and run the tournament";
       revealBtn.onclick=()=>robotFight();
-      lockIf(revealBtn, rph==="idle"||rph==="teams"||rph==="forming", "Teams are still forming — the fight comes after robots are built."); }
+      lockIf(revealBtn, ["idle","captains","caplock","join","forming"].indexOf(rph)>=0, "Teams are still forming — the fight comes after robots are built."); }
   }
   const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>openMeeting({round:control.round+1});
   lockIf(nextR, open, OPEN_LOCK("move to the next round (Reveal, then Next round)"));
@@ -5787,15 +5895,15 @@ function paramEditor(){
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Question 4 splits this pot; the focal answer is half of it. Just Open → students play all four → Reveal (all four results show together)."})); }
   else if(g==="robot"){
     const grid=el("div","paramgrid");
-    grid.append(mk("Team formation (minutes)","teamsMin",cf.teamsMin,"0.5"), mk("Robot building (minutes)","buildMin",cf.buildMin,"0.5"),
-      mk("Max team size","teamMax",cf.teamMax), mk("Rounds per match","rounds",cf.rounds), mk("Mistake rate for the results toggle (%)","noise",cf.noise));
+    grid.append(mk("Captains step (minutes)","capMin",cf.capMin,"0.5"), mk("Joining step (minutes)","joinMin",cf.joinMin,"0.5"), mk("Robot building (minutes)","buildMin",cf.buildMin,"0.5"),
+      mk("Number of teams (0 = no limit)","teams",cf.teams), mk("Max team size (incl. captain)","teamMax",cf.teamMax), mk("Rounds per match","rounds",cf.rounds), mk("Mistake rate for the results toggle (%)","noise",cf.noise));
     wrap.append(grid);
     const setHouse=(v)=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.house=v; const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
     wrap.append(Object.assign(el("div","tinylabel"),{textContent:"House robots (Always Low, Always High, Random, Tit-for-tat)",style:"margin-top:10px"}));
     const hr=el("div","row"); hr.style.gap="8px"; hr.style.marginTop="4px";
     [[true,"Include"],[false,"Leave out"]].forEach(([v,l])=>{ const b=el("button","ghost-btn"+((cf.house!==false)===v?" hold-on":"")); b.textContent=l; b.onclick=()=>{ if((cf.house!==false)!==v) setHouse(v); }; hr.append(b); });
     wrap.append(hr);
-    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Open submissions → teams form for "+cf.teamsMin+" min (2–"+cf.teamMax+" per team, no solos; anyone left over is grouped automatically) → captains build robots for "+cf.buildMin+" min → you press ⚔ Fight. Every robot plays every other one for "+cf.rounds+" rounds of the Advertising Game (G8 payoffs). On the results, toggle "+cf.noise+"% mistakes to show grim trigger's fragility.",style:"margin-top:6px"})); }
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Open submissions → captains sign up and name their teams ("+cf.capMin+" min"+(+cf.teams?", first "+cf.teams+" teams":"")+") → players join or switch teams ("+cf.joinMin+" min, up to "+cf.teamMax+" per team; anyone left over is placed in the smallest teams, no solos) → captains build robots for "+cf.buildMin+" min → you press ⚔ Fight. Tip: number of teams ≈ class size ÷ "+cf.teamMax+". Every robot plays every other one for "+cf.rounds+" rounds of the Advertising Game (G8 payoffs). On the results, toggle "+cf.noise+"% mistakes to show grim trigger's fragility.",style:"margin-top:6px"})); }
   else if(g==="adfin"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played (announced to students)","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Same High/Low advertising game as G8, but every pair plays exactly this many rounds and students are told so (\"Round 3 of "+rpFinRounds()+"\", with the final round flagged). Backward induction predicts High in every round; compare the class's play near the end with G8.",style:"margin-top:6px"})); }
