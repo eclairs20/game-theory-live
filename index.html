@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-21.003";
+const APP_VERSION = "2026-10-21.004";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -4021,11 +4021,24 @@ function analyzeRobot(list, teacher){
   // evolution
   const x0=fams.map(f=>ents.filter(e=>e.fam===f).length/ents.length);
   const G=60, hist=rbEvolution(F, x0, G);
-  const ev=el("div","chart-card"); ev.append(Object.assign(el("h3"),{textContent:"Evolution — if successful strategies multiplied"}));
+  const ev=el("div","chart-card"); ev.append(Object.assign(el("h3"),{textContent:"Evolution — what if more firms copied the winning strategies, generation after generation?"}));
+  ev.append(Object.assign(el("div","sm mut"),{innerHTML:"<b>How to read it:</b> each line is one <i>type</i> of robot; its height is that type's share of all firms in the market. "
+    +"Generation 0 is today's tournament mix. After each generation, types that earned an above-average NPV against the current market gain share (more firms copy them) and below-average types lose share. "
+    +"Then the tournament is replayed with the new mix — "+G+" times.",style:"margin:2px 0 8px"}));
   ev.append(rbLineChart(fams.map((f,a)=>({label:f, color:RB_FAM_COL[f], vals:hist.map(h=>h[a])})), G));
   ev.append(rbLegend(fams.map(f=>[f,RB_FAM_COL[f]])));
   const fin=hist[G], win=fams.map((f,a)=>[f,fin[a]]).sort((a,b)=>b[1]-a[1])[0];
-  ev.append(Object.assign(el("div","cap"),{textContent:"Start: today's mix of robot types. Each generation, a type's share grows in proportion to its NPV against the current population. After "+G+" generations "+win[0]+" makes up "+Math.round(win[1]*100)+"% of the population."}));
+  const pc=v=>Math.round(v*100)+"%", story=[];
+  fams.forEach((f,a)=>{ let pk=0; hist.forEach((h,g)=>{ if(h[a]>hist[pk][a]) pk=g; });
+    const st=hist[0][a], top=hist[pk][a], end=fin[a];
+    if(pk>0 && top>st+0.02 && end<top-0.05) story.push(["Always High","Prober","Random"].indexOf(f)>=0
+      ? f+" first rose from "+pc(st)+" to "+pc(top)+" (generation "+pk+") by exploiting easy targets, then fell to "+pc(end)+" once those targets had died out."
+      : f+" peaked at "+pc(top)+" (generation "+pk+"), then lost ground to "+win[0]+" ("+pc(end)+" at the end).");
+    else if(st>0.005 && end<0.01 && f!==win[0]) story.push(f+" died out ("+pc(st)+" → under 1%).");
+  });
+  ev.append(Object.assign(el("div","cap"),{textContent:"After "+G+" generations "+win[0]+" makes up "+pc(win[1])+" of the market. "+story.join(" ")
+    +" The lesson: doing well today is not the same as surviving — strategies that are nice but hit back end up dominating, because exploiters run out of victims.",style:"margin-top:6px"}));
+  ev.append(Object.assign(el("div","sm mut"),{textContent:"A thought experiment built from today's scores: grouped by type (two Grim-style teams count as one), no new strategies appear, and the outcome depends on the starting mix.",style:"margin-top:6px;font-style:italic"}));
   wrap.append(ev);
 
   // lesson

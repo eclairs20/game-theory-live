@@ -607,8 +607,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     (`rbRng` mulberry32; randomised robots replayed 5×; cached; `npv` per match ranks, `avg` = undiscounted
     profit/round shown alongside, W–L–T by NPV), a "how the score works" note (formula + benchmarks), tiles,
     full-height leaderboard (own team highlighted; members instructor-only; each robot's sentence), NPV by type,
-    type-vs-type NPV heatmap, **evolution chart** (`rbEvolution` replicator dynamics over families on NPV,
-    `rbLineChart`), Axelrod lesson note + the **NPV test** (perpetuity: cooperate 5+5/r vs cheat 6+4/r → cheating
+    type-vs-type NPV heatmap, **evolution chart** ("Evolution — what if more firms copied the winning strategies,
+    generation after generation?"; `rbEvolution` replicator dynamics over families on NPV, `rbLineChart`, a "How to read it"
+    line, a computed caption naming the winner, boom-and-bust exploiters and types that died out, and a caveat line), Axelrod lesson note + the **NPV test** (perpetuity: cooperate 5+5/r vs cheat 6+4/r → cheating
     pays only if r > 100%, i.e. δ < ½ — the same threshold as G8).
 
 ## Interactive lessons (no submissions)
