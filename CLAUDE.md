@@ -547,7 +547,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - `robot` — **Robot Tournament** (**G10**; Public Goods is now labelled **G20**) — an Axelrod-style
   tournament on the G8/G9 Advertising Game (`RP_PAY`; Low = cooperate). **Teams** build one robot each; when
   the instructor presses **⚔ Fight** every robot plays every other one. Config `{ capMin:2, joinMin:2, buildMin:10,
-  teamMax:4, teams:0, rounds:50, disc:10, house:true }` (`rbCfg()` → `nTeams` = number of teams, 0 = no limit).
+  teamMax:4, teams:0, rounds:100, disc:5, house:true }` (`rbCfg()` → `nTeams` = number of teams, 0 = no limit).
   **Flow: captains → join → build → fight.** (1) **Captains** (`capMin`): anyone taps *Become captain* and names a
   team (`rbCreateTeam`, blocked once `nTeams` teams exist); captains can rename (`rbRename`) or step down; the
   instructor can remove a team (`rbRemoveTeam`). At the timer the console runs **`rbLockCaptains`**: keeps the first
@@ -599,7 +599,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     teamMembers, defaultBot, house, rounds, disc, …}` — the field is **`robot`, never `bot`** (`s.bot`
     marks practice-bot subs and is filtered out everywhere). Unconfigured teams fight as Tit-for-tat.
   - **Scores are NPVs** (aligned with the class's NPV/discounting): `disc` = discount rate % per round (default
-    10; 0 = plain totals), `rbPlay(A,B,R,r,rng)` returns totals `pa/pb` and NPVs `na/nb` (round 1 undiscounted,
+    **5**, with **100** rounds a match — 100 rounds at 5% capture >99% of an endless game's NPV, so it behaves like the
+    infinite game; at 10% a nasty-heavy class could let Always High win; 0 = plain totals), `rbPlay(A,B,R,r,rng)` returns totals `pa/pb` and NPVs `na/nb` (round 1 undiscounted,
     NPV = π1 + π2/(1+r) + …), `rbAnnuity(R,r)` = NPV of 1 a round (benchmarks: 5·annuity = all-Low, 4·annuity =
     ad war). There is **no mistakes/noise** option any more (removed on purpose — not taught).
   - `analyzeRobot`: dedupe by team, add house robots (`RB_HOUSE`), seeded round-robin `rbTournament(ents,R,r,seed)`

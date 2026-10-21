@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-21.002";
+const APP_VERSION = "2026-10-21.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -614,7 +614,7 @@ const DEFAULT_CONFIG = {
   attackdefend:{ rounds:10 },   // Colonel Blotto: fixed roles (attacker 2 / defender 3), this many lockstep rounds per pair
   adwar:{ cont:50, min:20, cap:35 },    // Advertising Game (Infinite): % chance the market continues after each round (from the minimum on); hidden min / max rounds
   adfin:{ rounds:6 },                  // Advertising Game (Finite): a fixed, announced number of rounds
-  robot:{ capMin:2, joinMin:2, buildMin:10, teamMax:4, teams:0, rounds:50, disc:10, house:true },   // Robot Tournament: captains / join / build timers (min), team size cap, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
+  robot:{ capMin:2, joinMin:2, buildMin:10, teamMax:4, teams:0, rounds:100, disc:5, house:true },   // Robot Tournament: captains / join / build timers (min), team size cap, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -3358,8 +3358,8 @@ const srvNow = ()=> Date.now()+(srvOffset||0);
 function rbCfg(){ const cf=cfg("robot"); return {
   capMin: Math.max(0.5, +cf.capMin||2), joinMin: Math.max(0.5, +cf.joinMin||2), buildMin: Math.max(0.5, +cf.buildMin||10),
   nTeams: Math.max(0, Math.min(40, Math.round(+cf.teams||0))),
-  max: Math.max(2, Math.min(10, Math.round(+cf.teamMax||4))), rounds: Math.max(5, Math.min(500, Math.round(+cf.rounds||50))),
-  disc: Math.max(0, Math.min(100, cf.disc==null ? 10 : +cf.disc||0)), house: cf.house!==false }; }
+  max: Math.max(2, Math.min(10, Math.round(+cf.teamMax||4))), rounds: Math.max(5, Math.min(500, Math.round(+cf.rounds||100))),
+  disc: Math.max(0, Math.min(100, cf.disc==null ? 5 : +cf.disc||0)), house: cf.house!==false }; }
 function rbCtl(){ const r=control&&control.robot; return (r && r.rk===curKey) ? r : null; }
 /* idle → captains (anyone can found a team) → caplock (timer up; the console locks captains) → join (players
    pick / switch teams) → forming (timer up; the console places leftovers) → build → locked → fought.
@@ -3976,7 +3976,7 @@ function analyzeRobot(list, teacher){
   how.innerHTML="<b>Score = NPV of a robot's profits in a match</b>, discounted at <b>r = "+rPct+"% per round</b> ("+R+" rounds a match): "
     +"<span style='font-family:IBM Plex Mono,monospace'>NPV = π<sub>1</sub> + π<sub>2</sub>/(1+r) + π<sub>3</sub>/(1+r)<sup>2</sup> + …</span>. "
     +"Benchmarks: Low every round (5 each round) = <b>"+f0(5*AN)+"</b> · ad war (4 each round) = <b>"+f0(4*AN)+"</b>"
-    +(r>0?" · each future round counts for less: round 10 is worth "+Math.round(100/Math.pow(1+r,9))+"% of round 1.":".");
+    +(r>0?" · each future round counts for less: round 10 is worth "+Math.round(100/Math.pow(1+r,9))+"% of round 1, and these "+R+" rounds capture "+Math.min(100,Math.floor(1000*AN/(1+1/r))/10)+"% of what an endless game would be worth — so this is, in effect, the infinite game.":".");
   wrap.append(how);
   // headline tiles
   const top=order[0], tiles=el("div","stats");
