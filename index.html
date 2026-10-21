@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-21.001";
+const APP_VERSION = "2026-10-21.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -614,7 +614,7 @@ const DEFAULT_CONFIG = {
   attackdefend:{ rounds:10 },   // Colonel Blotto: fixed roles (attacker 2 / defender 3), this many lockstep rounds per pair
   adwar:{ cont:50, min:20, cap:35 },    // Advertising Game (Infinite): % chance the market continues after each round (from the minimum on); hidden min / max rounds
   adfin:{ rounds:6 },                  // Advertising Game (Finite): a fixed, announced number of rounds
-  robot:{ capMin:2, joinMin:2, buildMin:10, teamMax:4, teams:0, rounds:50, noise:5, house:true },   // Robot Tournament: captains / join / build timers (min), team size cap, number of teams (0 = no limit), rounds per match, mistake % for the results toggle, house robots
+  robot:{ capMin:2, joinMin:2, buildMin:10, teamMax:4, teams:0, rounds:50, disc:10, house:true },   // Robot Tournament: captains / join / build timers (min), team size cap, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -1565,6 +1565,7 @@ function render(){
   lastViewKey=key;
   app.replaceChildren(next);
   _drawn.subs=studentSubsSig(); _drawn.rb=rbViewSig(); _drawn.ctrl=studentCtrlSig();   // what this screen now reflects (LIVE-UPDATE RENDERING RULE)
+  if(control && control.activeGame==="robot") _rbLastPh=rbPhase();   // the 1 s ticker then redraws only when a timer actually flips the phase
 }
 function connectingScreen(){
   const c=el("div","card stage center"); c.style.padding="clamp(30px,6vw,60px)";
@@ -3024,7 +3025,7 @@ function rpEnds(seed, i, mine, theirs, p, cap, min){
   return adSeedFloat(seed+"#rp"+i+"."+[mine,theirs].sort().join(""))>=p;
 }
 /* The payoff matrix (row = you, column = your rival; your payoff first). */
-function rpMatrix(played){
+function rpMatrix(played, note){
   const wrap=el("div"); wrap.style.marginTop="12px";
   const cell=(a,b)=>{ const pl=played&&played[0]===a&&played[1]===b; return "<td class='cell"+(pl?" played":"")+"'>"+RP_PAY[a][b]+", "+RP_PAY[b][a]+"</td>"; };
   const t=el("table","matrix"); t.style.fontSize=".88rem";
@@ -3032,7 +3033,7 @@ function rpMatrix(played){
     "<tr><th>You <b>High</b></th>"+cell("H","H")+cell("H","L")+"</tr>"+
     "<tr><th>You <b>Low</b></th>"+cell("L","H")+cell("L","L")+"</tr>";
   wrap.append(t);
-  wrap.append(Object.assign(el("div","sm mut"),{textContent:"Profits each round (yours first). Your score is your total over every round played.",style:"margin-top:4px"}));
+  wrap.append(Object.assign(el("div","sm mut"),{textContent:note||"Profits each round (yours first). Your score is your total over every round played.",style:"margin-top:4px"}));
   return wrap;
 }
 function studentAdWar(c){ studentPair(c,"adwar"); }
@@ -3303,34 +3304,37 @@ function rbUpdate(b, st, rv){
     st.angry=true; st.left = typeof b.angry==="number" ? b.angry : 0; }
   st.t++;
 }
-/* One match: R rounds; `noise` = chance each intended move is flipped by mistake. */
-function rbPlay(A, B, R, noise, rng){
-  const sa=rbBotState(), sb=rbBotState(); let pa=0, pb=0; const ma=[], mb=[];
+/* One match: R rounds. pa/pb = undiscounted totals; na/nb = NPVs at discount rate `r` per round
+   (round 1 is today, undiscounted: NPV = π1 + π2/(1+r) + π3/(1+r)² + …). */
+function rbPlay(A, B, R, r, rng){
+  const sa=rbBotState(), sb=rbBotState(); let pa=0, pb=0, na=0, nb=0, w=1; const ma=[], mb=[];
   for(let i=0;i<R;i++){
-    let x=rbDecide(A,sa,rng), y=rbDecide(B,sb,rng);
-    if(noise>0){ if(rng()<noise) x = x==="H"?"L":"H"; if(rng()<noise) y = y==="H"?"L":"H"; }
-    pa+=RP_PAY[x][y]; pb+=RP_PAY[y][x]; ma.push(x); mb.push(y);
+    const x=rbDecide(A,sa,rng), y=rbDecide(B,sb,rng);
+    pa+=RP_PAY[x][y]; pb+=RP_PAY[y][x]; na+=w*RP_PAY[x][y]; nb+=w*RP_PAY[y][x]; w/=(1+(r||0)); ma.push(x); mb.push(y);
     rbUpdate(A,sa,y); rbUpdate(B,sb,x);
   }
-  return {pa, pb, ma, mb};
+  return {pa, pb, na, nb, ma, mb};
 }
+/* Σ 1/(1+r)^t for t=0..R-1 — the NPV of earning 1 every round (so 5 every round is worth 5·rbAnnuity). */
+function rbAnnuity(R, r){ let s=0, w=1; for(let i=0;i<R;i++){ s+=w; w/=(1+(r||0)); } return s; }
 /* Round-robin: every entrant vs every other (scores) plus self-play (for the type matrix / evolution).
-   Randomised robots (or any mistakes) are replayed 5× and averaged. */
+   Scores are NPVs at discount rate `disc` (a fraction) per round. Randomised robots are replayed 5× and averaged.
+   A[i][j] = i's NPV per match against j; npv[i] = i's average NPV per match; avg[i] = undiscounted profit a round. */
 let _rbCache={key:null, res:null};
-function rbTournament(ents, R, noise, seed){
-  const key=seed+"|"+R+"|"+noise+"|"+ents.map(e=>e.id+":"+JSON.stringify(e.bot)).join(";");
+function rbTournament(ents, R, disc, seed){
+  const key=seed+"|"+R+"|"+disc+"|"+ents.map(e=>e.id+":"+JSON.stringify(e.bot)).join(";");
   if(_rbCache.key===key) return _rbCache.res;
-  const n=ents.length, A=ents.map(()=>Array(n).fill(0)), tot=Array(n).fill(0), W=Array(n).fill(0), L=Array(n).fill(0), T=Array(n).fill(0);
+  const n=ents.length, A=ents.map(()=>Array(n).fill(0)), nt=Array(n).fill(0), tot=Array(n).fill(0), W=Array(n).fill(0), L=Array(n).fill(0), T=Array(n).fill(0);
   for(let i=0;i<n;i++) for(let j=i;j<n;j++){
-    const reps = (noise>0 || rbRandomish(ents[i].bot) || rbRandomish(ents[j].bot)) ? 5 : 1;
-    let si=0, sj=0;
-    for(let r=0;r<reps;r++){ const m=rbPlay(ents[i].bot, ents[j].bot, R, noise, rbRng(seed+"|"+ents[i].id+"|"+ents[j].id+"|"+r+"|"+noise)); si+=m.pa; sj+=m.pb; }
-    si/=reps; sj/=reps;
-    if(i===j){ A[i][i]=(si+sj)/2/R; continue; }
-    A[i][j]=si/R; A[j][i]=sj/R; tot[i]+=si; tot[j]+=sj;
-    if(si>sj+1e-9){ W[i]++; L[j]++; } else if(sj>si+1e-9){ W[j]++; L[i]++; } else { T[i]++; T[j]++; }
+    const reps = (rbRandomish(ents[i].bot) || rbRandomish(ents[j].bot)) ? 5 : 1;
+    let si=0, sj=0, ni=0, nj=0;
+    for(let r=0;r<reps;r++){ const m=rbPlay(ents[i].bot, ents[j].bot, R, disc, rbRng(seed+"|"+ents[i].id+"|"+ents[j].id+"|"+r)); si+=m.pa; sj+=m.pb; ni+=m.na; nj+=m.nb; }
+    si/=reps; sj/=reps; ni/=reps; nj/=reps;
+    if(i===j){ A[i][i]=(ni+nj)/2; continue; }
+    A[i][j]=ni; A[j][i]=nj; nt[i]+=ni; nt[j]+=nj; tot[i]+=si; tot[j]+=sj;
+    if(ni>nj+1e-9){ W[i]++; L[j]++; } else if(nj>ni+1e-9){ W[j]++; L[i]++; } else { T[i]++; T[j]++; }
   }
-  const res={A, avg: tot.map(t=> n>1 ? t/((n-1)*R) : 0), W, L, T};
+  const res={A, npv: nt.map(t=> n>1 ? t/(n-1) : 0), avg: tot.map(t=> n>1 ? t/((n-1)*R) : 0), W, L, T};
   _rbCache={key, res};
   return res;
 }
@@ -3349,13 +3353,13 @@ function rbEvolution(F, x0, G){
 
 /* ── shared state, timers, listeners ── */
 let rbCtx=null, rbTeams={}, rbPresence={}, _rbPresSig=null, _rbLastPh=null, _rbHbAt=0, _rbPresAt=0, _rbFinalizing=false;
-let rbNoiseOn=false, rbFightAnimUntil=0, _rbBotT=null, srvOffset=0;
+let rbFightAnimUntil=0, _rbBotT=null, srvOffset=0;
 const srvNow = ()=> Date.now()+(srvOffset||0);
 function rbCfg(){ const cf=cfg("robot"); return {
   capMin: Math.max(0.5, +cf.capMin||2), joinMin: Math.max(0.5, +cf.joinMin||2), buildMin: Math.max(0.5, +cf.buildMin||10),
   nTeams: Math.max(0, Math.min(40, Math.round(+cf.teams||0))),
   max: Math.max(2, Math.min(10, Math.round(+cf.teamMax||4))), rounds: Math.max(5, Math.min(500, Math.round(+cf.rounds||50))),
-  noise: Math.max(0, Math.min(50, +cf.noise||0)), house: cf.house!==false }; }
+  disc: Math.max(0, Math.min(100, cf.disc==null ? 10 : +cf.disc||0)), house: cf.house!==false }; }
 function rbCtl(){ const r=control&&control.robot; return (r && r.rk===curKey) ? r : null; }
 /* idle → captains (anyone can found a team) → caplock (timer up; the console locks captains) → join (players
    pick / switch teams) → forming (timer up; the console places leftovers) → build → locked → fought.
@@ -3497,6 +3501,27 @@ function rbSaveBot(mc, tid, bot){
   if(_rbBotT) clearTimeout(_rbBotT);
   _rbBotT=setTimeout(()=>{ _rbBotT=null; fb.ref(LIVE_ROOT(mc)+"/rt/"+tid+"/bot").set(rbNorm(bot)).catch(()=>{}); }, 300);
 }
+/* Captain: Done locks the robot (saved immediately, teammates see "locked in"); Edit reopens it while the
+   build timer runs. The instructor still decides when to fight. */
+async function rbSetReady(mc, tid, ready, bot){
+  if(_rbBotT){ clearTimeout(_rbBotT); _rbBotT=null; }
+  const patch={ready: ready?true:null}; if(ready && bot) patch.bot=rbNorm(bot);
+  try{ await fb.ref(LIVE_ROOT(mc)+"/rt/"+tid).update(patch); }catch(e){ toast("Couldn't save — try again"); }
+  render();
+}
+/* Catch the screen up after typing (the view holds still while an input has focus). NOT immediately on blur:
+   blur fires on the press of the button you're tapping, and an instant redraw replaced that button before the
+   tap landed — "Become captain" needed several taps. Wait until the press is over. */
+let _ptrDown=false, _ptrHook=false;
+function rbBlurRedraw(){
+  if(!_ptrHook){ _ptrHook=true; try{
+    document.addEventListener("pointerdown",()=>{ _ptrDown=true; },true);
+    ["pointerup","pointercancel"].forEach(ev=>document.addEventListener(ev,()=>{ setTimeout(()=>{ _ptrDown=false; },0); },true)); }catch(e){} }
+  const go=()=>{ if(_ptrDown){ setTimeout(go,250); return; }
+    const ae=document.activeElement; if(ae && app.contains(ae) && (ae.tagName==="INPUT"||ae.tagName==="TEXTAREA")) return;
+    render(); };
+  setTimeout(go,300);
+}
 
 /* ── instructor actions ── */
 function rbAutoNamer(teams){
@@ -3574,7 +3599,7 @@ async function rbReset(){
   const key=curKey;
   for(const s of subs.slice()){ try{ await fb.ref(SUB_DOC(key,s.studentId)).remove(); }catch(e){} }
   try{ await fb.ref(LIVE_ROOT(key)).remove(); }catch(e){}
-  delete gameDraft["robot-"+key]; rbTeams={}; rbPresence={}; _rbPresSig=null; rbNoiseOn=false;
+  delete gameDraft["robot-"+key]; rbTeams={}; rbPresence={}; _rbPresSig=null;
   await writeControl({robot:null});
   toast("Tournament reset — start team formation when ready");
   render();
@@ -3585,7 +3610,7 @@ function rbAdjust(patch){ const r=rbCtl(); if(r) writeControl({robot:Object.assi
 async function robotFight(){
   const r=rbCtl(), ph=rbPhase();
   if(!r || !r.finalized){ toast("Teams aren't set yet — wait for team formation to finish."); return; }
-  if(ph==="build" && !confirm("Robots are still being built. Lock them now and start the fight?")) return;
+  if(ph==="build" && !rbTeamList().every(([,t])=>t.ready) && !confirm("Some robots aren't marked Done yet. Lock them as they are and start the fight?")) return;
   const mc=r.rk, C=rbCfg(), now=srvNow();
   let teams={}; try{ teams=((await fb.ref(LIVE_ROOT(mc)+"/rt").once("value")).val())||{}; }catch(e){}
   const upd={};
@@ -3596,7 +3621,7 @@ async function robotFight(){
     ms.forEach(m=>{ const id=String(m.id);
       const doc={roundKey:mc, session:curSession(), game:"robot", round:control.round, studentId:id, name:m.name||id, ts:Date.now(), done:true,
         team:tid, teamName:t.name||"Team", captain:String(t.captain)===id, robot:JSON.stringify(bot), teamMembers:names, defaultBot:!t.bot,
-        house:C.house, rounds:C.rounds, noise:C.noise,
+        house:C.house, rounds:C.rounds, disc:C.disc,
         email: id.indexOf("@")>0 ? id.toLowerCase() : String((authUser&&authUser.email)||"").toLowerCase()};
       if(curMSection()) doc.msection=curMSection();
       const rn=roster[id.toLowerCase()];
@@ -3606,7 +3631,7 @@ async function robotFight(){
   });
   if(!Object.keys(upd).length){ toast("No teams were formed — use ↺ Reset tournament to start over."); return; }
   try{ await fb.ref(SUBS_PATH()).update(upd); }catch(e){ toast("Couldn't save the robots — try again"); return; }
-  rbNoiseOn=false; rbFightAnimUntil=Date.now()+1800;
+  rbFightAnimUntil=Date.now()+1800;
   await writeControl({robot:Object.assign({}, r, {fought:true, buildEnd:Math.min(r.buildEnd||now, now)})});
   doReveal();
   setTimeout(()=>render(), 1900);
@@ -3649,8 +3674,9 @@ function rbPhaseBanner(ph){
   if(r && rbTimed(ph)){ const cd=el("div"); cd.append(document.createTextNode("⏱ "), rbCountdown(rbPhaseEnd(r,ph))); box.append(cd); }
   return box;
 }
-/* Builder (captain) or live read-only view (teammates). */
-function rbBuilder(c, tid, t, canEdit){
+/* Builder (captain) or live read-only view (teammates, or the captain once they've pressed Done). */
+function rbBuilder(c, tid, t, capBuild){
+  const ready=!!t.ready, canEdit=capBuild && !ready;
   const mc=curKey, d=draftFor("robot-"+mc), src=tid+"|"+t.captain;
   if(canEdit){ if(!d.bot || d.src!==src){ d.bot=rbNorm(t.bot||Object.assign(rbPreset("tft"),{name:""})); d.src=src; } }
   const bot = canEdit ? d.bot : rbNorm(t.bot||Object.assign(rbPreset("tft"),{name:""}));
@@ -3662,7 +3688,7 @@ function rbBuilder(c, tid, t, canEdit){
   card.append(Object.assign(el("div","tinylabel"),{textContent:"Robot name"}));
   if(canEdit){ const inp=el("input","input"); inp.maxLength=24; inp.placeholder="e.g. Iron Fist"; inp.value=bot.name||""; inp.style.cssText="max-width:280px;margin-top:4px";
     inp.oninput=()=>{ d.bot.name=inp.value.slice(0,24); rbSaveBot(mc, tid, d.bot); };
-    inp.onblur=()=>setTimeout(()=>render(),0); card.append(inp); }
+    inp.onblur=rbBlurRedraw; card.append(inp); }
   else card.append(Object.assign(el("div"),{textContent:bot.name||"(not named yet)",style:"font-weight:700;margin-top:4px"}));
   // presets
   card.append(Object.assign(el("div","tinylabel"),{textContent:"Start from a preset"+(canEdit?" (then tweak below)":""),style:"margin-top:14px"}));
@@ -3704,15 +3730,34 @@ function rbBuilder(c, tid, t, canEdit){
   const sum=el("div","note-box teal"); sum.style.marginTop="14px";
   sum.innerHTML="<b>"+esc(bot.name||t.name||"Your robot")+"</b> · <span class='sm'>"+esc(rbFamily(bot))+"</span><div style='margin-top:4px'>"+esc(rbSentence(bot))+"</div>";
   card.append(sum);
-  // test drive
-  card.append(Object.assign(el("div","tinylabel"),{textContent:"Test drive — first 10 rounds",style:"margin-top:14px"}));
-  [["allL","vs Always Low"],["allH","vs Always High"],["tft","vs Tit-for-tat"]].forEach(([pid,lbl])=>{
-    const m=rbPlay(bot, rbPreset(pid), 10, 0, rbRng("td|"+pid+"|"+JSON.stringify(bot)));
+  // Done / Edit
+  const st=el("div"); st.style.cssText="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap";
+  if(capBuild && !ready){
+    const b=el("button","btn gold","✓ Done — lock in our robot"); b.type="button"; b.onclick=()=>rbSetReady(mc, tid, true, d.bot);
+    st.append(b, Object.assign(el("span","sm mut"),{textContent:"You can still Edit until the timer runs out."}));
+  } else if(capBuild && ready){
+    st.append(Object.assign(el("span","chip"),{textContent:"✓ Locked in — ready for the fight",style:"border-color:#2e8b57;color:#2e8b57;font-weight:700"}));
+    const b=el("button","ghost-btn","✎ Edit robot"); b.type="button"; b.onclick=()=>rbSetReady(mc, tid, false); st.append(b);
+  } else if(rbPhase()==="build"){
+    st.append(Object.assign(el("span","chip"),ready?{textContent:"✓ Locked in by your captain",style:"border-color:#2e8b57;color:#2e8b57;font-weight:700"}:{textContent:"Captain is still building…"}));
+  }
+  if(st.childNodes.length) card.append(st);
+  // test drive (a preview only — never part of the tournament score)
+  const rPct=rbCfg().disc, r=rPct/100, TD=10;
+  card.append(Object.assign(el("div","tinylabel"),{textContent:"Test drive — practice only, not part of your score",style:"margin-top:18px"}));
+  card.append(Object.assign(el("div","sm mut"),{innerHTML:"How your robot would play the first "+TD+" rounds against three sample rivals. Each square is one round's move: "
+    +"<b style='color:#2e8b57'>L</b> = Low ads, <b style='color:#b5651d'>H</b> = High ads. Profit per round comes from the payoff table below; "
+    +"<b>NPV</b> discounts round <i>t</i> by (1+"+rPct+"%)<sup>t−1</sup> — the tournament scores your robot the same way over "+rbCfg().rounds+" rounds.",style:"margin-top:4px"}));
+  [["allL","Always Low","always cooperates"],["allH","Always High","always fights"],["tft","Tit-for-tat","starts Low, then copies your last move"]].forEach(([pid,lbl,desc])=>{
+    const m=rbPlay(bot, rbPreset(pid), TD, r, rbRng("td|"+pid+"|"+JSON.stringify(bot)));
     const row=el("div"); row.style.cssText="margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px";
-    row.append(Object.assign(el("div","sm"),{innerHTML:"<b>"+lbl+"</b> <span class='mut'>· your robot averages "+fmt(m.pa/10,1)+" a round</span>"}));
-    const g=el("div"); g.style.cssText="display:grid;grid-template-columns:64px 1fr;gap:4px 8px;align-items:center;margin-top:6px";
-    g.append(el("span","sm mut","Yours"), rbStrip(m.ma), el("span","sm mut","Rival"), rbStrip(m.mb));
-    row.append(g); card.append(row); });
+    row.append(Object.assign(el("div","sm"),{innerHTML:"<b>Rival: "+lbl+"</b> <span class='mut'>— "+desc+"</span>"}));
+    const g=el("div"); g.style.cssText="display:grid;grid-template-columns:1fr;gap:2px;margin-top:6px";   // labels above the strips: 10 squares fit on one line on a phone
+    g.append(el("span","sm mut","Your robot"), rbStrip(m.ma), Object.assign(el("span","sm mut","Rival"),{style:"margin-top:4px"}), rbStrip(m.mb));
+    row.append(g);
+    row.append(Object.assign(el("div","sm"),{innerHTML:"Your profit: <b>"+m.pa+"</b> over "+TD+" rounds ("+fmt(m.pa/TD,1)+" a round) · <b>NPV "+fmt(m.na,1)+"</b> <span class='mut'>· rival's profit "+m.pb+"</span>",style:"margin-top:6px"}));
+    card.append(row); });
+  const pm=el("div"); pm.append(Object.assign(el("div","tinylabel"),{textContent:"Payoff table — profit each round",style:"margin-top:14px"}), rpMatrix(null, "Each cell: your profit, rival's profit for that round. In the tournament these are discounted into an NPV.")); card.append(pm);
   c.append(card);
 }
 /* ── student screen ── */
@@ -3721,7 +3766,7 @@ function studentRobot(c){
   c.append(Object.assign(el("h2"),{textContent:"Robot Tournament",style:"font-size:1.4rem;margin:6px 0 4px"}));
   if(ph==="idle"){ c.append(el("p","lead","Waiting for your instructor to start team formation…")); return; }
   const intro=el("p","sm mut"); intro.style.margin="0";
-  intro.textContent="Your team builds a robot that plays the Advertising Game for you. When the instructor presses Fight, every robot plays every other robot ("+C.rounds+" rounds a match). Highest average profit wins.";
+  intro.textContent="Your team builds a robot that plays the Advertising Game for you. When the instructor presses Fight, every robot plays every other robot ("+C.rounds+" rounds a match). Your score is the NPV of your robot's profits"+(C.disc>0?", discounted at "+C.disc+"% per round":"")+" — highest NPV wins.";
   c.append(intro);
   c.append(rbPhaseBanner(ph));
   const mine=rbMyTeam(), list=rbTeamList();
@@ -3736,7 +3781,7 @@ function studentRobot(c){
       box.append(Object.assign(el("div","sm mut"),{textContent:"Players join teams in the next step; then you configure your team's robot.",style:"margin-top:6px"}));
       if(ph==="captains"){
         const f=el("div"); f.style.cssText="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center";
-        const inp=el("input","input"); inp.maxLength=24; inp.value=mine.t.name||""; inp.style.maxWidth="220px"; inp.onblur=()=>setTimeout(()=>render(),0);
+        const inp=el("input","input"); inp.maxLength=24; inp.value=mine.t.name||""; inp.style.maxWidth="220px"; inp.onblur=rbBlurRedraw;
         const rn=el("button","ghost-btn","Rename"); rn.onclick=()=>rbRename(mine.tid, inp.value);
         const sd=el("button","ghost-btn","Step down"); sd.onclick=()=>{ if(confirm("Step down as captain? Your team "+(mine.t.name||"")+" is removed.")) rbLeave(mine.tid); };
         f.append(inp,rn,sd); box.append(f);
@@ -3750,7 +3795,7 @@ function studentRobot(c){
         const f=el("div"); f.style.cssText="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center";
         const inp=el("input","input"); inp.maxLength=24; inp.placeholder="Your team's name"; inp.style.maxWidth="240px";
         inp.value=rbNewName; inp.oninput=()=>{ rbNewName=inp.value; };
-        inp.onblur=()=>setTimeout(()=>render(),0);   // the list doesn't redraw while you type — catch up once you're done
+        inp.onblur=rbBlurRedraw;   // the list doesn't redraw while you type — catch up once you're done
         const go=()=>{ const nm=inp.value; rbCreateTeam(nm).then(()=>{ if(rbMyTeam()) rbNewName=""; }); };
         const b=el("button","btn","Become captain"); b.onclick=go;
         inp.onkeydown=e=>{ if(e.key==="Enter") go(); };
@@ -3796,7 +3841,7 @@ function studentRobot(c){
     head.append(Object.assign(el("div"),{innerHTML:"Team <b>"+esc(t.name||"Team")+"</b>"}));
     head.append(rbMemberChips(t, cap && ph==="build" ? {onPick:m=>{ if(confirm("Make "+(m.name||m.id)+" the captain? They'll configure the robot from now on.")) rbSetCaptain(tid, m.id); }, pickTitle:"Tap to make captain"} : null));
     const capName=((t.members||{})[encodeKey(String(t.captain))]||{}).name||"your captain";
-    head.append(Object.assign(el("div","sm mut"),{textContent: cap ? (ph==="build"?"You're the captain — you configure the robot; your team sees every change live. Tap a teammate to hand over captaincy.":"Final robot below.") : (ph==="build"?capName+" (captain) configures the robot — you see changes live. Talk it through together!":"Final robot below."),style:"margin-top:6px"}));
+    head.append(Object.assign(el("div","sm mut"),{textContent: cap ? (ph==="build"?"You're the captain — you configure the robot; your team sees every change live. Press Done when you're happy (you can still Edit until time's up). Tap a teammate to hand over captaincy.":"Final robot below.") : (ph==="build"?capName+" (captain) configures the robot — you see changes live. Talk it through together!":"Final robot below."),style:"margin-top:6px"}));
     if(!cap && ph==="build"){ const tk=el("button","linkbtn","Captain offline? Take over"); tk.type="button"; tk.style.marginTop="6px"; tk.onclick=()=>rbTakeOver(tid,t); head.append(tk); }
     c.append(head);
     rbBuilder(c, tid, t, cap && ph==="build");
@@ -3852,15 +3897,17 @@ function rbConsoleCard(){
   st.append(statTile("Teams", String(list.length)+(C.nTeams?" / "+C.nTeams:""), ph==="captains"?"captains signing up":""),
     statTile("Students in teams", String(inTeams.size), ""),
     statTile("Without a team", String(loose.length), early?"placed automatically when teams lock":"", loose.length&&!early?"bad":null),
-    statTile("Robots configured", String(list.filter(([,t])=>t.bot).length)+"/"+list.length, "others fight as Tit-for-tat"));
+    statTile("Robots done", String(list.filter(([,t])=>t.ready).length)+"/"+list.length, list.filter(([,t])=>t.bot).length+" configured · never-configured fight as Tit-for-tat"));
   card.append(st);
+  if(ph==="build" && list.length && list.every(([,t])=>t.ready)) card.append(Object.assign(el("div","note-box teal"),{innerHTML:"<b>All robots are locked in.</b> You can press ⚔ Fight now.",style:"margin-top:10px"}));
   if(loose.length) card.append(Object.assign(el("div","sm mut"),{textContent:"Without a team: "+loose.map(p=>p.name||p.id).join(", "),style:"margin-top:8px"}));
   if(list.length){
     const tbl=el("div"); tbl.style.marginTop="12px";
     list.forEach(([tid,t])=>{
       const row=el("div"); row.style.cssText="padding:10px 12px;border:1px solid var(--line);border-radius:12px;margin-top:8px";
       const hd=el("div"); hd.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:8px";
-      hd.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(t.name||"Team")+"</b>"+(t.auto?" <span class='chip'>auto</span>":"")+" <span class='sm mut'>· "+Object.keys(t.members||{}).length+" members</span>"}));
+      hd.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(t.name||"Team")+"</b>"+(t.auto?" <span class='chip'>auto</span>":"")+" <span class='sm mut'>· "+Object.keys(t.members||{}).length+" members</span>"
+        +(ph==="build"||ph==="locked" ? (t.ready?" <span class='chip' style='border-color:#2e8b57;color:#2e8b57'>✓ done</span>":(ph==="build"?" <span class='chip'>building…</span>":"")) : "")}));
       if(ph==="captains"||ph==="join"){ const rm=el("button","linkbtn","remove team"); rm.type="button"; rm.onclick=()=>{ if(confirm("Remove team “"+(t.name||"")+"”? Its members become free to join another team.")) rbRemoveTeam(tid); }; hd.append(rm); }
       row.append(hd);
       row.append(rbMemberChips(t, ph==="build"||ph==="join" ? {onPick:m=>{ if(confirm("Make "+(m.name||m.id)+" captain of "+(t.name||"this team")+"?")) rbSetCaptain(tid,m.id); }, pickTitle:"Make captain"} : null));
@@ -3883,7 +3930,7 @@ function rbPresentBody(){
   const list=rbTeamList(), lim=rbCfg().nTeams;
   cnt.append(el("div","present-numlabel", (r && rbTimed(ph)) ? (list.length+(lim?" of "+lim:"")+" team"+(list.length===1&&!lim?"":"s")+(ph==="captains"?" so far":"")) : (list.length===1?"team":"teams")));
   if(list.length){ const tl=el("div"); tl.style.cssText="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;justify-content:center";
-    list.forEach(([,t])=>{ const ch=el("span","chip"); ch.style.fontSize="1rem"; ch.textContent=(t.name||"Team")+" · "+Object.keys(t.members||{}).length; tl.append(ch); }); cnt.append(tl); }
+    list.forEach(([,t])=>{ const ch=el("span","chip"); ch.style.fontSize="1rem"; ch.textContent=(ph==="build"&&t.ready?"✓ ":"")+(t.name||"Team")+" · "+Object.keys(t.members||{}).length; if(ph==="build"&&t.ready) ch.style.borderColor="#2e8b57"; tl.append(ch); }); cnt.append(tl); }
   return cnt;
 }
 
@@ -3910,7 +3957,8 @@ function analyzeRobot(list, teacher){
       el("p","lead","Every robot is playing every other robot."));
     wrap.append(f); return wrap;
   }
-  const first=list[0]||{}, R=Math.max(5,+first.rounds||rbCfg().rounds), house=first.house!=null?!!first.house:rbCfg().house, nz=(first.noise!=null?+first.noise:rbCfg().noise)||5;
+  const first=list[0]||{}, R=Math.max(5,+first.rounds||rbCfg().rounds), house=first.house!=null?!!first.house:rbCfg().house;
+  const rPct=first.disc!=null ? Math.max(0,+first.disc||0) : rbCfg().disc, r=rPct/100, AN=rbAnnuity(R, r);
   const byTeam={};
   list.forEach(s=>{ const k=s.team||("solo:"+s.studentId);
     if(!byTeam[k]) byTeam[k]={id:"t:"+k, team:s.teamName||s.name||"Team", members:[], ids:[], bot:rbParse(s.robot), defaultBot:!!s.defaultBot};
@@ -3919,55 +3967,55 @@ function analyzeRobot(list, teacher){
   if(house) RB_HOUSE.forEach(h=>ents.push({id:h.id, name:h.name, team:"House robot", members:[], ids:[], bot:h.bot?rbNorm(h.bot):rbPreset(h.preset), house:true}));
   ents.forEach(e=>{ e.fam=rbFamily(e.bot); });
   if(ents.length<2){ wrap.append(Object.assign(el("div","card stage center mut"),{textContent:"Need at least two robots for a tournament."})); return wrap; }
-  const noise = rbNoiseOn ? nz/100 : 0;
-  const res=rbTournament(ents, R, noise, String(first.roundKey||curKey));
-  const order=ents.map((e,i)=>i).sort((a,b)=>res.avg[b]-res.avg[a]);
+  const res=rbTournament(ents, R, r, String(first.roundKey||curKey));
+  const order=ents.map((e,i)=>i).sort((a,b)=>res.npv[b]-res.npv[a]);
+  const f0=v=>fmt(v,1);
 
-  // mistakes toggle
-  const tg=el("div","row"); tg.style.cssText="gap:8px;align-items:center;flex-wrap:wrap";
-  tg.append(Object.assign(el("span","sm mut"),{textContent:"Mistakes:"}));
-  [[false,"None"],[true,nz+"% of moves flipped by accident"]].forEach(([v,l])=>{ const b=el("button","ghost-btn"+(rbNoiseOn===v?" hold-on":""),l); b.type="button"; b.onclick=()=>{ rbNoiseOn=v; render(); }; tg.append(b); });
-  wrap.append(tg);
-
+  // how the score works
+  const how=el("div","note-box"); how.style.marginTop="0";
+  how.innerHTML="<b>Score = NPV of a robot's profits in a match</b>, discounted at <b>r = "+rPct+"% per round</b> ("+R+" rounds a match): "
+    +"<span style='font-family:IBM Plex Mono,monospace'>NPV = π<sub>1</sub> + π<sub>2</sub>/(1+r) + π<sub>3</sub>/(1+r)<sup>2</sup> + …</span>. "
+    +"Benchmarks: Low every round (5 each round) = <b>"+f0(5*AN)+"</b> · ad war (4 each round) = <b>"+f0(4*AN)+"</b>"
+    +(r>0?" · each future round counts for less: round 10 is worth "+Math.round(100/Math.pow(1+r,9))+"% of round 1.":".");
+  wrap.append(how);
   // headline tiles
   const top=order[0], tiles=el("div","stats");
-  const allH=order.filter(i=>ents[i].fam==="Always High");
   const mostWins=order.slice().sort((a,b)=>res.W[b]-res.W[a])[0];
   tiles.append(statTile("Robots", String(ents.length), (Object.keys(byTeam).length)+" teams"+(house?" + 4 house":"")),
-    statTile("Winner", ents[top].name, fmt(res.avg[top],2)+" a round", true),
+    statTile("Winner", ents[top].name, "NPV "+f0(res.npv[top])+" a match", true),
     statTile("Most head-to-head wins", ents[mostWins].name, res.W[mostWins]+" wins · finished #"+(order.indexOf(mostWins)+1)),
-    statTile("Best possible", "5.00", "both Low every round · ad war = 4"));
+    statTile("Best possible", f0(5*AN), "NPV of Low every round · ad war = "+f0(4*AN)));
   wrap.append(tiles);
 
   // leaderboard
-  const lb=el("div","chart-card"); lb.append(Object.assign(el("h3"),{textContent:"Leaderboard"+(rbNoiseOn?" — with "+nz+"% mistakes":"")}));
-  let html="<tr><th>#</th><th style='text-align:left'>Robot</th><th>Type</th><th>Avg / round</th><th>W–L–T</th></tr>";
+  const lb=el("div","chart-card"); lb.append(Object.assign(el("h3"),{textContent:"Leaderboard — NPV per match at r = "+rPct+"%"}));
+  let html="<tr><th>#</th><th style='text-align:left'>Robot</th><th>Type</th><th>NPV / match</th><th>Avg profit / round</th><th>W–L–T</th></tr>";
   order.forEach((i,rank)=>{ const e=ents[i];
     const who = e.house ? "<span class='chip'>house</span>" : esc(e.team)+(teacher?" <span class='mut'>· "+esc(e.members.join(", "))+"</span>":"");
     html+="<tr"+(e.mine?" style='background:var(--accent-wash,color-mix(in srgb,var(--accent) 12%,transparent))'":"")+"><td>"+(rank+1)+"</td><td style='text-align:left'><b>"+esc(e.name)+"</b>"+(e.mine?" (your team)":"")+"<div class='sm mut'>"+who+"</div><div class='sm mut' style='max-width:520px'>"+esc(rbSentence(e.bot))+(e.defaultBot?" (default — never configured)":"")+"</div></td>"
-      +"<td><span class='chip' style='border-color:"+RB_FAM_COL[e.fam]+"'>"+esc(e.fam)+"</span></td><td class='cell'>"+fmt(res.avg[i],2)+"</td><td class='cell'>"+res.W[i]+"–"+res.L[i]+"–"+res.T[i]+"</td></tr>"; });
+      +"<td><span class='chip' style='border-color:"+RB_FAM_COL[e.fam]+"'>"+esc(e.fam)+"</span></td><td class='cell'><b>"+f0(res.npv[i])+"</b></td><td class='cell'>"+fmt(res.avg[i],2)+"</td><td class='cell'>"+res.W[i]+"–"+res.L[i]+"–"+res.T[i]+"</td></tr>"; });
   const t=el("table","matrix"); t.style.fontSize=".84rem"; t.innerHTML=html;
   const sc=el("div","tablescroll"); sc.style.cssText="margin-top:8px;max-height:none"; sc.append(t); lb.append(sc);   // full height — it's the projected leaderboard
-  lb.append(Object.assign(el("div","cap"),{textContent:"W–L–T = matches where the robot out-earned / was out-earned by / tied its opponent. A robot can rarely 'win' a match and still top the table — what counts is total profit, not beating the rival."}));
+  lb.append(Object.assign(el("div","cap"),{textContent:"Ranked by NPV per match (average over every opponent). Avg profit / round is the same play undiscounted. W–L–T = matches where the robot's NPV beat / fell short of / tied its opponent's. A robot can rarely 'win' a match and still top the table — what counts is your own NPV, not beating the rival."}));
   wrap.append(lb);
 
   // score by type
   const fams=RB_FAMS.filter(f=>ents.some(e=>e.fam===f));
-  const famAvg=f=>{ const ix=ents.map((e,i)=>e.fam===f?i:-1).filter(i=>i>=0); return ix.reduce((s,i)=>s+res.avg[i],0)/ix.length; };
-  const bc=el("div","chart-card"); bc.append(Object.assign(el("h3"),{textContent:"Average score by strategy type"}));
-  bc.append(barChart(fams.map(f=>({label:f, value:Math.round(famAvg(f)*100)/100, color:RB_FAM_COL[f]})).sort((a,b)=>b.value-a.value), 6, true, ""));
-  bc.append(Object.assign(el("div","cap"),{textContent:"Average profit per round. 5 = always cooperating (Low, Low); 4 = permanent ad war."}));
+  const famAvg=f=>{ const ix=ents.map((e,i)=>e.fam===f?i:-1).filter(i=>i>=0); return ix.reduce((s,i)=>s+res.npv[i],0)/ix.length; };
+  const bc=el("div","chart-card"); bc.append(Object.assign(el("h3"),{textContent:"Average NPV by strategy type"}));
+  bc.append(barChart(fams.map(f=>({label:f, value:Math.round(famAvg(f)*10)/10, color:RB_FAM_COL[f]})).sort((a,b)=>b.value-a.value), 6*AN, true, ""));
+  bc.append(Object.assign(el("div","cap"),{textContent:"NPV per match. "+f0(5*AN)+" = always cooperating (Low, Low); "+f0(4*AN)+" = permanent ad war."}));
   wrap.append(bc);
 
   // type vs type heatmap (incl. self-play)
   const F=fams.map(a=>fams.map(b=>{ let s=0,c=0; ents.forEach((x,i)=>{ if(x.fam!==a) return; ents.forEach((y,j)=>{ if(y.fam!==b) return; s+=res.A[i][j]; c++; }); }); return c?s/c:0; }));
-  const hm=el("div","chart-card"); hm.append(Object.assign(el("h3"),{textContent:"Who exploits whom — row's profit per round against column"}));
-  const col=v=>{ const t2=Math.max(0,Math.min(1,(v-3)/3)); return "color-mix(in srgb, #2e8b57 "+Math.round(t2*100)+"%, #c0392b)"; };
+  const hm=el("div","chart-card"); hm.append(Object.assign(el("h3"),{textContent:"Who exploits whom — row's NPV against column"}));
+  const col=v=>{ const t2=Math.max(0,Math.min(1,(v/AN-3)/3)); return "color-mix(in srgb, #2e8b57 "+Math.round(t2*100)+"%, #c0392b)"; };
   let hh="<tr><th></th>"+fams.map(f=>"<th>"+esc(f)+"</th>").join("")+"</tr>";
-  fams.forEach((a,ai)=>{ hh+="<tr><th style='text-align:left'>"+esc(a)+"</th>"+fams.map((b,bi)=>"<td class='cell' style='color:#fff;background:"+col(F[ai][bi])+"'>"+fmt(F[ai][bi],1)+"</td>").join("")+"</tr>"; });
+  fams.forEach((a,ai)=>{ hh+="<tr><th style='text-align:left'>"+esc(a)+"</th>"+fams.map((b,bi)=>"<td class='cell' style='color:#fff;background:"+col(F[ai][bi])+"'>"+f0(F[ai][bi])+"</td>").join("")+"</tr>"; });
   const ht=el("table","matrix"); ht.style.fontSize=".78rem"; ht.innerHTML=hh;
   const hs=el("div","tablescroll"); hs.append(ht); hm.append(hs);
-  hm.append(Object.assign(el("div","cap"),{textContent:"Green = the row type does well against the column type (up to 6 = exploiting a sucker); red = it's being exploited (3)."}));
+  hm.append(Object.assign(el("div","cap"),{textContent:"Green = the row type does well against the column type (up to "+f0(6*AN)+" = exploiting a sucker every round); red = it's being exploited ("+f0(3*AN)+")."}));
   wrap.append(hm);
 
   // evolution
@@ -3977,12 +4025,15 @@ function analyzeRobot(list, teacher){
   ev.append(rbLineChart(fams.map((f,a)=>({label:f, color:RB_FAM_COL[f], vals:hist.map(h=>h[a])})), G));
   ev.append(rbLegend(fams.map(f=>[f,RB_FAM_COL[f]])));
   const fin=hist[G], win=fams.map((f,a)=>[f,fin[a]]).sort((a,b)=>b[1]-a[1])[0];
-  ev.append(Object.assign(el("div","cap"),{textContent:"Start: today's mix of robot types. Each generation, a type's share grows in proportion to its score against the current population. After "+G+" generations "+win[0]+" makes up "+Math.round(win[1]*100)+"% of the population."}));
+  ev.append(Object.assign(el("div","cap"),{textContent:"Start: today's mix of robot types. Each generation, a type's share grows in proportion to its NPV against the current population. After "+G+" generations "+win[0]+" makes up "+Math.round(win[1]*100)+"% of the population."}));
   wrap.append(ev);
 
   // lesson
   const note=el("div","note-box"); note.style.marginTop="4px";
-  note.innerHTML="<b>The lesson (Axelrod's tournaments).</b> The robots that do well are <b>nice</b> (never the first to go High), <b>retaliatory</b> (a High doesn't go unpunished), <b>forgiving</b> (they return to Low once the rival does) and <b>clear</b> (easy for the rival to read). Always High wins many head-to-head matches but finishes low: it drags every opponent into an ad war. Turn on <b>mistakes</b> and watch grim trigger fall — one accidental High locks two cooperators into a permanent ad war — while forgiving robots recover.";
+  note.innerHTML="<b>The lesson (Axelrod's tournaments).</b> The robots that do well are <b>nice</b> (never the first to go High), <b>retaliatory</b> (a High doesn't go unpunished), <b>forgiving</b> (they return to Low once the rival does) and <b>clear</b> (easy for the rival to read). Always High wins many head-to-head matches but finishes low: it drags every opponent into an ad war."
+    +"<div style='margin-top:8px'><b>The NPV test.</b> Against a grim-trigger rival, going High once gains <b>6 − 5 = 1</b> today but loses <b>5 − 4 = 1</b> in every later round. "
+    +"Treating the future as a perpetuity: NPV of cooperating forever = 5 + 5/r; NPV of cheating, then an ad war forever = 6 + 4/r — so cheating pays only if 1 &gt; 1/r, i.e. <b>r &gt; 100%</b> (δ = 1/(1+r) &lt; ½). "
+    +"At today's r = "+rPct+"% the punishment you lose is worth "+(r>0?f0(1/r):"∞")+" against a gain of 1"+(r>0&&r<1?" — cooperation pays":"")+". The higher the discount rate, the less the future (and the threat of punishment) is worth, and the more an early grab looks attractive.</div>";
   wrap.append(note);
   return wrap;
 }
@@ -5896,14 +5947,14 @@ function paramEditor(){
   else if(g==="robot"){
     const grid=el("div","paramgrid");
     grid.append(mk("Captains step (minutes)","capMin",cf.capMin,"0.5"), mk("Joining step (minutes)","joinMin",cf.joinMin,"0.5"), mk("Robot building (minutes)","buildMin",cf.buildMin,"0.5"),
-      mk("Number of teams (0 = no limit)","teams",cf.teams), mk("Max team size (incl. captain)","teamMax",cf.teamMax), mk("Rounds per match","rounds",cf.rounds), mk("Mistake rate for the results toggle (%)","noise",cf.noise));
+      mk("Number of teams (0 = no limit)","teams",cf.teams), mk("Max team size (incl. captain)","teamMax",cf.teamMax), mk("Rounds per match","rounds",cf.rounds), mk("Discount rate per round (%)","disc",cf.disc));
     wrap.append(grid);
     const setHouse=(v)=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.house=v; const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
     wrap.append(Object.assign(el("div","tinylabel"),{textContent:"House robots (Always Low, Always High, Random, Tit-for-tat)",style:"margin-top:10px"}));
     const hr=el("div","row"); hr.style.gap="8px"; hr.style.marginTop="4px";
     [[true,"Include"],[false,"Leave out"]].forEach(([v,l])=>{ const b=el("button","ghost-btn"+((cf.house!==false)===v?" hold-on":"")); b.textContent=l; b.onclick=()=>{ if((cf.house!==false)!==v) setHouse(v); }; hr.append(b); });
     wrap.append(hr);
-    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Open submissions → captains sign up and name their teams ("+cf.capMin+" min"+(+cf.teams?", first "+cf.teams+" teams":"")+") → players join or switch teams ("+cf.joinMin+" min, up to "+cf.teamMax+" per team; anyone left over is placed in the smallest teams, no solos) → captains build robots for "+cf.buildMin+" min → you press ⚔ Fight. Tip: number of teams ≈ class size ÷ "+cf.teamMax+". Every robot plays every other one for "+cf.rounds+" rounds of the Advertising Game (G8 payoffs). On the results, toggle "+cf.noise+"% mistakes to show grim trigger's fragility.",style:"margin-top:6px"})); }
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Open submissions → captains sign up and name their teams ("+cf.capMin+" min"+(+cf.teams?", first "+cf.teams+" teams":"")+") → players join or switch teams ("+cf.joinMin+" min, up to "+cf.teamMax+" per team; anyone left over is placed in the smallest teams, no solos) → captains build robots for "+cf.buildMin+" min → you press ⚔ Fight. Tip: number of teams ≈ class size ÷ "+cf.teamMax+". Every robot plays every other one for "+cf.rounds+" rounds of the Advertising Game (G8 payoffs). Scores are NPVs: each round's profit is discounted at "+cf.disc+"% per round (round 1 undiscounted; 0 = plain totals). Students see the rate and the formula while building.",style:"margin-top:6px"})); }
   else if(g==="adfin"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played (announced to students)","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Same High/Low advertising game as G8, but every pair plays exactly this many rounds and students are told so (\"Round 3 of "+rpFinRounds()+"\", with the final round flagged). Backward induction predicts High in every round; compare the class's play near the end with G8.",style:"margin-top:6px"})); }

@@ -547,7 +547,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - `robot` — **Robot Tournament** (**G10**; Public Goods is now labelled **G20**) — an Axelrod-style
   tournament on the G8/G9 Advertising Game (`RP_PAY`; Low = cooperate). **Teams** build one robot each; when
   the instructor presses **⚔ Fight** every robot plays every other one. Config `{ capMin:2, joinMin:2, buildMin:10,
-  teamMax:4, teams:0, rounds:50, noise:5, house:true }` (`rbCfg()` → `nTeams` = number of teams, 0 = no limit).
+  teamMax:4, teams:0, rounds:50, disc:10, house:true }` (`rbCfg()` → `nTeams` = number of teams, 0 = no limit).
   **Flow: captains → join → build → fight.** (1) **Captains** (`capMin`): anyone taps *Become captain* and names a
   team (`rbCreateTeam`, blocked once `nTeams` teams exist); captains can rename (`rbRename`) or step down; the
   instructor can remove a team (`rbRemoveTeam`). At the timer the console runs **`rbLockCaptains`**: keeps the first
@@ -584,15 +584,31 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     start of each angry round). Engine `rbDecide`/`rbUpdate`/`rbPlay` (verified: TFT copies, grim, TF2T,
     grudge). Presets `RB_PRESETS` (Always Low/High, TFT, Grim, TF2T, Generous TFT, Grim+forgiveness, Prober,
     Grudge holder); plain-English `rbSentence`; family `rbFamily` (`RB_FAMS`). Builder (`rbBuilder`) is all
-    tap-chips (no selects, survives live re-renders) + a 10-round **test drive** vs Always Low/High/TFT.
+    tap-chips (no selects, survives live re-renders) + a labelled 10-round **test drive** ("practice only, not
+    part of your score") vs Always Low/High/TFT showing each rival, the move strips, profit and NPV, plus the
+    payoff table (`rpMatrix(null, note)`).
+  - **Done / Edit** (`rbSetReady`): the captain's **✓ Done** writes `rt/<tid>/ready=true` (flushing the debounced
+    robot save in the same update) and the builder goes read-only with **✎ Edit robot** to reopen it while the build
+    timer runs. Teammates see "Locked in by your captain"; the console shows **Robots done X/N**, a ✓ per team and
+    "All robots are locked in — you can Fight now"; Present-view team chips get a ✓. Fight skips its confirm when
+    every team is done. The instructor still decides when to fight.
+  - **Typing then tapping**: inputs catch up on blur via `rbBlurRedraw` (≈300 ms later, and not while a pointer is
+    down) — an instant `render()` on blur replaced the button being pressed, so "Become captain" needed several
+    taps. `render()` also records `_rbLastPh`, so the 1 s ticker redraws only when a timer flips the phase.
   - **Fight** snapshots one sub per member: `{game:"robot", team, teamName, captain, robot:<JSON>,
-    teamMembers, defaultBot, house, rounds, noise, …}` — the field is **`robot`, never `bot`** (`s.bot`
+    teamMembers, defaultBot, house, rounds, disc, …}` — the field is **`robot`, never `bot`** (`s.bot`
     marks practice-bot subs and is filtered out everywhere). Unconfigured teams fight as Tit-for-tat.
-  - `analyzeRobot`: dedupe by team, add house robots (`RB_HOUSE`), seeded round-robin `rbTournament`
-    (`rbRng` mulberry32; randomised robots / mistakes replayed 5×; cached), **mistakes toggle** (`rbNoiseOn`,
-    flips each move with `noise`%), tiles, full-height leaderboard (own team highlighted; members
-    instructor-only; each robot's sentence), score by type, type-vs-type heatmap, **evolution chart**
-    (`rbEvolution` replicator dynamics over families, `rbLineChart`), Axelrod lesson note.
+  - **Scores are NPVs** (aligned with the class's NPV/discounting): `disc` = discount rate % per round (default
+    10; 0 = plain totals), `rbPlay(A,B,R,r,rng)` returns totals `pa/pb` and NPVs `na/nb` (round 1 undiscounted,
+    NPV = π1 + π2/(1+r) + …), `rbAnnuity(R,r)` = NPV of 1 a round (benchmarks: 5·annuity = all-Low, 4·annuity =
+    ad war). There is **no mistakes/noise** option any more (removed on purpose — not taught).
+  - `analyzeRobot`: dedupe by team, add house robots (`RB_HOUSE`), seeded round-robin `rbTournament(ents,R,r,seed)`
+    (`rbRng` mulberry32; randomised robots replayed 5×; cached; `npv` per match ranks, `avg` = undiscounted
+    profit/round shown alongside, W–L–T by NPV), a "how the score works" note (formula + benchmarks), tiles,
+    full-height leaderboard (own team highlighted; members instructor-only; each robot's sentence), NPV by type,
+    type-vs-type NPV heatmap, **evolution chart** (`rbEvolution` replicator dynamics over families on NPV,
+    `rbLineChart`), Axelrod lesson note + the **NPV test** (perpetuity: cooperate 5+5/r vs cheat 6+4/r → cheating
+    pays only if r > 100%, i.e. δ < ½ — the same threshold as G8).
 
 ## Interactive lessons (no submissions)
 - **Pareto optimality** (`paretoLesson`, local `lessonMode="pareto"` + `PZ` state) — an
