@@ -1,5 +1,5 @@
 Game Theory Live
-Copyright (c) 2026 Prof. Sonia (Indian Institute of Management Lucknow) and Ankit Khandelwal (GitHub: @eclairs20).
+Copyright (c) 2026 Prof. Sonia (Indian Institute of Management Lucknow).
 All rights reserved.
 
 This repository and the application it contains -- including the source code, the
@@ -7,29 +7,29 @@ game designs and rules, the interactive lessons, the analyses, the text, the vis
 and the accompanying documentation -- are protected by copyright.
 
 1. Permitted without asking
-   Students enrolled in a course in which the copyright holders run this application
-   may use it, through the copy hosted by the copyright holders, for that course.
+   Students enrolled in a course in which the copyright holder runs this application
+   may use it, through the copy hosted by the copyright holder, for that course.
 
 2. Educational reuse -- only with explicit permission
    Educators and educational institutions may use, copy, adapt or host this material
    for non-commercial teaching ONLY after receiving explicit written permission from
-   the copyright holders. Request permission by opening an issue on this repository
+   the copyright holder. Request permission by opening an issue on this repository
    (https://github.com/eclairs20/game-theory-live/issues) or by contacting @eclairs20
    on GitHub. Permission, if granted, may come with conditions, such as attribution
    in the form:
-       "Based on Game Theory Live by Prof. Sonia (IIM Lucknow) and Ankit Khandelwal."
+       "Based on Game Theory Live by Prof. Sonia (IIM Lucknow)."
 
 3. Not permitted without permission
    Any other use -- including copying, modifying, redistributing, republishing or
    hosting this material, using it in another course, training programme or product,
    or any commercial use -- is not permitted without prior written permission from
-   the copyright holders.
+   the copyright holder.
 
 Public visibility of this repository or of the hosted application does not grant
 any licence beyond the terms above.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
-IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
 
 Third-party component: the inlined qrcode-generator library (c) 2009 Kazuhiko Arase
