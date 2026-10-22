@@ -623,7 +623,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     sorted id); vs the practice bot a one-time random `d.role`. Lockstep with one screen at a time (result → Continue).
     Nature's draw `bgDraw(seed,i,p)` = `adSeedFloat(sorted ids + mc + pair ts (bot: d.bgNonce) + round)` — never the
     moves — so both phones agree. P1 sees both tables + "Which game is it? You don't know"; P2 sees "This round you are
-    playing ODD-EVEN / the MATCHING GAME" and only that table. Payoffs `bgPay(type,a1,a2)` → [P1,P2].
+    playing ODD-EVEN (Type I) / the MATCHING GAME (Type II)", only that table and "🤫 Don't tell Player 1 which game it is".
+    Tables are labelled as on the slides: "Type I · Odd-Even (OE) · p = 0.25" / "Type II · Matching (M) · p = 0.75". Payoffs `bgPay(type,a1,a2)` → [P1,P2].
   - Sub: `seq` "1,2,…" (own moves), `types` "M,O,…" (Nature's draws, so analysis needs no seed), `role` P1/P2,
     `mode:"bg"`, `pOdd`, `rounds`, partner fields. **Practice bot**: as P1 sticks to 2 when pOdd ≤ 50% else 50/50; as P2
     matches your usual number in Matching and counters it in Odd-Even (revealed only after you move).

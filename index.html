@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-22.006";
+const APP_VERSION = "2026-10-22.007";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -2505,7 +2505,8 @@ function pairLobby(c, game, mc, R, d){
   c.append(pairRules(title,
     game==="bayes" ? [
       "Pair up with a neighbour — one of you is Player 1, the other Player 2 (assigned at random, fixed for all "+bgCfg().R+" rounds).",
-      "Each round the game is drawn at random: "+bgOdds(bgCfg().p)+". Player 2 is told which game it is; Player 1 only knows the odds. You both show 1 or 2."
+      "Each round the game is drawn at random: "+bgOdds(bgCfg().p)+". Player 2 is told which game it is; Player 1 only knows the odds. You both show 1 or 2.",
+      "Player 2: don't tell Player 1 which game it is. After each round the app reveals the game and the score."
     ] : game==="adfin" ? [
       "Pair up with a neighbour — you are two rival firms. Each round you both choose High or Low advertising at the same time.",
       "You play the same rival for exactly "+rpFinRounds()+" rounds. Your score is your total profit over all "+rpFinRounds()+" rounds."
@@ -3249,7 +3250,8 @@ function bgOdds(p){ return pct(p)+" Odd-Even · "+pct(1-p)+" Matching Game"; }
 function bgTable(type, opts){
   opts=opts||{}; const c1="var(--accent-ink)", c2="var(--gold)";
   const wrap=el("div"); wrap.style.cssText="flex:1 1 230px;min-width:0"+(opts.dim?";opacity:.45":"");
-  wrap.append(Object.assign(el("div","tinylabel"),{textContent:BG_NAME[type]+(opts.tag?" · "+opts.tag:""),style:"margin-bottom:4px"}));
+  const p=bgCfg().p, pr = type==="O" ? p : 1-p;   // labelled as on the slides: Type I (OE) / Type II (M) with Nature's probability
+  wrap.append(Object.assign(el("div","tinylabel"),{textContent:(type==="O"?"Type I · Odd-Even (OE)":"Type II · Matching (M)")+(opts.noP?"":" · p = "+fmt(pr,2))+(opts.tag?" · "+opts.tag:""),style:"margin-bottom:4px"}));
   const you=k=> opts.me===k?" (you)":"";
   const cell=(a,b)=>{ const u=bgPay(type,a,b), pl=opts.played&&String(opts.played[0])===String(a)&&String(opts.played[1])===String(b);
     return "<td class='cell"+(pl?" played":"")+"'><span style='color:"+c1+"'>"+u[0]+"</span>, <span style='color:"+c2+"'>"+u[1]+"</span></td>"; };
@@ -3334,7 +3336,8 @@ function bgMatch(c, d, opts){
     c.append(Object.assign(el("div","tinylabel"),{textContent:"Round "+(n+1)+" of "+R+" — show 1 or 2",style:"margin-top:16px"}));
     if(role===2){ const t=type(n);
       const tell=el("div"); tell.style.cssText="margin-top:8px;padding:12px 14px;border-radius:12px;border:2px solid var(--gold);background:var(--gold-wash)";
-      tell.innerHTML="This round you are playing <b>"+(t==="O"?"ODD-EVEN":"the MATCHING GAME")+"</b><div style='font-size:.88rem;margin-top:2px'>"+esc(bgRule(t,2))+"</div>";
+      tell.innerHTML="This round you are playing <b>"+(t==="O"?"ODD-EVEN (Type I)":"the MATCHING GAME (Type II)")+"</b><div style='font-size:.88rem;margin-top:2px'>"+esc(bgRule(t,2))+"</div>"
+        +"<div style='font-size:.85rem;margin-top:4px;color:#b5651d;font-weight:700'>🤫 Don't tell Player 1 which game it is.</div>";
       c.append(tell); const tb=el("div"); tb.style.cssText="display:flex;margin-top:8px"; tb.append(bgTable(t,{me:2, rule:false})); c.append(tb);
     } else {
       c.append(Object.assign(el("div","note-box"),{innerHTML:"<b>Which game is it?</b> You don't know: "+esc(bgOdds(p))+". Player 2 does.",style:"margin-top:8px"}));
