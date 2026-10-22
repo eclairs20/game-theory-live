@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-22.004";
+const APP_VERSION = "2026-10-22.005";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -602,6 +602,8 @@ const GAMES = {
     blurb:"High or Low advertising against the same rival for a known, fixed number of rounds." },
   robot: { name:"Robot Tournament", short:"G10", icon:"G10",
     blurb:"Teams build a robot for the repeated Advertising Game — then every robot fights every other." },
+  bayes: { name:"Bayesian Game", short:"G11", icon:"G11",
+    blurb:"Odd-Even or the Matching Game? Player 2 knows which; Player 1 only knows the odds." },
   publicgoods: { name:"Public Goods", short:"G20", icon:"G20",
     blurb:"Contribute to a shared fund that pays everyone." }
 };
@@ -615,6 +617,7 @@ const DEFAULT_CONFIG = {
   adwar:{ cont:50, min:20, cap:35 },    // Advertising Game (Infinite): % chance the market continues after each round (from the minimum on); hidden min / max rounds
   adfin:{ rounds:6 },                  // Advertising Game (Finite): a fixed, announced number of rounds
   robot:{ capMin:2, joinMin:2, buildMin:10, teamMax:4, teams:0, rounds:100, disc:5, house:true },   // Robot Tournament: captains / join / build timers (min), team size cap, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
+  bayes:{ pOdd:25, rounds:20 },          // Bayesian Game: % chance each round is Odd-Even (else the Matching Game); rounds per match
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -1163,7 +1166,9 @@ function studentSubsSig(){
   const partner = pairData ? (String(pairData.a)===String(myId)?pairData.b:pairData.a) : null;
   const mine=subs.find(x=>String(x.studentId)===String(myId));
   const theirs=partner!=null ? subs.find(x=>String(x.studentId)===String(partner)) : null;
-  return [pick(mine), pick(theirs), subs.filter(x=>isDone(x)&&!x.bot).length, myPairId||""].join("#");
+  // G11: a partner's move for a round I haven't played yet is invisible to me — leave it out, so it doesn't redraw my screen
+  const tp = control.activeGame==="bayes" ? "bg:"+(theirs ? bgList(theirs).slice(0, bgList(mine||{}).length).join(",") : "")+"|"+(theirs&&theirs.done?1:0) : pick(theirs);
+  return [pick(mine), tp, subs.filter(x=>isDone(x)&&!x.bot).length, myPairId||""].join("#");
 }
 function scheduleSubsRender(){
   if(_subsRenderT) return;
@@ -1544,7 +1549,7 @@ function render(){
   if(cfgMode){ app.replaceChildren(courseConfig()); return; }
   // Leave the waiting room / release presence when we're not actively on an open pair game
   // (also when a hub-enabled student is browsing "My page" rather than the live class).
-  const wantLive = !isTeacher() && control && control.phase==="open" && (control.activeGame==="quatro"||control.activeGame==="redblack"||control.activeGame==="attackdefend"||control.activeGame==="adwar"||control.activeGame==="adfin") && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class";
+  const wantLive = !isTeacher() && control && control.phase==="open" && (control.activeGame==="quatro"||control.activeGame==="redblack"||control.activeGame==="attackdefend"||control.activeGame==="adwar"||control.activeGame==="adfin"||control.activeGame==="bayes") && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class";
   if(!wantLive && liveCtx) detachLive();
   let next;
   if(REQUIRE_GOOGLE && !authUser){
@@ -1877,6 +1882,7 @@ function studentView(){
   else if(g==="attackdefend") studentAttackDefend(c);
   else if(g==="adwar") studentPair(c,"adwar");
   else if(g==="adfin") studentPair(c,"adfin");
+  else if(g==="bayes") studentPair(c,"bayes");
   else if(g==="robot") studentRobot(c);
   else studentPG(c);
   return c;
@@ -2170,7 +2176,7 @@ const PAIR_DOC = (mc,pid)=> LIVE_ROOT(mc)+"/pairs/"+pid;
 // `of` value meaning "I'm playing the practice bot". Starting a bot game CLAIMS your `of` pointer with
 // it (by transaction, exactly like liveAccept), so nobody can pair with you while you practise.
 const BOT_OF="bot";
-const BOT_RESET_KEYS=["seq","piles","adBot","botSeq","botPiles","flips","plc","plcRound","role","_loaded","_build","suit","botSuit","color","ack","rpNonce","_doneSaved"];
+const BOT_RESET_KEYS=["bgNonce","seq","piles","adBot","botSeq","botPiles","flips","plc","plcRound","role","_loaded","_build","suit","botSuit","color","ack","rpNonce","_doneSaved"];
 let liveCtx=null, lobby={}, invIn=null, invSent=null, myPairId=null, pairData=null, _pairRef=null, _hbT=null, liveErr=null, _liveVisHook=false;
 /* What the waiting room actually SHOWS: who's present (fresh heartbeat) + any incoming invite. Every player's
    heartbeat rewrites their `ts` every 5 s, so re-rendering on every lobby event redrew the whole card several
@@ -2359,7 +2365,8 @@ function studentPair(c, game){
   c.append(Object.assign(el("h2"),{textContent:GAMES[game].name,style:"font-size:1.4rem;margin:6px 0 4px"}));
   ensureLive(mc); botSync(mc, d);
   if(d.bot){ if(game==="attackdefend"){ adMatch(c, R, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", mc}); return; }
-    if(game==="adwar"||game==="adfin"){ rpMatch(c, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", mc, fin:game==="adfin"}); return; } pairMatch(c, game, R, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", myColor:(d.color||(d.color=Math.random()<0.5?"red":"black")), mc}); return; }
+    if(game==="adwar"||game==="adfin"){ rpMatch(c, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", mc, fin:game==="adfin"}); return; }
+    if(game==="bayes"){ bgMatch(c, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", mc}); return; } pairMatch(c, game, R, d, {bot:true, partner:"bot:"+myId, partnerName:"Practice bot", myColor:(d.color||(d.color=Math.random()<0.5?"red":"black")), mc}); return; }
   if(pairData && pairData.ended){
     c.append(hintLine("Your partner left the match."));
     const b=el("button","btn wide","Back to the waiting room"); b.style.marginTop="10px"; b.style.maxWidth="320px";
@@ -2373,6 +2380,7 @@ function studentPair(c, game){
     if(game==="redblack" && (cf.mode||"record")==="record"){ pairRecorded(c, R, d, {partner, partnerName, mc, pid}); return; }
     if(game==="attackdefend"){ adMatch(c, R, d, {partner, partnerName, mc}); return; }
     if(game==="adwar"||game==="adfin"){ rpMatch(c, d, {partner, partnerName, mc, fin:game==="adfin"}); return; }
+    if(game==="bayes"){ bgMatch(c, d, {partner, partnerName, mc}); return; }
     pairMatch(c, game, R, d, {partner, partnerName, myColor, suits:pairData.suits, mc}); return;
   }
   // Recorded mode is asynchronous (real cards played offline, then one person enters), so it
@@ -2493,9 +2501,12 @@ async function saveRecBoth(partnerId, partnerName, myPayload, partnerPayload){
 function pairLobby(c, game, mc, R, d){
   _lobbySig=lobbyViewSig();   // what this drawing shows — lobbyRender skips redraws that wouldn't change it
   const rbRecord = game==="redblack" && (cfg("redblack").mode||"record")==="record";
-  const title = game==="redblack"?"Red vs Black" : game==="attackdefend"?"Colonel Blotto" : game==="adwar"?"Advertising Game" : game==="adfin"?"Advertising Game" : "Quatro Uno";
+  const title = game==="redblack"?"Red vs Black" : game==="attackdefend"?"Colonel Blotto" : game==="adwar"?"Advertising Game" : game==="adfin"?"Advertising Game" : game==="bayes"?"Bayesian Game" : "Quatro Uno";
   c.append(pairRules(title,
-    game==="adfin" ? [
+    game==="bayes" ? [
+      "Pair up with a neighbour — one of you is Player 1, the other Player 2 (assigned at random, fixed for all "+bgCfg().R+" rounds).",
+      "Each round the game is drawn at random: "+bgOdds(bgCfg().p)+". Player 2 is told which game it is; Player 1 only knows the odds. You both show 1 or 2."
+    ] : game==="adfin" ? [
       "Pair up with a neighbour — you are two rival firms. Each round you both choose High or Low advertising at the same time.",
       "You play the same rival for exactly "+rpFinRounds()+" rounds. Your score is your total profit over all "+rpFinRounds()+" rounds."
     ] : game==="adwar" ? [
@@ -2514,6 +2525,7 @@ function pairLobby(c, game, mc, R, d){
       "Playing with real cards at your desk? Still pair up here and record each hand for live scoring."]));
   if(game==="attackdefend") c.append(adScenario());
   if(game==="adwar"||game==="adfin") c.append(rpMatrix());
+  if(game==="bayes") c.append(bgBoth({}));
   const wr=el("div","lobby"); wr.style.marginTop="14px";
   if(invIn){
     const inv=el("div","invite-in");
@@ -3207,6 +3219,263 @@ function analyzeAdWar(list, fin){
 
   wrap.append(pairingsCard(pairs, pr=>{ const xs=rpSeq(pr[0]), ys=rpSeq(pr[1]), L=Math.min(xs.length,ys.length); let px=0,py=0; for(let i=0;i<L;i++){ px+=RP_PAY[xs[i]][ys[i]]; py+=RP_PAY[ys[i]][xs[i]]; }
     return pairName(pr[0])+" ("+px+")  ↔  "+pairName(pr[1])+" ("+py+") · "+L+" round"+(L===1?"":"s")+" · "+xs.slice(0,L).join("")+" / "+ys.slice(0,L).join(""); }));
+  const orph=orphanWarning(list, pairs); if(orph) wrap.append(orph);
+  return wrap;
+}
+
+/* ── G11 Bayesian Game ─────────────────────────────────────────────────────────────────────────
+   Incomplete information / Bayesian Nash equilibrium. Each round Nature secretly picks the game:
+   ODD-EVEN (chance pOdd; Player 1 wins on an even total, Player 2 on an odd total) or the MATCHING GAME
+   (both score 1 if they show the same number). Player 2 is told which game it is; Player 1 knows only the
+   odds. Both show 1 or 2. Live pairs via the shared lobby (studentPair("bayes") → bgMatch, lockstep like
+   rpMatch); roles are fixed per match (red → Player 1, black → Player 2, reusing pairData.colors). Nature's
+   draw is deterministic from the pair + round (never from the moves), so both phones agree; each sub stores
+   its own moves (`seq` "1,2,…") and the drawn games (`types` "M,O,…"), so the analysis needs no seed.
+   BNE: Player 1 wins by matching in BOTH games; the Matching type matches him, the Odd-Even type counters.
+   pOdd < ½ → Player 1 sticks to one number (mirror BNEs (1,12) and (2,21)); pOdd > ½ → he mixes 50/50. */
+const BG_NAME={M:"Matching Game", O:"Odd-Even"};
+function bgCfg(){ const cf=cfg("bayes"); return { p:Math.max(0,Math.min(100,+cf.pOdd||0))/100, R:Math.max(2,Math.min(60,Math.round(+cf.rounds||20))) }; }
+function bgPay(type, a1, a2){ const same=String(a1)===String(a2);      // [Player 1, Player 2]
+  return type==="O" ? (same?[1,0]:[0,1]) : (same?[1,1]:[0,0]); }
+function bgDraw(seed, i, p){ return adSeedFloat(seed+"#bg"+i)<p ? "O" : "M"; }
+function bgList(s, f){ return String(s&&s[f||"seq"]||"").split(",").map(x=>x.trim()).filter(x=>x); }
+function bgRule(type, me){
+  if(type==="O") return me===1 ? "You win (1 point) on an even total; Player 2 wins on an odd total."
+    : me===2 ? "You win (1 point) on an odd total; Player 1 wins on an even total." : "Player 1 wins on an even total, Player 2 on an odd total.";
+  return me ? "You both score 1 if you show the same number, 0 if not." : "Both score 1 if they show the same number, 0 if not.";
+}
+function bgOdds(p){ return pct(p)+" Odd-Even · "+pct(1-p)+" Matching Game"; }
+/* One payoff table (rows = Player 1, columns = Player 2; Player 1's payoff first). */
+function bgTable(type, opts){
+  opts=opts||{}; const c1="var(--accent-ink)", c2="var(--gold)";
+  const wrap=el("div"); wrap.style.cssText="flex:1 1 230px;min-width:0"+(opts.dim?";opacity:.45":"");
+  wrap.append(Object.assign(el("div","tinylabel"),{textContent:BG_NAME[type]+(opts.tag?" · "+opts.tag:""),style:"margin-bottom:4px"}));
+  const you=k=> opts.me===k?" (you)":"";
+  const cell=(a,b)=>{ const u=bgPay(type,a,b), pl=opts.played&&String(opts.played[0])===String(a)&&String(opts.played[1])===String(b);
+    return "<td class='cell"+(pl?" played":"")+"'><span style='color:"+c1+"'>"+u[0]+"</span>, <span style='color:"+c2+"'>"+u[1]+"</span></td>"; };
+  const t=el("table","matrix"); t.style.fontSize=".88rem";
+  t.innerHTML="<tr><th></th><th style='color:"+c2+"'>P2"+you(2)+": 1</th><th style='color:"+c2+"'>P2"+you(2)+": 2</th></tr>"
+    +"<tr><th style='color:"+c1+"'>P1"+you(1)+": 1</th>"+cell(1,1)+cell(1,2)+"</tr><tr><th style='color:"+c1+"'>P1"+you(1)+": 2</th>"+cell(2,1)+cell(2,2)+"</tr>";
+  wrap.append(t);
+  if(opts.rule!==false) wrap.append(Object.assign(el("div","sm mut"),{textContent:bgRule(type, opts.me),style:"margin-top:4px"}));
+  return wrap;
+}
+function bgBoth(opts){ const r=el("div"); r.style.cssText="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px";
+  r.append(bgTable("O",Object.assign({},opts)), bgTable("M",Object.assign({},opts))); return r; }
+
+function bgMatch(c, d, opts){
+  const {partner, partnerName, mc, bot}=opts, C=bgCfg(), R=C.R, p=C.p;
+  // Roles are fixed for the match: red → Player 1, black → Player 2 (set when the pair formed); vs the bot, a one-time random role.
+  let role;
+  if(bot){ if(!d.role) d.role=Math.random()<0.5?1:2; role=d.role; }
+  else { const col=pairData&&pairData.colors ? pairData.colors[encodeKey(String(myId))] : null;
+    role = col ? (col==="black"?2:1) : (String(pairData.a)===String(myId)?1:2); }
+  const meta={mode:"bg", role:"P"+role, pOdd:Math.round(p*100), rounds:R};
+  // A practice-bot game is a fresh throwaway; a real match only resumes a sub played against THIS partner.
+  const cur=bot?null:mySubWith(partner);
+  if(cur && d._loaded!==true && cur.seq) d.seq=bgList(cur);
+  if(!Array.isArray(d.seq)) d.seq=[]; d._loaded=true;
+  if(bot && !d.bgNonce) d.bgNonce=String(Date.now())+Math.random().toString(36).slice(2,7);
+  const a = bot? String(myId) : String(pairData.a), b = bot? ("bot:"+myId) : String(pairData.b);
+  const seed=[a,b].sort().join("~")+"#"+mc+"#"+(bot? d.bgNonce : (pairData&&pairData.ts||""));
+  const type=i=>bgDraw(seed,i,p);
+  const psub = bot? null : subs.find(s=> String(s.studentId)===String(partner));
+  const pseq = bot? null : (psub && String(psub.partner)===String(myId) ? bgList(psub) : []);
+  // Practice bot plays the other role in the spirit of the equilibrium: as Player 1 it sticks to 2 when Odd-Even is
+  // unlikely (≤ 50%) and mixes 50/50 otherwise; as Player 2 it predicts your usual number — matches it in the
+  // Matching Game, shows the other one in Odd-Even. Its move is revealed only after you move.
+  if(bot && !Array.isArray(d.botSeq)) d.botSeq=[];
+  const botMove=i=>{ if(d.botSeq[i]!=null) return d.botSeq[i];
+    let v;
+    if(role===2) v = p<=0.5 ? "2" : (Math.random()<0.5?"1":"2");
+    else { const prev=d.seq.slice(0,i), ones=prev.filter(x=>x==="1").length, usual = ones>prev.length-ones ? "1" : "2";
+      v = type(i)==="M" ? usual : (usual==="1"?"2":"1"); }
+    d.botSeq[i]=v; return v; };
+  const theirs = i => bot ? (d.seq[i]!=null ? botMove(i) : null) : (pseq[i]||null);
+  const pl = i => role===1 ? [d.seq[i], theirs(i)] : [theirs(i), d.seq[i]];   // [Player 1's move, Player 2's move]
+  let n=0, me=0, them=0, odd=0;
+  while(n<R && d.seq[n]!=null && theirs(n)!=null){ const u=bgPay(type(n), ...pl(n)); me+=u[role-1]; them+=u[2-role]; if(type(n)==="O") odd++; n++; }
+  const over = n>=R;
+  if(d.seq.length>n+1) d.seq.length=n+1;      // never more than one move ahead of the lockstep
+  const save=(done, k)=>{ const s=d.seq.slice(0,k==null?d.seq.length:k);
+    return savePair(Object.assign({partner, partnerName, seq:s.join(","), types:s.map((_,i)=>type(i)).join(",")}, meta), done); };
+
+  const head=el("div"); head.style.cssText="margin:6px 0 4px;padding:12px 14px;border-radius:14px;background:color-mix(in srgb,var(--accent) 10%,transparent);border:1px solid var(--accent)";
+  head.innerHTML="<b>You are Player "+role+"</b> · "+esc(partnerName)+" is Player "+(3-role)
+    +"<div style='font-size:.84rem;margin-top:3px'>"+(role===2 ? "Each round you are <b>told which game</b> you're playing. Player 1 only knows the odds." : "Each round the game is drawn at random. <b>Only Player 2 is told which</b> — you only know the odds.")+"</div>"
+    +"<div style='font-size:.84rem;margin-top:3px'>🎲 "+bgOdds(p)+" — drawn fresh every round</div>";
+  c.append(head);
+  const sb=el("div","scorebar");
+  const mk=(lbl,v,cls)=>{ const t=el("div","score"+(cls?" "+cls:"")); t.append(Object.assign(el("div","score-k"),{textContent:lbl})); t.append(Object.assign(el("div","score-v"),{textContent:v})); return t; };
+  sb.append(mk("Your points",me,"me"), mk(partnerName||"Partner",them,"them"), mk("Round",n+" / "+R)); c.append(sb);
+
+  const resultCard=i=>{ const t=type(i), m=pl(i), u=bgPay(t,m[0],m[1]), mine=u[role-1], his=u[2-role], sum=(+m[0])+(+m[1]);
+    const why = t==="O" ? "total "+sum+" is "+(sum%2?"odd → Player 2 wins":"even → Player 1 wins") : (m[0]===m[1]?"same number → you both score 1":"different numbers → nobody scores");
+    const col = mine&&his ? "#2e8b57" : mine ? "#2c6fb0" : his ? "#b03030" : "#8a6d1f";
+    const bar=el("div"); bar.style.cssText="margin:14px 0 2px;padding:10px 14px;border-radius:12px;text-align:center;color:#fff;font-weight:800;background:"+col;
+    bar.innerHTML="Round "+(i+1)+" was "+(t==="O"?"ODD-EVEN":"the MATCHING GAME")
+      +"<div style='font-weight:600;font-size:.86rem;opacity:.95;margin-top:2px'>You showed "+esc(d.seq[i])+", "+esc(partnerName)+" showed "+esc(theirs(i))+" — "+why+"</div>"
+      +"<div style='font-weight:600;font-size:.86rem;opacity:.95'>You score "+mine+" · they score "+his+"</div>";
+    c.append(bar);
+    const tb=el("div"); tb.style.cssText="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px"; tb.append(bgTable(t,{played:m, me:role})); c.append(tb); };
+  const lastSeen=n-1, needAck = n>0 && !over && d.ack!==lastSeen;
+
+  if(over){
+    if(!d._doneSaved){ d._doneSaved=true; save(true, n);
+      if(bot) saveBot(Object.assign({}, meta, {role:"P"+(3-role), partnerName:myName||"You", seq:d.botSeq.slice(0,n).join(","), types:d.seq.slice(0,n).map((_,i)=>type(i)).join(",")})); }
+    const box=el("div","note-box teal"); box.style.marginTop="14px";
+    box.innerHTML="<b>🏁 Match complete — all "+R+" rounds.</b> Your points: <b>"+me+"</b> ("+fmt(me/R,2)+" a round) · "+esc(partnerName)+": <b>"+them+"</b>. Odd-Even came up in "+odd+" of "+R+" rounds."+(bot?"":" Results appear when your instructor reveals.");
+    c.append(box); resultCard(n-1);
+  } else if(needAck){
+    resultCard(lastSeen);
+    const cont=el("button","btn wide","Continue to round "+(n+1)+" of "+R+" ▶"); cont.style.cssText="margin-top:12px;max-width:300px";
+    cont.onclick=()=>{ d.ack=lastSeen; render(); }; c.append(cont);
+  } else if(d.seq[n]==null){
+    c.append(Object.assign(el("div","tinylabel"),{textContent:"Round "+(n+1)+" of "+R+" — show 1 or 2",style:"margin-top:16px"}));
+    if(role===2){ const t=type(n);
+      const tell=el("div"); tell.style.cssText="margin-top:8px;padding:12px 14px;border-radius:12px;border:2px solid var(--gold);background:var(--gold-wash)";
+      tell.innerHTML="This round you are playing <b>"+(t==="O"?"ODD-EVEN":"the MATCHING GAME")+"</b><div style='font-size:.88rem;margin-top:2px'>"+esc(bgRule(t,2))+"</div>";
+      c.append(tell); const tb=el("div"); tb.style.cssText="display:flex;margin-top:8px"; tb.append(bgTable(t,{me:2, rule:false})); c.append(tb);
+    } else {
+      c.append(Object.assign(el("div","note-box"),{innerHTML:"<b>Which game is it?</b> You don't know: "+esc(bgOdds(p))+". Player 2 does.",style:"margin-top:8px"}));
+      c.append(bgBoth({me:1}));
+    }
+    const row=el("div","row"); row.style.cssText="gap:10px;margin-top:14px;flex-wrap:wrap";
+    [["1","☝️ Show 1"],["2","✌️ Show 2"]].forEach(([v,l])=>{ const bt=el("button","btn wide",l); bt.style.cssText="flex:1;min-width:140px;max-width:220px;font-size:1.1rem";
+      bt.onclick=()=>{ d.seq[n]=v; save(false); render(); }; row.append(bt); });
+    c.append(row);
+  } else {
+    const w=el("div","note-box"); w.style.marginTop="16px";
+    w.innerHTML="<b>Round "+(n+1)+" of "+R+" — you showed "+esc(d.seq[n])+".</b> Waiting for <b>"+esc(partnerName)+"</b>… the round resolves the moment they choose.";
+    c.append(w);
+    if(role===2){ const tb=el("div"); tb.style.cssText="display:flex;margin-top:8px"; tb.append(bgTable(type(n),{me:2})); c.append(tb); } else c.append(bgBoth({me:1}));
+  }
+
+  if(n>0){
+    c.append(Object.assign(el("div","tinylabel"),{textContent:"Rounds so far — Odd-Even came up "+odd+" of "+n,style:"margin-top:16px"}));
+    let html="<tr><th>Round</th><th>Game</th><th>You</th><th>"+esc(partnerName)+"</th><th>Your pts</th><th>Their pts</th></tr>";
+    for(let i=0;i<n;i++){ const m=pl(i), u=bgPay(type(i),m[0],m[1]);
+      html+="<tr><td>"+(i+1)+"</td><td>"+BG_NAME[type(i)]+"</td><td>"+esc(d.seq[i])+"</td><td>"+esc(theirs(i))+"</td><td class='cell'>"+u[role-1]+"</td><td class='cell'>"+u[2-role]+"</td></tr>"; }
+    const t=el("table","matrix"); t.style.fontSize=".82rem"; t.innerHTML=html;
+    const sc=el("div","tablescroll"); sc.style.marginTop="6px"; sc.append(t); c.append(sc);
+  }
+  if(bot){ const lv=el("button","ghost-btn","Exit practice"); lv.style.marginTop="16px"; lv.onclick=()=>liveExitBot(mc, "bayes-"+curKey); c.append(lv); }
+  else if(!over){ const lv=el("button","btn danger","Restart"); lv.style.marginTop="16px"; lv.onclick=()=>liveLeaveMatch(mc); c.append(lv); }
+}
+
+/* Theory at a given chance of Odd-Even. */
+function bgPredict(p){
+  if(p<0.5) return {regime:"low", p1:1, mMatch:1, oMis:1, u1:1-p, u2:1};
+  if(p>0.5) return {regime:"high", p1:0.5, mMatch:0.5, oMis:0.5, u1:0.5, u2:0.5};
+  return {regime:"edge", p1:null, mMatch:null, oMis:null, u1:0.5, u2:null};
+}
+/* The Bayesian normal form: Player 2's strategy = (move if Matching, move if Odd-Even); expected payoffs. */
+function bgNormalForm(p){
+  const S1=["1","2"], S2=[["1","1"],["1","2"],["2","1"],["2","2"]];
+  const val=(a1,s)=>{ const m=bgPay("M",a1,s[0]), o=bgPay("O",a1,s[1]); return [(1-p)*m[0]+p*o[0], (1-p)*m[1]+p*o[1]]; };
+  const ne=(i,j)=>{ const v=val(S1[i],S2[j]); return S1.every(a=>val(a,S2[j])[0]<=v[0]+1e-9) && S2.every(s=>val(S1[i],s)[1]<=v[1]+1e-9); };
+  const r=x=>fmt(Math.round(x*100)/100,2);
+  let html="<tr><th></th>"+S2.map(s=>"<th style='color:var(--gold)'>"+s.join("")+"</th>").join("")+"</tr>";
+  const eqs=[];
+  S1.forEach((a,i)=>{ html+="<tr><th style='color:var(--accent-ink)'>P1: "+a+"</th>"+S2.map((s,j)=>{ const v=val(a,s), star=ne(i,j); if(star) eqs.push("("+a+", "+s.join("")+")");
+    return "<td class='cell'"+(star?" style='background:var(--good-wash);box-shadow:inset 0 0 0 2px var(--good)'":"")+"><span style='color:var(--accent-ink)'>"+r(v[0])+"</span>, <span style='color:var(--gold)'>"+r(v[1])+"</span>"+(star?" <b style='color:var(--good)'>★</b>":"")+"</td>"; }).join("")+"</tr>"; });
+  return {html, eqs};
+}
+function analyzeBayes(list, teacher){
+  list=list.filter(s=>isDone(s)&&!s.bot);
+  const pairs=mutualPairs(list);
+  const pUsed=(()=>{ const v=list.map(s=>s.pOdd).filter(x=>x!=null&&x!==""); return v.length? (+v[0])/100 : bgCfg().p; })();
+  const pr=bgPredict(pUsed);
+  let rounds=0, oN=0, u1=0, u2=0, mN=0, mMatch=0, oMis=0;
+  const p1Pred=[], half=[[],[]], cells={M:{},O:{}}, plans={};
+  const rows=[];
+  pairs.forEach(pp=>{
+    let s1=pp.find(s=>s.role==="P1"), s2=pp.find(s=>s.role==="P2");
+    if(!s1||!s2||s1===s2){ s1=pp[0]; s2=pp[1]; }
+    const m1=bgList(s1), m2=bgList(s2), ty=bgList(s2,"types").length? bgList(s2,"types") : bgList(s1,"types");
+    const L=Math.min(m1.length,m2.length,ty.length); if(!L) return;
+    let pu1=0, pu2=0;
+    for(let i=0;i<L;i++){ const t=ty[i], u=bgPay(t,m1[i],m2[i]); rounds++; u1+=u[0]; u2+=u[1]; pu1+=u[0]; pu2+=u[1];
+      const k=m1[i]+m2[i]; cells[t][k]=(cells[t][k]||0)+1;
+      if(t==="O"){ oN++; if(m1[i]!==m2[i]) oMis++; } else { mN++; if(m1[i]===m2[i]) mMatch++; } }
+    const share=arr=>{ if(!arr.length) return null; const ones=arr.filter(x=>x==="1").length; return Math.max(ones, arr.length-ones)/arr.length; };
+    const a1=m1.slice(0,L); p1Pred.push(share(a1));
+    const h=Math.ceil(L/2); if(L>=4){ half[0].push(share(a1.slice(0,h))); half[1].push(share(a1.slice(h))); }
+    // Player 2's plan, judged against Player 1's usual number u: match it in the Matching Game, counter it in Odd-Even?
+    const ones=a1.filter(x=>x==="1").length, usual = ones>L-ones ? "1" : "2";
+    const inM=[], inO=[]; for(let i=0;i<L;i++) (ty[i]==="M"?inM:inO).push(m2[i]);
+    const mS = inM.length ? inM.filter(x=>x===usual).length/inM.length : null, oS = inO.length ? inO.filter(x=>x!==usual).length/inO.length : null;
+    const all=m2.slice(0,L), same=share(all);
+    const plan = (mS!=null&&oS!=null&&mS>=0.6&&oS>=0.6) ? "Equilibrium plan" : same>=0.8 ? "Same number always" : "Mixed / other";
+    plans[plan]=(plans[plan]||0)+1;
+    rows.push({s1,s2,L,pu1,pu2,a1:a1.join(""),a2:all.join(""),ty:ty.slice(0,L).join("").replace(/M/g,"m").replace(/O/g,"o")});
+  });
+  const avg=a=>a.length? a.reduce((s,v)=>s+v,0)/a.length : null;
+  const wrap=el("div","stack");
+  const predTxt = v=> v==null ? "50–100%" : pct(v);
+  const tiles=el("div","stats");
+  tiles.append(
+    statTile("Matches", String(pairs.length), rounds? fmt(rounds/Math.max(1,pairs.length),0)+" rounds each" : "no complete pairs yet"),
+    statTile("Odd-Even rounds", rounds?pct(oN/rounds):"—", "chance set at "+pct(pUsed)),
+    statTile("Player 1 predictability", p1Pred.length?pct(avg(p1Pred)):"—", "BNE: "+predTxt(pr.p1)+" · share of his usual number", true),
+    statTile("Points per round", rounds? fmt(u1/rounds,2)+" · "+fmt(u2/rounds,2) : "—", "P1 · P2 — BNE "+fmt(pr.u1,2)+" · "+(pr.u2==null?"0.5–1":fmt(pr.u2,2))));
+  wrap.append(tiles);
+
+  if(p1Pred.length){
+    const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Player 1: how predictable was he?"}));
+    const items=[{label:"Whole match", value:Math.round(1000*avg(p1Pred))/10, color:"var(--accent)"}];
+    if(half[0].length){ items.push({label:"First half", value:Math.round(1000*avg(half[0]))/10, color:"var(--muted)"}, {label:"Second half", value:Math.round(1000*avg(half[1]))/10, color:"var(--accent)"}); }
+    if(pr.p1!=null) items.push({label:"BNE prediction", value:Math.round(pr.p1*1000)/10, color:"var(--gold)"});
+    card.append(barChart(items, 100, true, "%"));
+    const stuck=p1Pred.filter(x=>x>=0.9).length;
+    card.append(Object.assign(el("div","cap"),{textContent:"Predictability = the share of rounds Player 1 showed his usual number (50% = a coin flip, 100% = always the same). "+stuck+" of "+p1Pred.length+" Player 1s stuck to one number in at least 90% of rounds."+(pr.regime==="edge"?" At exactly 50% theory doesn't pin it down: anything from 50% to 100% is an equilibrium.":"")}));
+    wrap.append(card);
+  }
+  if(mN+oN){
+    const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Player 2: did she use what only she knew?"}));
+    const items=[];
+    if(mN) items.push({label:"Matching: same as P1", value:Math.round(1000*mMatch/mN)/10, color:"#2e8b57"});
+    if(oN) items.push({label:"Odd-Even: different", value:Math.round(1000*oMis/oN)/10, color:"#b5651d"});
+    card.append(barChart(items, 100, true, "%"));
+    card.append(Object.assign(el("div","cap"),{textContent:"How often Player 2 got what she wanted in each game: the same number as Player 1 in the Matching Game, a different one in Odd-Even. BNE: "+(pr.regime==="low"?"100% in both (Player 1 is predictable, so both types can read him).":pr.regime==="high"?"about 50% in both (Player 1 mixes, so neither type can read him).":"anywhere from 50% to 100%, depending on how predictable Player 1 is.")}));
+    const pk=Object.keys(plans);
+    if(pk.length){ const order=["Equilibrium plan","Same number always","Mixed / other"];
+      card.append(Object.assign(el("div","tinylabel"),{textContent:"Player 2's plan (a strategy is a plan for each type)",style:"margin-top:10px"}));
+      card.append(barChart(order.filter(k=>plans[k]).map(k=>({label:k, value:plans[k], color:k.startsWith("Equilibrium")?"#2e8b57":k.startsWith("Same")?"#b5651d":"var(--faint)"})), null, true, ""));
+      card.append(Object.assign(el("div","cap"),{textContent:"Equilibrium plan = matched Player 1's usual number in at least 60% of Matching rounds AND showed the other number in at least 60% of Odd-Even rounds. Same number always = one number in at least 80% of rounds, whatever the game."})); }
+    wrap.append(card);
+  }
+  if(rounds){
+    const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"What happened in each game"}));
+    const row=el("div"); row.style.cssText="display:flex;gap:16px;flex-wrap:wrap";
+    ["O","M"].forEach(t=>{ const tot=["11","12","21","22"].reduce((s,k)=>s+(cells[t][k]||0),0); if(!tot) return;
+      const box=el("div"); box.style.cssText="flex:1 1 240px;min-width:0";
+      box.append(Object.assign(el("div","tinylabel"),{textContent:BG_NAME[t]+" — "+tot+" rounds",style:"margin-bottom:4px"}));
+      const cell=(a,b)=>{ const k=a+b, v=cells[t][k]||0, u=bgPay(t,a,b), sh=v/tot;
+        return "<td class='cell' style='background:color-mix(in srgb, var(--accent) "+Math.round(sh*55)+"%, transparent)'><b>"+pct(sh)+"</b><div class='sm mut'>("+u[0]+", "+u[1]+") · "+v+"</div></td>"; };
+      const tb=el("table","matrix"); tb.style.fontSize=".85rem";
+      tb.innerHTML="<tr><th></th><th style='color:var(--gold)'>P2: 1</th><th style='color:var(--gold)'>P2: 2</th></tr><tr><th style='color:var(--accent-ink)'>P1: 1</th>"+cell("1","1")+cell("1","2")+"</tr><tr><th style='color:var(--accent-ink)'>P1: 2</th>"+cell("2","1")+cell("2","2")+"</tr>";
+      box.append(tb); row.append(box); });
+    card.append(row);
+    card.append(Object.assign(el("div","cap"),{textContent:"Share of rounds in each cell (payoffs P1, P2 · count)."}));
+    wrap.append(card);
+  }
+  const nf=bgNormalForm(pUsed);
+  const nc=el("div","chart-card"); nc.append(Object.assign(el("h3"),{textContent:"The Bayesian game at "+pct(pUsed)+" Odd-Even — expected payoffs"}));
+  const nt=el("table","matrix"); nt.style.cssText="font-size:.88rem;width:auto"; nt.innerHTML=nf.html;
+  const ns=el("div","tablescroll"); ns.append(nt); nc.append(ns);
+  nc.append(Object.assign(el("div","cap"),{textContent:"Player 2's strategy is a plan for each type: first digit = her move in the Matching Game, second = in Odd-Even (so 21 = show 2 if Matching, 1 if Odd-Even). "+(nf.eqs.length?"★ Bayesian Nash equilibri"+(nf.eqs.length===1?"um: ":"a: ")+nf.eqs.join(" and ")+".":"No pure-strategy BNE: Player 1 must mix.")}));
+  wrap.append(nc);
+  const note=el("div","note-box"); note.style.marginTop="4px";
+  const lessonEnd=" The informed player's strategy is a <b>plan for each type</b>: match Player 1 in the Matching Game, counter him in Odd-Even.";
+  note.innerHTML = pr.regime==="low"
+    ? "<b>The lesson.</b> Player 1 wins by matching in <i>both</i> games, so being predictable helps him against the Matching type (who wants to match) and hurts him against the Odd-Even type (who wants to counter). With Odd-Even only <b>"+pct(pUsed)+"</b> likely, predictability pays: stick to one number and earn "+fmt(1-pUsed,2)+" a round (1 × "+pct(1-pUsed)+" + 0 × "+pct(pUsed)+"). Which number is just a convention — (1, 12) and (2, 21) are both BNEs."+lessonEnd+" Try the same game at 75%: then being predictable feeds the Odd-Even type, and Player 1 should mix 50/50."
+    : pr.regime==="high"
+    ? "<b>The lesson.</b> Player 1 wins by matching in both games. With Odd-Even <b>"+pct(pUsed)+"</b> likely, being predictable mostly feeds the Odd-Even type, who counters him. If he always showed one number he'd earn only "+fmt(1-pUsed,2)+" a round, so in equilibrium he <b>mixes 50/50</b> and earns 0.5 whatever happens. There is no pure-strategy BNE."+lessonEnd
+    : "<b>The lesson.</b> At exactly 50% Player 1 earns 0.5 whatever he does: predictability gains from the Matching type exactly what the Odd-Even type takes away. That's the tipping point — below 50% he should be predictable, above it unpredictable."+lessonEnd;
+  wrap.append(note);
+  wrap.append(pairingsCard(pairs, pp=>{ const r=rows.find(x=>pp.includes(x.s1)); if(!r) return pairName(pp[0])+" ↔ "+pairName(pp[1]);
+    return pairName(r.s1)+" (P1, "+r.pu1+")  ↔  "+pairName(r.s2)+" (P2, "+r.pu2+") · "+r.L+" rounds · games "+r.ty+" · P1 "+r.a1+" / P2 "+r.a2; }));
   const orph=orphanWarning(list, pairs); if(orph) wrap.append(orph);
   return wrap;
 }
@@ -4238,6 +4507,7 @@ function analysisBody(g, list, teacher){
   if(g==="attackdefend") return analyzeAttackDefend(list);
   if(g==="adwar") return analyzeAdWar(list);
   if(g==="adfin") return analyzeAdWar(list, true);
+  if(g==="bayes") return analyzeBayes(list, teacher);
   if(g==="robot") return analyzeRobot(list, teacher);
   return analyzePG(list);
 }
@@ -4250,6 +4520,7 @@ function revealNarr(g){
   if(g==="attackdefend") return "How did the class attack and defend Blotto's town — and how often did it fall?";
   if(g==="adwar") return "Did facing the same rival again and again keep firms advertising Low?";
   if(g==="adfin") return "Did knowing the last round make cooperation unravel?";
+  if(g==="bayes") return "Did Player 1 play predictably — and did Player 2 use what only she knew?";
   if(g==="robot") return "Which robot strategies earned the most — and which ones got exploited?";
   return "How close did the group get to the socially optimal outcome?";
 }
@@ -5503,10 +5774,10 @@ const TREE_PRESETS = {
   three:{ name:"Plans for unreached nodes",
     t:{p:1,a:[["Out",[1,4]],["In",{p:2,a:[["F",[0,0]],["A",{p:1,a:[["x",[3,1]],["y",[2,2]]]}]]}]]},
     note:"P1 moves twice → 2 information sets → 4 strategies, including plans like Out·x: what P1 WOULD do at a node that Out never reaches. A strategy is a complete plan, so these count — and the Out·x and Out·y rows are identical. (Out, F) is a Nash equilibrium that rests on the threat to Fight; in the subgame after In, P2 would Accommodate." },
-  pb:  { name:"Bayesian: Pennies or Bidding", bayes:true, hidden:true,   // hidden until Bayesian games are taught
-    t:{p:0,a:[["MP",{p:2,a:[["1",{p:1,i:"z",a:[["1",[1,0]],["2",[0,1]]]}],["2",{p:1,i:"z",a:[["1",[0,1]],["2",[1,0]]]}]]},0.5],
-              ["Bid",{p:2,a:[["1",{p:1,i:"z",a:[["1",[0,0]],["2",[1,0]]]}],["2",{p:1,i:"z",a:[["1",[0,1]],["2",[0,0]]]}]]},0.5]]},
-    note:"Nature picks the game. P2 knows it → one information set per type → 4 strategies (11, 12, 21, 22: first digit = her move in MP, second = in Bidding). P1 knows neither the game nor P2's move → one information set with 4 nodes → 2 strategies. Only 1 subgame. Every cell is an EXPECTED payoff: ½ × the MP outcome + ½ × the Bidding outcome." },
+  bg:  { name:"Bayesian: Odd-Even or Matching", bayes:true, hidden:true,   // hidden until Bayesian games are taught (same games as G11, at 25% Odd-Even)
+    t:{p:0,a:[["Matching",{p:2,a:[["1",{p:1,i:"z",a:[["1",[1,1]],["2",[0,0]]]}],["2",{p:1,i:"z",a:[["1",[0,0]],["2",[1,1]]]}]]},0.75],
+              ["Odd-Even",{p:2,a:[["1",{p:1,i:"z",a:[["1",[1,0]],["2",[0,1]]]}],["2",{p:1,i:"z",a:[["1",[0,1]],["2",[1,0]]]}]]},0.25]]},
+    note:"Nature picks the game (Matching 75%, Odd-Even 25%). P2 knows it → one information set per type → 4 strategies (first digit = her move in the Matching Game, second = in Odd-Even). P1 knows neither the game nor P2's move → one information set with 4 nodes → 2 strategies. Only 1 subgame. Every cell is an EXPECTED payoff. Two Bayesian Nash equilibria, (1, 12) and (2, 21): P1 sticks to a number, the Matching type matches it, the Odd-Even type counters it — the same game as G11." },
   tinder:{ name:"Bayesian: Tinder BoS", bayes:true, hidden:true,
     t:{p:0,a:[["Meet",{p:1,i:"f",a:[["F",{p:2,i:"m",a:[["F",[2,1]],["M",[0,0]]]}],["M",{p:2,i:"m",a:[["F",[0,0]],["M",[1,2]]]}]]},0.75],
               ["Avoid",{p:1,i:"f",a:[["F",{p:2,i:"v",a:[["F",[2,0]],["M",[0,2]]]}],["M",{p:2,i:"v",a:[["F",[0,1]],["M",[1,0]]]}]]},0.25]]},
@@ -6043,6 +6314,7 @@ function subValue(s){
   if(s.game==="attackdefend"){ const seq=String(s.seq||"").split(",").filter(Boolean); return "["+seq.join(" ")+"] vs "+(s.partnerName||"?"); }
   if(s.game==="robot"){ const b=rbParse(s.robot); return (s.teamName||"Team")+": "+(b.name||"robot")+" ("+rbFamily(b)+")"; }
   if(s.game==="adwar"||s.game==="adfin"){ const seq=rpSeq(s); return "["+seq.join(" ")+"] vs "+(s.partnerName||"?"); }
+  if(s.game==="bayes") return (s.role||"")+" ["+bgList(s).join(" ")+"] vs "+(s.partnerName||"?");
   return s.value!=null?String(s.value):"—";   // guess23 and default
 }
 /* ── Past results (instructor, READ-ONLY), reached from the Analyze bar for the selected game. While one is
@@ -6221,6 +6493,10 @@ function paramEditor(){
     [[true,"Include"],[false,"Leave out"]].forEach(([v,l])=>{ const b=el("button","ghost-btn"+((cf.house!==false)===v?" hold-on":"")); b.textContent=l; b.onclick=()=>{ if((cf.house!==false)!==v) setHouse(v); }; hr.append(b); });
     wrap.append(hr);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Open submissions → captains sign up and name their teams ("+cf.capMin+" min"+(+cf.teams?", first "+cf.teams+" teams":"")+") → players join or switch teams ("+cf.joinMin+" min, up to "+cf.teamMax+" per team; anyone left over is placed in the smallest teams, no solos) → captains build robots for "+cf.buildMin+" min → you press ⚔ Fight. Tip: number of teams ≈ class size ÷ "+cf.teamMax+". Every robot plays every other one for "+cf.rounds+" rounds of the Advertising Game (G8 payoffs). Scores are NPVs: each round's profit is discounted at "+cf.disc+"% per round (round 1 undiscounted; 0 = plain totals). Students see the rate and the formula while building.",style:"margin-top:6px"})); }
+  else if(g==="bayes"){
+    const grid=el("div","paramgrid"); grid.append(mk("Chance of Odd-Even (%)","pOdd",cf.pOdd), mk("Rounds per match","rounds",cf.rounds)); wrap.append(grid);
+    const {p}=bgCfg(), pr=bgPredict(p);
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Pairs: Player 1 and Player 2 (random, fixed for the match). Each round Nature draws Odd-Even with this chance, otherwise the Matching Game; only Player 2 is told which. Odd-Even: Player 1 wins on an even total, Player 2 on an odd total. Matching Game: both score 1 if they show the same number. Theory at "+Math.round(p*100)+"%: "+(pr.regime==="low"?"Player 1 sticks to one number; Player 2 matches him in the Matching Game and counters him in Odd-Even (P1 earns "+fmt(pr.u1,2)+", P2 1.0 a round).":pr.regime==="high"?"Player 1 mixes 50/50 (no pure BNE); everyone earns 0.5 a round.":"the tipping point — Player 1 earns 0.5 whatever he does.")+" To compare, play another round at a different chance (e.g. 75%) — each round's results are kept separately.",style:"margin-top:6px"})); }
   else if(g==="adfin"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played (announced to students)","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Same High/Low advertising game as G8, but every pair plays exactly this many rounds and students are told so (\"Round 3 of "+rpFinRounds()+"\", with the final round flagged). Backward induction predicts High in every round; compare the class's play near the end with G8.",style:"margin-top:6px"})); }

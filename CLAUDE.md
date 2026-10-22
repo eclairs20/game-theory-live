@@ -612,6 +612,31 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     line, a computed caption naming the winner, boom-and-bust exploiters and types that died out, and a caveat line), Axelrod lesson note + the **NPV test** (perpetuity: cooperate 5+5/r vs cheat 6+4/r → cheating
     pays only if r > 100%, i.e. δ < ½ — the same threshold as G8).
 
+- `bayes` — **Bayesian Game** (**G11**) — incomplete information / **Bayesian Nash equilibrium**. Each round Nature
+  secretly draws the game: **Odd-Even** (chance `pOdd`, default **25%**; Player 1 wins on an even total, Player 2 on an
+  odd total — matching pennies) or the **Matching Game** (both score 1 if they show the same number — coordination).
+  **Player 2 is told which game; Player 1 only knows the odds.** Both show 1 or 2. Config `{ pOdd:25, rounds:20 }`
+  (`bgCfg()`); to compare probabilities the instructor plays another round with a different `pOdd` (each round's results
+  are separate, Analyze bar). Rules wording: P1 "you win on an even total", P2 "you win on an odd total".
+  - Live pairs via the shared lobby (`studentPair("bayes")` → `pairLobby` → **`bgMatch`**, self-contained like `rpMatch`;
+    live-only via `wantLive`). Roles fixed per match: **red → Player 1, black → Player 2** (`pairData.colors`; fallback
+    sorted id); vs the practice bot a one-time random `d.role`. Lockstep with one screen at a time (result → Continue).
+    Nature's draw `bgDraw(seed,i,p)` = `adSeedFloat(sorted ids + mc + pair ts (bot: d.bgNonce) + round)` — never the
+    moves — so both phones agree. P1 sees both tables + "Which game is it? You don't know"; P2 sees "This round you are
+    playing ODD-EVEN / the MATCHING GAME" and only that table. Payoffs `bgPay(type,a1,a2)` → [P1,P2].
+  - Sub: `seq` "1,2,…" (own moves), `types` "M,O,…" (Nature's draws, so analysis needs no seed), `role` P1/P2,
+    `mode:"bg"`, `pOdd`, `rounds`, partner fields. **Practice bot**: as P1 sticks to 2 when pOdd ≤ 50% else 50/50; as P2
+    matches your usual number in Matching and counters it in Odd-Even (revealed only after you move).
+  - **Theory** (`bgPredict`, `bgNormalForm`): P1 wins by matching in both games. pOdd < ½ → two mirror BNEs (1,12) and
+    (2,21) (P2 strategy = move in Matching, move in Odd-Even): P1 sticks to a number, Matching type matches, Odd-Even
+    type counters; payoffs P1 1−p, P2 1. pOdd > ½ → no pure BNE, P1 mixes 50/50, everyone 0.5. pOdd = ½ → knife-edge.
+  - `analyzeBayes`: tiles (matches, realised Odd-Even %, **P1 predictability** = share of his usual number, points per
+    round vs BNE), P1 predictability whole/first half/second half vs prediction, P2 "same as P1 in Matching / different
+    in Odd-Even" + plan classification (Equilibrium plan / Same number always / Mixed), per-game 2×2 cell shares, the
+    Bayesian 2×4 normal form at the round's pOdd with ★ BNEs, lesson note by regime, pairings, orphanWarning.
+  - Live-update rule: `studentSubsSig` hides a partner's move for a round I haven't played yet (bayes only), so a
+    partner moving first never redraws my screen; verified 10/10 taps under ~20 writes/s.
+
 ## Interactive lessons (no submissions)
 - **Pareto optimality** (`paretoLesson`, local `lessonMode="pareto"` + `PZ` state) — an
   instructor-launched, full-screen **payoff-matrix checker** (a teaching visual, not a game;
@@ -632,8 +657,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   Nature's branches give an EXPECTED payoff with the working shown; Fill all; ★ (Bayesian) Nash equilibria). Each tab
   has an "Ask the class" prompt and a Reveal/Hide button. Trees are tiny specs in `TREE_PRESETS` (decision node
   `{p, i, a:[[act, child]]}`, Nature `{p:0, a:[[label, child, prob]]}`, leaf `[u1,u2]`; same player + same `i` = one
-  information set): P2 sees P1 / can't see / sees only some moves / plans for unreached nodes / **Bayesian Pennies or
-  Bidding** and **Bayesian Tinder BoS** (both reproduce the slides' 2×4 tables and BNEs; currently `hidden:true` — not
+  information set): P2 sees P1 / can't see / sees only some moves / plans for unreached nodes / **Bayesian Odd-Even or
+  Matching** (G11's games at 25%) and **Bayesian Tinder BoS** (Tinder reproduces the slides' 2×4 table and BNEs; both currently `hidden:true` — not
   offered in the Examples row until Bayesian games are taught; remove the flag to show them). Engine: `treeBuild`
   (layout, information sets, subgame test), `trStrats`, `trEval`, `treeSVG`. Also on the hub (`HUB_LESSONS` "trees").
   **Lessons are local:** while `lessonMode` is set, shared-data activity (subs, the instructor's control echo) does not
@@ -646,7 +671,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   reveal, next round, clear round data, edit parameters). First run sets the passcode.
 - **Console layout** (`teacherConsole`) — a **single full-width column** (`.console`,
   `grid-template-areas:"top" "main"`, **no side rail**): a **full-width Choose exercise** picker
-  (`.console-top` — the G1–G6 game tiles + the IL1 Pareto lesson) over the **main** panel. The
+  (`.console-top` — the game tiles + the IL1/IL2 lessons) over the **main** panel. The
   chosen game's **Parameters** card stacks at the **top of the main panel** (first card, full width),
   followed by the unscheduled-day/Undo banner, the session label + section/hold bar (`sessionTile`, no
   session stepper), the 🔒 line when open, round controls (or the "Back to today" line), the **Analyze** bar
