@@ -624,6 +624,19 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   Give-or-Keep bridge where the one dominated cell IS the Nash outcome; "efficient ≠ fair"; a
   single-winner case), and a companion payoff-space mini-map (`paretoMiniMap`). Add future
   lessons the same way: a `lessonMode` value + a full-screen builder + a Lessons-section button.
+- **Game trees → normal form** (**IL2**; `treesLesson`, `lessonMode="trees"`, local `TZ` state, `treeInit(key)`) — the
+  extensive-to-normal-form conversion in four tabs: **① Information sets** (tap a node → its set; Reveal draws each set
+  as a labelled band, e.g. P2·1), **② Subgames** (tap a node to test it — shaded if a subgame starts there, else the
+  reason; Reveal lists SG1…), **③ Strategies** (product of actions over the player's information sets, every strategy
+  listed, incl. plans for unreached nodes), **④ Normal form** (tap a cell → its payoff + the lit path in the tree;
+  Nature's branches give an EXPECTED payoff with the working shown; Fill all; ★ (Bayesian) Nash equilibria). Each tab
+  has an "Ask the class" prompt and a Reveal/Hide button. Trees are tiny specs in `TREE_PRESETS` (decision node
+  `{p, i, a:[[act, child]]}`, Nature `{p:0, a:[[label, child, prob]]}`, leaf `[u1,u2]`; same player + same `i` = one
+  information set): P2 sees P1 / can't see / sees only some moves / plans for unreached nodes / **Bayesian Pennies or
+  Bidding** and **Bayesian Tinder BoS** (both reproduce the slides' 2×4 tables and BNEs). Engine: `treeBuild`
+  (layout, information sets, subgame test), `trStrats`, `trEval`, `treeSVG`. Also on the hub (`HUB_LESSONS` "trees").
+  **Lessons are local:** while `lessonMode` is set, shared-data activity (subs, the instructor's control echo) does not
+  redraw the screen (`scheduleSubsRender`, `teacherRenderSoon`, `onCtrl` return early), so taps aren't lost.
 
 ## Roles & flow
 - Student: open link → sign in with Google (or enter a name) → submit → sees own submission +

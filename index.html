@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-21.004";
+const APP_VERSION = "2026-10-22.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -716,11 +716,11 @@ function hubPracticeKeys(){ return hubCfg().practiceKeys||{}; }
 const lessonVisible = id => !!(hubCfg().lessons && hubLessonKeys()[id]);
 /* Interactive lessons available to expose on the hub. Add a new lesson here + a case in
    launchLesson() and it becomes individually tick-able in the console. */
-const HUB_LESSONS = [ {id:"pareto", name:"Pareto optimality"} ];
+const HUB_LESSONS = [ {id:"pareto", name:"Pareto optimality"}, {id:"trees", name:"Game trees → normal form"} ];
 /* Games that have a practice bot (the two-player card games). The instructor ticks which
    of these students may practise; label uses a short name. */
 const HUB_PRACTICE = [ {id:"quatro", name:"Quatro Uno"}, {id:"redblack", name:"Red vs Black"} ];
-function launchLesson(id){ if(id==="pareto"){ paretoInit("dilemma"); lessonMode="pareto"; render(); } }
+function launchLesson(id){ if(id==="pareto"){ paretoInit("dilemma"); lessonMode="pareto"; render(); } if(id==="trees"){ treeInit("seq"); lessonMode="trees"; render(); } }
 /* Canonical game order (the GAMES key order) so meeting lists never look randomly shuffled. */
 const GAME_ORDER = Object.keys(GAMES);
 /* Deterministic meeting order: grouped by game (GAMES key order), then session, section, round — so
@@ -1123,6 +1123,7 @@ function onCtrl(snap){
   if(sig!==_ctrlSig){ studentTab=null; _ctrlSig=sig; }
   recompute();
   const cs=studentCtrlSig(); if(cs!==null && cs===_drawn.ctrl) return;   // e.g. a roll-call tick: nothing this student sees
+  if(lessonMode && isTeacher()) return;   // an interactive lesson shows nothing from control
   render();
 }
 /* What a STUDENT's screen takes from `control`: everything except roll-call ticks (control.attend), which
@@ -1150,7 +1151,7 @@ function onSubGone(snap){ if(snap&&snap.key){ delete allSubs[snap.key]; schedule
 const _drawn={subs:null, rb:null, ctrl:null};
 let _teachRT=null, _teachAt=0;
 function teacherRenderSoon(){ if(_teachRT) return;
-  _teachRT=setTimeout(()=>{ _teachRT=null; _teachAt=Date.now(); render(); }, Math.max(60, 1000-(Date.now()-_teachAt))); }
+  _teachRT=setTimeout(()=>{ _teachRT=null; _teachAt=Date.now(); if(lessonMode) return; render(); }, Math.max(60, 1000-(Date.now()-_teachAt))); }
 let _subsRenderT=null;
 /* In a live pair match (G5–G9) a student's screen depends only on their OWN sub, their partner's sub and the
    class "submitted" count — but every classmate's move fires a subs change, and redrawing the whole screen on
@@ -1168,6 +1169,7 @@ function scheduleSubsRender(){
   if(_subsRenderT) return;
   _subsRenderT=setTimeout(()=>{ _subsRenderT=null; recompute();
     if(isTeacher()){ teacherRenderSoon(); return; }   // live preview changes with every sub — capped at ~1/s
+    if(lessonMode) return;   // a student in an interactive lesson sees nothing from subs
     const sg=studentSubsSig(); if(sg!==null && sg===_drawn.subs) return;
     render(); }, 60);
 }   // coalesce the initial burst + live changes into one render per frame
@@ -1533,6 +1535,7 @@ function render(){
   // Interactive lessons — instructor-launched, or student-launched from the hub (Lessons on).
   if(lessonMode && !isTeacher() && !(hubOn() && lessonVisible(lessonMode))) lessonMode=null;
   if(lessonMode==="pareto"){ app.replaceChildren(paretoLesson()); return; }
+  if(lessonMode==="trees"){ app.replaceChildren(treesLesson()); return; }
   // Instructor manual roll-call page (full-screen).
   if(rollMode && !isTeacher()) rollMode=false;
   if(rollMode){ app.replaceChildren(rollCall()); return; }
@@ -5482,6 +5485,251 @@ function paretoMiniMap(stats){
     +dots+'</svg>';
   const box=el("div","pminimap"); box.innerHTML=svg; return box;
 }
+/* ═══════════════════════ LESSON: GAME TREES → NORMAL FORM ═══════════════════════ */
+/* Instructor-projected (also hub-launchable) visual for turning an extensive-form game into its normal form:
+   count information sets, subgames and pure strategies, then fill the matrix cell by cell. Touches no Firebase.
+   Tree spec: decision node {p:1|2, i:"set key", a:[[action, child], …]}, Nature {p:0, a:[[label, child, prob], …]},
+   leaf [u1, u2]. Nodes with the same player and set key form ONE information set (drawn with a dashed line). */
+const TREE_PRESETS = {
+  seq: { name:"P2 sees P1's move",
+    t:{p:1,a:[["L",{p:2,a:[["a",[3,1]],["b",[1,2]]]}],["R",{p:2,a:[["c",[2,3]],["d",[0,0]]]}]]},
+    note:"P2 sees P1's move, so each of her nodes is its own information set: 2 sets → 2 × 2 = 4 strategies. A strategy says what she does after L AND after R (bc = b after L, c after R). 3 subgames: the whole game plus one after each P1 move. Two Nash equilibria: (R, bc), and (L, bd), which only works because P2 threatens d after R — a threat that hurts her too, so it isn't credible." },
+  sim: { name:"P2 can't see P1's move",
+    t:{p:1,a:[["L",{p:2,i:"x",a:[["a",[3,1]],["b",[1,2]]]}],["R",{p:2,i:"x",a:[["a",[2,3]],["b",[0,0]]]}]]},
+    note:"Same tree, but the dashed line says P2 can't tell L from R: ONE information set → only 2 strategies, and the normal form is a plain 2 × 2 — this is how a simultaneous game looks as a tree. Only 1 subgame: starting at either P2 node would cut her information set." },
+  part:{ name:"P2 sees only some moves",
+    t:{p:1,a:[["L",{p:2,a:[["a",[2,1]],["b",[0,0]]]}],["M",{p:2,i:"y",a:[["c",[3,0]],["d",[0,2]]]}],["R",{p:2,i:"y",a:[["c",[0,2]],["d",[1,1]]]}]]},
+    note:"P2 sees L but can't tell M from R: 2 information sets (one with 1 node, one with 2) → 2 × 2 = 4 strategies, and P1 has 3. 2 subgames: the whole game and the one after L — the M and R nodes can't start one." },
+  three:{ name:"Plans for unreached nodes",
+    t:{p:1,a:[["Out",[1,4]],["In",{p:2,a:[["F",[0,0]],["A",{p:1,a:[["x",[3,1]],["y",[2,2]]]}]]}]]},
+    note:"P1 moves twice → 2 information sets → 4 strategies, including plans like Out·x: what P1 WOULD do at a node that Out never reaches. A strategy is a complete plan, so these count — and the Out·x and Out·y rows are identical. (Out, F) is a Nash equilibrium that rests on the threat to Fight; in the subgame after In, P2 would Accommodate." },
+  pb:  { name:"Bayesian: Pennies or Bidding", bayes:true,
+    t:{p:0,a:[["MP",{p:2,a:[["1",{p:1,i:"z",a:[["1",[1,0]],["2",[0,1]]]}],["2",{p:1,i:"z",a:[["1",[0,1]],["2",[1,0]]]}]]},0.5],
+              ["Bid",{p:2,a:[["1",{p:1,i:"z",a:[["1",[0,0]],["2",[1,0]]]}],["2",{p:1,i:"z",a:[["1",[0,1]],["2",[0,0]]]}]]},0.5]]},
+    note:"Nature picks the game. P2 knows it → one information set per type → 4 strategies (11, 12, 21, 22: first digit = her move in MP, second = in Bidding). P1 knows neither the game nor P2's move → one information set with 4 nodes → 2 strategies. Only 1 subgame. Every cell is an EXPECTED payoff: ½ × the MP outcome + ½ × the Bidding outcome." },
+  tinder:{ name:"Bayesian: Tinder BoS", bayes:true,
+    t:{p:0,a:[["Meet",{p:1,i:"f",a:[["F",{p:2,i:"m",a:[["F",[2,1]],["M",[0,0]]]}],["M",{p:2,i:"m",a:[["F",[0,0]],["M",[1,2]]]}]]},0.75],
+              ["Avoid",{p:1,i:"f",a:[["F",{p:2,i:"v",a:[["F",[2,0]],["M",[0,2]]]}],["M",{p:2,i:"v",a:[["F",[0,1]],["M",[1,0]]]}]]},0.25]]},
+    note:"Nature picks P2's type (wants to Meet 0.75, wants to Avoid 0.25). P1 doesn't know it: 1 information set → 2 strategies. P2 knows her type but not P1's move: one information set per type → 2 × 2 = 4 strategies (FM = Football if Meet, Movie if Avoid). 1 subgame. Two Bayesian Nash equilibria: (F, FM) and (M, MF)." }
+};
+let TZ=null;
+function treeInit(key){ TZ={preset:key, T:treeBuild(TREE_PRESETS[key].t), step:1, rev:{}, node:null, cell:null, filled:{}, ne:false, sg:null}; }
+function treeBuild(spec){
+  const nodes=[]; let leafN=0;
+  (function walk(s, parent, act, depth, hist){
+    const id=nodes.length;
+    if(Array.isArray(s)){ nodes.push({id, leaf:true, pay:s, parent, act, depth, hist, x:leafN++}); return id; }
+    const n={id, p:s.p, ikey:s.i, acts:s.a.map(x=>x[0]), probs:s.a.map(x=>x[2]), kids:[], parent, act, depth, hist};
+    nodes.push(n);
+    s.a.forEach(([lab,ch])=>{ n.kids.push(walk(ch, id, lab, depth+1, hist.concat(lab))); });
+    n.x=n.kids.reduce((t,k)=>t+nodes[k].x,0)/n.kids.length;
+    return id;
+  })(spec, null, null, 0, []);
+  const sets=[], byKey={};
+  nodes.filter(n=>!n.leaf).sort((a,b)=>a.depth-b.depth||a.x-b.x).forEach(n=>{
+    const k = n.p===0 ? "N"+n.id : (n.ikey!=null ? n.p+":"+n.ikey : n.p+"#"+n.id);
+    if(!byKey[k]){ byKey[k]={key:k, p:n.p, nodes:[], acts:n.acts}; sets.push(byKey[k]); }
+    byKey[k].nodes.push(n.id); n.set=byKey[k];
+  });
+  [1,2].forEach(p=>{ let i=0; sets.filter(s=>s.p===p).forEach(s=>{ s.idx=i++; s.name="P"+p+"·"+i; }); });
+  const sub=id=>{ const out=[]; (function w(i){ out.push(i); (nodes[i].kids||[]).forEach(w); })(id); return out; };
+  // A subgame starts at a node that is alone in its information set and whose subtree never cuts an information set.
+  nodes.forEach(n=>{ if(n.leaf) return; const st=new Set(sub(n.id));
+    if(n.set.nodes.length>1){ n.sg=false; n.why="it shares information set "+n.set.name+" with another node — P"+n.p+" wouldn't even know the game had started here"; return; }
+    const cut=nodes.find(m=>st.has(m.id)&&!m.leaf&&m.set.nodes.some(x=>!st.has(x)));
+    if(cut){ n.sg=false; n.why="it would cut information set "+cut.set.name+" in two (part of it lies outside)"; return; }
+    n.sg=true; n.sub=[...st]; });
+  return {nodes, sets, leaves:leafN, maxDepth:Math.max(...nodes.map(n=>n.depth)), sub};
+}
+const trWhere = n => n.hist.length ? "after "+n.hist.join(", ") : "the start";
+function trStrats(T,p){
+  const ss=T.sets.filter(s=>s.p===p);
+  let out=[[]]; ss.forEach(s=>{ const nx=[]; out.forEach(o=>s.acts.forEach(a=>nx.push(o.concat(a)))); out=nx; });
+  const short=ss.every(s=>s.acts.every(a=>String(a).length===1));
+  return out.map(v=>({v, label:v.join(short?"":"·")}));
+}
+/* Expected payoffs of a pure-strategy profile; `path` (optional) collects the edges taken and the leaves reached. */
+function trEval(T,s1,s2,path){
+  const go=(id,w)=>{ const n=T.nodes[id];
+    if(n.leaf){ if(path) path.leaves.push({id,w}); return [n.pay[0]*w, n.pay[1]*w]; }
+    if(n.p===0){ let t=[0,0]; n.kids.forEach((k,j)=>{ if(path) path.edges.add(k); const r=go(k,w*n.probs[j]); t=[t[0]+r[0],t[1]+r[1]]; }); return t; }
+    const s=n.p===1?s1:s2, k=n.kids[n.acts.indexOf(s[n.set.idx])]; if(path) path.edges.add(k); return go(k,w); };
+  return go(0,1);
+}
+const trNum = v => fmt(Math.round(v*1000)/1000, 2);
+const trCol = p => p===1 ? "var(--accent-ink)" : p===2 ? "var(--gold)" : "var(--muted)";
+function treeSVG(T, hl){
+  const L=T.leaves, W=Math.max(460, L*96), LH=104, H=T.maxDepth*LH+92, padX=34, top=36;
+  const X=n=> padX+(n.x+0.5)*(W-2*padX)/L, Y=n=> top+n.depth*LH;
+  const svg=svgEl("svg",{viewBox:"0 0 "+W+" "+H, role:"img", "aria-label":"game tree"});
+  svg.setAttribute("style","width:100%;max-width:"+Math.min(W,820)+"px;display:block;margin:0 auto;font-family:'IBM Plex Sans',sans-serif");
+  const N=T.nodes;
+  // subgame shading
+  if(hl.sgNode!=null){ const n=N[hl.sgNode];
+    if(n.sg){ const xs=n.sub.map(i=>X(N[i])); svg.append(svgEl("rect",{x:Math.min(...xs)-30, y:Y(n)-24, width:Math.max(...xs)-Math.min(...xs)+60, height:H-Y(n)+14, rx:14, fill:"color-mix(in srgb, var(--good) 12%, transparent)", stroke:"var(--good)", "stroke-dasharray":"4 3"})); } }
+  // information sets with more than one node: a dashed line (or, once revealed, a labelled band)
+  T.sets.forEach(s=>{ if(s.p===0) return; const ns=s.nodes.map(i=>N[i]).sort((a,b)=>X(a)-X(b));
+    const on=hl.sets, multi=ns.length>1, col=trCol(s.p);
+    if(on){ const x0=X(ns[0])-22, x1=X(ns[ns.length-1])+22, y=Y(ns[0]);
+      svg.append(svgEl("rect",{x:x0, y:y-20, width:x1-x0, height:40, rx:20, fill:"color-mix(in srgb, "+col+" 14%, transparent)", stroke:col, "stroke-width":hl.selSet===s?3:1.5, "stroke-dasharray":multi?"6 4":"none"}));
+      svg.append(svgEl("text",{x:x1+4, y:y-22, "font-size":12, "font-weight":700, fill:col}, s.name)); }
+    else if(multi){ for(let i=1;i<ns.length;i++) svg.append(svgEl("line",{x1:X(ns[i-1]), y1:Y(ns[i-1]), x2:X(ns[i]), y2:Y(ns[i]), stroke:"var(--ink)", "stroke-width":1.6, "stroke-dasharray":"6 5"})); }
+  });
+  // edges + action labels
+  N.forEach(n=>{ if(n.parent==null) return; const p=N[n.parent], on=hl.edges&&hl.edges.has(n.id), j=p.kids.indexOf(n.id);
+    svg.append(svgEl("line",{x1:X(p), y1:Y(p), x2:X(n), y2:Y(n), stroke:on?"var(--good)":"var(--line)", "stroke-width":on?4:2}));
+    const mx=(X(p)+X(n))/2, my=(Y(p)+Y(n))/2, left=X(n)<X(p);
+    const lab=n.act+(p.p===0?" ("+trNum(p.probs[j])+")":"");
+    svg.append(svgEl("text",{x:mx+(left?-8:8), y:my, "text-anchor":left?"end":"start", "font-size":13, "font-weight":700, fill:p.p===0?"var(--muted)":trCol(p.p)}, lab)); });
+  // nodes
+  N.forEach(n=>{ const x=X(n), y=Y(n);
+    if(n.leaf){ const reached=hl.leaves&&hl.leaves.has(n.id);
+      if(reached) svg.append(svgEl("rect",{x:x-30, y:y-4, width:60, height:26, rx:7, fill:"color-mix(in srgb, var(--good) 16%, transparent)", stroke:"var(--good)", "stroke-width":2}));
+      const t=svgEl("text",{x, y:y+14, "text-anchor":"middle", "font-size":13, "font-family":"IBM Plex Mono, monospace", "font-weight":600});
+      t.append(svgEl("tspan",{fill:"var(--muted)"},"("), svgEl("tspan",{fill:trCol(1)},String(n.pay[0])), svgEl("tspan",{fill:"var(--muted)"},", "), svgEl("tspan",{fill:trCol(2)},String(n.pay[1])), svgEl("tspan",{fill:"var(--muted)"},")"));
+      svg.append(t); return; }
+    const g=svgEl("g",{}); if(hl.click){ g.setAttribute("style","cursor:pointer"); g.addEventListener("click",()=>hl.click(n.id)); }
+    const sel=hl.node===n.id, bad=hl.badNode===n.id, col=trCol(n.p);
+    if(n.p===0) g.append(svgEl("rect",{x:x-15, y:y-15, width:30, height:30, rx:6, fill:"var(--surface)", stroke:sel?"var(--ink)":col, "stroke-width":sel?3:2}));
+    else g.append(svgEl("circle",{cx:x, cy:y, r:15, fill:sel?col:"var(--surface)", stroke:bad?"var(--bad)":(sel?"var(--ink)":col), "stroke-width":bad||sel?3:2}));
+    g.append(svgEl("text",{x, y:y+5, "text-anchor":"middle", "font-size":13, "font-weight":800, fill:(sel&&n.p!==0)?"var(--surface)":col}, n.p===0?"N":String(n.p)));
+    if(hl.sgBadge&&hl.sgBadge[n.id]) g.append(svgEl("text",{x:x-20, y:y-18, "text-anchor":"end", "font-size":11, "font-weight":800, fill:"var(--good)"}, hl.sgBadge[n.id]));
+    svg.append(g); });
+  return svg;
+}
+function treesLesson(){
+  if(!TZ) treeInit("seq");
+  const P=TREE_PRESETS[TZ.preset], T=TZ.T, N=T.nodes, bayes=!!P.bayes;
+  const wrap=el("div","lesson");
+  const head=el("div","lesson-head");
+  head.append(el("div","lesson-eyebrow","Interactive lesson"), el("div","lesson-title","From game tree to normal form"),
+    Object.assign(el("div","sm mut"),{innerHTML:"<b>"+esc(P.name)+"</b> · payoffs are (<span style='color:var(--accent-ink);font-weight:700'>P1</span>, <span style='color:var(--gold);font-weight:700'>P2</span>)"+(bayes?" · <b>N</b> = Nature, which randomises with the probabilities shown":""),style:"margin-top:2px"}));
+  wrap.append(head);
+  // step tabs
+  const tabs=el("div","lesson-ctr");
+  [[1,"① Information sets"],[2,"② Subgames"],[3,"③ Strategies"],[4,"④ Normal form"]].forEach(([k,l])=>{ const b=el("button","ghost-btn"+(TZ.step===k?" hold-on":""),l); b.type="button";
+    b.onclick=()=>{ TZ.step=k; TZ.node=null; TZ.sg=null; render(); }; tabs.append(b); });
+  wrap.append(tabs);
+
+  const bodyEl=el("div","lesson-body");
+  const left=el("div","lesson-left"); left.style.cssText="flex:1 1 520px;min-width:min(92vw,320px);max-width:840px";
+  const right=el("div","lesson-right");
+  const rev=!!TZ.rev[TZ.step];
+  const hl={};
+  if(TZ.step===1){ hl.sets=rev; hl.click=id=>{ TZ.node=id; render(); }; hl.node=TZ.node; if(TZ.node!=null) hl.selSet=N[TZ.node].set; if(TZ.node!=null) hl.sets=true; }
+  if(TZ.step===2){ hl.click=id=>{ TZ.node=id; TZ.sg=null; render(); }; const t=TZ.sg!=null?TZ.sg:TZ.node;
+    if(t!=null){ hl.node=t; if(N[t].sg) hl.sgNode=t; else hl.badNode=t; }
+    if(rev){ hl.sgBadge={}; N.filter(n=>!n.leaf&&n.sg).forEach((n,i)=>{ hl.sgBadge[n.id]="SG"+(i+1); }); } }
+  const s1=trStrats(T,1), s2=trStrats(T,2);
+  if(TZ.step===4 && TZ.cell){ const path={edges:new Set(), leaves:[]}; trEval(T, s1[TZ.cell[0]].v, s2[TZ.cell[1]].v, path); hl.edges=path.edges; hl.leaves=new Set(path.leaves.map(l=>l.id)); }
+  const treeBox=el("div"); treeBox.style.cssText="width:100%;padding:12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)";
+  treeBox.append(treeSVG(T, hl)); left.append(treeBox);
+
+  const step=el("div","pstep"), txt=el("div","pstep-txt");
+  const player=p=>"<b style='color:"+trCol(p)+"'>P"+p+"</b>";
+  const revealBtn=(lbl)=>{ const b=el("button",rev?"ghost-btn":"btn gold",rev?"Hide answer":lbl); b.type="button"; b.onclick=()=>{ TZ.rev[TZ.step]=!rev; TZ.node=null; TZ.sg=null; render(); }; return b; };
+  if(TZ.step===1){
+    step.append(Object.assign(el("h4"),{textContent:"Ask the class"}));
+    txt.innerHTML="An <b>information set</b> groups the decision nodes a player <i>can't tell apart</i> — they're joined by a dashed line. A node on its own is an information set too. <b>How many information sets does each player have?</b>";
+    step.append(txt);
+    if(TZ.node!=null){ const n=N[TZ.node], d=el("div","pstep-txt"); d.style.marginTop="10px";
+      if(n.p===0) d.innerHTML="<b>Nature</b> isn't a player: it just randomises with known probabilities. It has no information sets and no strategies.";
+      else if(n.set.nodes.length>1){ const others=n.set.nodes.filter(i=>i!==n.id).map(i=>trWhere(N[i]));
+        d.innerHTML="This node ("+esc(trWhere(n))+") is in <b>"+n.set.name+"</b> together with "+esc(others.join(" and "))+". "+player(n.p)+" can't tell which of these she's at, so she must pick the <b>same action</b> at all of them ("+esc(n.acts.join(" or "))+")."; }
+      else d.innerHTML="This node ("+esc(trWhere(n))+") is an information set on its own — <b>"+n.set.name+"</b>. "+player(n.p)+" knows exactly where she is.";
+      step.append(d); }
+    if(rev){ const a=el("div","pstep-txt"); a.style.marginTop="10px";
+      a.innerHTML=[1,2].map(p=>{ const ss=T.sets.filter(s=>s.p===p);
+        return player(p)+": <b>"+ss.length+"</b> information set"+(ss.length===1?"":"s")+" — "+ss.map(s=>s.name+" ("+esc(s.nodes.map(i=>trWhere(N[i])).join(" / "))+")").join("; "); }).join("<br>");
+      step.append(a); }
+    step.append(Object.assign(el("div","sm mut"),{textContent:"Tap any node to see which information set it belongs to.",style:"margin-top:8px"}));
+    const r=el("div","lesson-ctr"); r.style.cssText="justify-content:flex-start;margin-top:10px"; r.append(revealBtn("Reveal the count")); step.append(r);
+  }
+  if(TZ.step===2){
+    step.append(Object.assign(el("h4"),{textContent:"Ask the class"}));
+    txt.innerHTML="A <b>subgame</b> starts at a node that (1) is <b>alone in its information set</b> and (2) takes in <b>every node of every information set</b> it touches — it can't cut a dashed line. The whole game always counts. <b>How many subgames are there?</b>";
+    step.append(txt);
+    const t=TZ.sg!=null?TZ.sg:TZ.node;
+    if(t!=null){ const n=N[t], d=el("div","pstep-txt"); d.style.marginTop="10px";
+      d.innerHTML = n.leaf ? "That's an end point — subgames start at decision nodes (or Nature)."
+        : n.sg ? "<span style='color:var(--good);font-weight:700'>✓ A subgame starts here</span> ("+esc(trWhere(n))+") — the shaded part is a game of its own."
+        : "<span style='color:var(--bad);font-weight:700'>✗ No subgame here</span> ("+esc(trWhere(n))+"): "+esc(n.why)+".";
+      step.append(d); }
+    if(rev){ const sgs=N.filter(n=>!n.leaf&&n.sg), a=el("div","pstep-txt"); a.style.marginTop="10px";
+      a.innerHTML="<b>"+sgs.length+" subgame"+(sgs.length===1?"":"s")+"</b> (the whole game counts):"; step.append(a);
+      const row=el("div","lesson-ctr"); row.style.cssText="justify-content:flex-start;margin-top:6px";
+      sgs.forEach((n,i)=>{ const b=el("button","ghost-btn"+(TZ.sg===n.id?" hold-on":""),"SG"+(i+1)+" · "+trWhere(n)); b.type="button"; b.onclick=()=>{ TZ.sg=n.id; TZ.node=null; render(); }; row.append(b); });
+      step.append(row);
+      const no=N.filter(n=>!n.leaf&&!n.sg);
+      if(no.length) step.append(Object.assign(el("div","sm mut"),{textContent:"Can't start a subgame: "+no.map(n=>trWhere(n)).join("; ")+".",style:"margin-top:8px"})); }
+    step.append(Object.assign(el("div","sm mut"),{textContent:"Tap a node to test whether a subgame starts there.",style:"margin-top:8px"}));
+    const r=el("div","lesson-ctr"); r.style.cssText="justify-content:flex-start;margin-top:10px"; r.append(revealBtn("Reveal the subgames")); step.append(r);
+  }
+  if(TZ.step===3){
+    step.append(Object.assign(el("h4"),{textContent:"Ask the class"}));
+    txt.innerHTML="A <b>pure strategy</b> is a complete plan: <b>one action at every information set</b> of that player — even ones the plan never reaches. Number of strategies = the <b>product</b> of the number of actions at each of the player's information sets. <b>How many strategies does each player have?</b>";
+    step.append(txt);
+    if(rev){ const a=el("div","pstep-txt"); a.style.marginTop="10px";
+      a.innerHTML=[1,2].map(p=>{ const ss=T.sets.filter(s=>s.p===p), st=p===1?s1:s2;
+        return player(p)+": "+ss.map(s=>s.acts.length+" <span class='mut'>("+s.name+": "+esc(s.acts.join(", "))+")</span>").join(" × ")+" = <b>"+st.length+"</b><div style='font-family:IBM Plex Mono,monospace;margin:2px 0 6px'>"+st.map(x=>esc(x.label)).join(" · ")+"</div>"; }).join("");
+      const multi=[1,2].find(p=>T.sets.filter(s=>s.p===p).length>1);
+      if(multi){ const ss=T.sets.filter(s=>s.p===multi);
+        a.innerHTML+="<div class='sm mut'>Reading P"+multi+"'s labels: "+ss.map((s,i)=>(i===0?"first":"then")+" the action at "+s.name+" ("+esc(trWhere(N[s.nodes[0]]))+(s.nodes.length>1?" …":"")+")").join(", ")+".</div>"; }
+      step.append(a); }
+    const r=el("div","lesson-ctr"); r.style.cssText="justify-content:flex-start;margin-top:10px"; r.append(revealBtn("Reveal the strategies")); step.append(r);
+  }
+  if(TZ.step===4){
+    step.append(Object.assign(el("h4"),{textContent:"Fill in the normal form"}));
+    txt.innerHTML="Rows = "+player(1)+"'s strategies, columns = "+player(2)+"'s. For each pair, follow the plan through the tree to the end"+(bayes?" — for every move of Nature — and weight each outcome by its probability (an <b>expected</b> payoff)":"")+". <b>Tap a cell</b> to fill it and light up its path.";
+    step.append(txt);
+    if(TZ.cell){ const path={edges:new Set(), leaves:[]}, v=trEval(T, s1[TZ.cell[0]].v, s2[TZ.cell[1]].v, path), d=el("div","pstep-txt"); d.style.marginTop="10px";
+      const pr=l=>"("+trNum(N[l.id].pay[0])+", "+trNum(N[l.id].pay[1])+")";
+      d.innerHTML="<b>"+esc(s1[TZ.cell[0]].label)+"</b> vs <b>"+esc(s2[TZ.cell[1]].label)+"</b>:<br>"+path.leaves.map(l=>(path.leaves.length>1?trNum(l.w)+" × ":"")+esc(N[l.id].hist.join(" → "))+" → "+pr(l)).join("<br>")
+        +(path.leaves.length>1?"<br>Expected = <b>("+trNum(v[0])+", "+trNum(v[1])+")</b>":"");
+      step.append(d); }
+    // the matrix
+    const mat=el("table","matrix"); mat.style.cssText="width:auto;margin:0 auto;font-size:.95rem";
+    let h="<tr><th></th>"+s2.map(s=>"<th style='color:var(--gold)'>"+esc(s.label)+"</th>").join("")+"</tr>";
+    mat.innerHTML=h;
+    const isNE=(i,j)=>{ const v=trEval(T,s1[i].v,s2[j].v);
+      return s1.every((_,k)=>trEval(T,s1[k].v,s2[j].v)[0]<=v[0]+1e-9) && s2.every((_,k)=>trEval(T,s1[i].v,s2[k].v)[1]<=v[1]+1e-9); };
+    s1.forEach((r,i)=>{ const tr=el("tr"); tr.append(Object.assign(el("th"),{innerHTML:"<span style='color:var(--accent-ink)'>"+esc(r.label)+"</span>"}));
+      s2.forEach((c,j)=>{ const k=i+","+j, on=TZ.filled[k], td=el("td","cell"); td.style.cssText="cursor:pointer;min-width:74px";
+        if(TZ.cell&&TZ.cell[0]===i&&TZ.cell[1]===j) td.classList.add("played");
+        if(on){ const v=trEval(T,r.v,c.v); td.innerHTML="<span style='color:var(--accent-ink)'>"+trNum(v[0])+"</span>, <span style='color:var(--gold)'>"+trNum(v[1])+"</span>";
+          if(TZ.ne && isNE(i,j)){ td.style.background="var(--good-wash)"; td.style.boxShadow="inset 0 0 0 2px var(--good)"; td.innerHTML+=" <b style='color:var(--good)'>★</b>"; } }
+        else { td.textContent="?"; td.style.color="var(--muted)"; }
+        td.onclick=()=>{ TZ.filled[k]=true; TZ.cell=[i,j]; render(); };
+        tr.append(td); });
+      mat.append(tr); });
+    const mbox=el("div"); mbox.style.cssText="width:100%;overflow-x:auto;padding:12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)";
+    mbox.append(Object.assign(el("div","tinylabel"),{textContent:"Normal form — "+s1.length+" × "+s2.length,style:"text-align:center;margin-bottom:8px"}), mat);
+    left.append(mbox);
+    const all=s1.length*s2.length, done=Object.keys(TZ.filled).length;
+    const r=el("div","lesson-ctr"); r.style.cssText="justify-content:flex-start;margin-top:10px";
+    const fb=el("button",done<all?"btn gold":"ghost-btn",done<all?"Fill in all cells":"Clear the matrix"); fb.type="button";
+    fb.onclick=()=>{ if(done<all){ s1.forEach((_,i)=>s2.forEach((_,j)=>{ TZ.filled[i+","+j]=true; })); } else { TZ.filled={}; TZ.cell=null; TZ.ne=false; } render(); };
+    const nb=el("button","ghost-btn"+(TZ.ne?" hold-on":""),(TZ.ne?"Hide ":"Show ")+(bayes?"Bayesian Nash equilibria":"Nash equilibria")); nb.type="button";
+    nb.onclick=()=>{ if(!TZ.ne) s1.forEach((_,i)=>s2.forEach((_,j)=>{ TZ.filled[i+","+j]=true; })); TZ.ne=!TZ.ne; render(); };
+    r.append(fb, nb); step.append(r);
+    if(TZ.ne){ const eqs=[]; s1.forEach((a,i)=>s2.forEach((b,j)=>{ if(isNE(i,j)) eqs.push("("+a.label+", "+b.label+")"); }));
+      step.append(Object.assign(el("div","pstep-txt"),{innerHTML:"<b style='color:var(--good)'>★ "+(bayes?"Bayesian Nash":"Nash")+" equilibri"+(eqs.length===1?"um":"a")+":</b> "+esc(eqs.join(", ")||"none in pure strategies")+" — each player's payoff is the best in its column (P1) / row (P2).",style:"margin-top:10px"})); }
+    if(done===all) step.append(Object.assign(el("div","sm mut"),{textContent:P.note,style:"margin-top:10px"}));
+  }
+  right.append(step);
+  bodyEl.append(left, right);
+  wrap.append(bodyEl);
+
+  const pr=el("div","pset-row");
+  pr.append(Object.assign(el("span","tinylabel"),{textContent:"Examples:",style:"align-self:center"}));
+  Object.keys(TREE_PRESETS).forEach(k=>{ const b=el("button","ghost-btn"+(TZ.preset===k?" on":""),TREE_PRESETS[k].name); b.type="button"; b.onclick=()=>{ const st=TZ.step; treeInit(k); TZ.step=st; render(); }; pr.append(b); });
+  wrap.append(pr);
+  const ctr=el("div","lesson-ctr");
+  const reset=el("button","ghost-btn","Reset"); reset.onclick=()=>{ treeInit(TZ.preset); render(); };
+  const exit=el("button","ghost-btn","Exit lesson"); exit.onclick=()=>{ lessonMode=null; render(); };
+  ctr.append(reset, exit); wrap.append(ctr);
+  return wrap;
+}
 function teacherConsole(){
   refreshRoleBtn();
   const c=el("div","console");
@@ -5507,6 +5755,11 @@ function teacherConsole(){
   const iltx=el("div"); iltx.append(el("div","n","Pareto optimality"),el("div","d","Interactive visual — check which outcomes are Pareto optimal, step by step.")); il1.append(iltx);
   il1.onclick=()=>{ paretoInit("dilemma"); lessonMode="pareto"; render(); };
   gp.append(il1);
+  const il2=el("button","gp il");
+  il2.append(Object.assign(el("span","ic"),{textContent:"IL2"}));
+  const il2tx=el("div"); il2tx.append(el("div","n","Game trees → normal form"),el("div","d","Count information sets, subgames and pure strategies, then build the matrix cell by cell.")); il2.append(il2tx);
+  il2.onclick=()=>{ treeInit("seq"); lessonMode="trees"; render(); };
+  gp.append(il2);
   s1.append(gp); c.append(s1);
   // Course, roster, schedule, data export and the Student-page config live on the full-screen
   // "Course config" page (top-bar ⚙); Log out is a top-bar button (#logoutBtn).
