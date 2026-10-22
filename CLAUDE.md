@@ -727,6 +727,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - Optional hardening: tighten Firebase rules or add Firebase App Check to limit who can write.
 - A per-round CSV export, or a persistent leaderboard across rounds.
 
+## Licence
+`LICENSE` — **all rights reserved** (© 2026 Prof. Sonia, IIM Lucknow & Ankit Khandelwal). Enrolled students may use
+the hosted app; **educational reuse only with explicit written permission** (request via a GitHub issue / @eclairs20);
+everything else needs permission. The footer carries a matching © line linking to `LICENSE`. The inlined
+qrcode-generator stays MIT. Keep the © line when editing the footer.
+
 ## Security / Firebase rules
 See `SECURITY.md`. Two rule sets ship in the repo: `firebase-rules.stopgap.json` (a
 blast-radius fix, safe to publish anytime — no sign-in required) and
