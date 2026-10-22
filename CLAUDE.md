@@ -627,8 +627,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - Sub: `seq` "1,2,…" (own moves), `types` "M,O,…" (Nature's draws, so analysis needs no seed), `role` P1/P2,
     `mode:"bg"`, `pOdd`, `rounds`, partner fields. **Practice bot**: as P1 sticks to 2 when pOdd ≤ 50% else 50/50; as P2
     matches your usual number in Matching and counters it in Odd-Even (revealed only after you move).
-  - **Theory** (`bgPredict`, `bgNormalForm`): P1 wins by matching in both games. pOdd < ½ → two mirror BNEs (1,12) and
-    (2,21) (P2 strategy = move in Matching, move in Odd-Even): P1 sticks to a number, Matching type matches, Odd-Even
+  - **Theory** (`bgPredict`, `bgNormalForm`): P1 wins by matching in both games. pOdd < ½ → two mirror BNEs (1,21) and
+    (2,12) (P2 strategy = move in Odd-Even, move in Matching — the slides' order): P1 sticks to a number, Matching type matches, Odd-Even
     type counters; payoffs P1 1−p, P2 1. pOdd > ½ → no pure BNE, P1 mixes 50/50, everyone 0.5. pOdd = ½ → knife-edge.
   - `analyzeBayes`: tiles (matches, realised Odd-Even %, **P1 predictability** = share of his usual number, points per
     round vs BNE), P1 predictability whole/first half/second half vs prediction, P2 "same as P1 in Matching / different
@@ -658,7 +658,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   has an "Ask the class" prompt and a Reveal/Hide button. Trees are tiny specs in `TREE_PRESETS` (decision node
   `{p, i, a:[[act, child]]}`, Nature `{p:0, a:[[label, child, prob]]}`, leaf `[u1,u2]`; same player + same `i` = one
   information set): P2 sees P1 / can't see / sees only some moves / plans for unreached nodes / **Bayesian Odd-Even or
-  Matching** (G11's games at 25%) and **Bayesian Tinder BoS** (Tinder reproduces the slides' 2×4 table and BNEs; both currently `hidden:true` — not
+  Matching** (G11's games at 25%, same tree as the slide: Nature → P1 → P2) and **Bayesian Tinder BoS** (Tinder reproduces the slides' 2×4 table and BNEs; both currently `hidden:true` — not
   offered in the Examples row until Bayesian games are taught; remove the flag to show them). Engine: `treeBuild`
   (layout, information sets, subgame test), `trStrats`, `trEval`, `treeSVG`. Also on the hub (`HUB_LESSONS` "trees").
   **Lessons are local:** while `lessonMode` is set, shared-data activity (subs, the instructor's control echo) does not

@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-22.005";
+const APP_VERSION = "2026-10-22.006";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -3232,7 +3232,7 @@ function analyzeAdWar(list, fin){
    draw is deterministic from the pair + round (never from the moves), so both phones agree; each sub stores
    its own moves (`seq` "1,2,…") and the drawn games (`types` "M,O,…"), so the analysis needs no seed.
    BNE: Player 1 wins by matching in BOTH games; the Matching type matches him, the Odd-Even type counters.
-   pOdd < ½ → Player 1 sticks to one number (mirror BNEs (1,12) and (2,21)); pOdd > ½ → he mixes 50/50. */
+   pOdd < ½ → Player 1 sticks to one number (mirror BNEs (1,21) and (2,12), P2's digits = move in Odd-Even, move in Matching — the slides' order); pOdd > ½ → he mixes 50/50. */
 const BG_NAME={M:"Matching Game", O:"Odd-Even"};
 function bgCfg(){ const cf=cfg("bayes"); return { p:Math.max(0,Math.min(100,+cf.pOdd||0))/100, R:Math.max(2,Math.min(60,Math.round(+cf.rounds||20))) }; }
 function bgPay(type, a1, a2){ const same=String(a1)===String(a2);      // [Player 1, Player 2]
@@ -3369,10 +3369,11 @@ function bgPredict(p){
   if(p>0.5) return {regime:"high", p1:0.5, mMatch:0.5, oMis:0.5, u1:0.5, u2:0.5};
   return {regime:"edge", p1:null, mMatch:null, oMis:null, u1:0.5, u2:null};
 }
-/* The Bayesian normal form: Player 2's strategy = (move if Matching, move if Odd-Even); expected payoffs. */
+/* The Bayesian normal form: Player 2's strategy = (move if Odd-Even, move if Matching) — the order used on the slides
+   (Odd-Even is the left branch of Nature's move); expected payoffs. */
 function bgNormalForm(p){
   const S1=["1","2"], S2=[["1","1"],["1","2"],["2","1"],["2","2"]];
-  const val=(a1,s)=>{ const m=bgPay("M",a1,s[0]), o=bgPay("O",a1,s[1]); return [(1-p)*m[0]+p*o[0], (1-p)*m[1]+p*o[1]]; };
+  const val=(a1,s)=>{ const o=bgPay("O",a1,s[0]), m=bgPay("M",a1,s[1]); return [(1-p)*m[0]+p*o[0], (1-p)*m[1]+p*o[1]]; };
   const ne=(i,j)=>{ const v=val(S1[i],S2[j]); return S1.every(a=>val(a,S2[j])[0]<=v[0]+1e-9) && S2.every(s=>val(S1[i],s)[1]<=v[1]+1e-9); };
   const r=x=>fmt(Math.round(x*100)/100,2);
   let html="<tr><th></th>"+S2.map(s=>"<th style='color:var(--gold)'>"+s.join("")+"</th>").join("")+"</tr>";
@@ -3464,12 +3465,12 @@ function analyzeBayes(list, teacher){
   const nc=el("div","chart-card"); nc.append(Object.assign(el("h3"),{textContent:"The Bayesian game at "+pct(pUsed)+" Odd-Even — expected payoffs"}));
   const nt=el("table","matrix"); nt.style.cssText="font-size:.88rem;width:auto"; nt.innerHTML=nf.html;
   const ns=el("div","tablescroll"); ns.append(nt); nc.append(ns);
-  nc.append(Object.assign(el("div","cap"),{textContent:"Player 2's strategy is a plan for each type: first digit = her move in the Matching Game, second = in Odd-Even (so 21 = show 2 if Matching, 1 if Odd-Even). "+(nf.eqs.length?"★ Bayesian Nash equilibri"+(nf.eqs.length===1?"um: ":"a: ")+nf.eqs.join(" and ")+".":"No pure-strategy BNE: Player 1 must mix.")}));
+  nc.append(Object.assign(el("div","cap"),{textContent:"Player 2's strategy is a plan for each type: first digit = her move in Odd-Even, second = in the Matching Game (so 21 = show 2 if Odd-Even, 1 if Matching). "+(nf.eqs.length?"★ Bayesian Nash equilibri"+(nf.eqs.length===1?"um: ":"a: ")+nf.eqs.join(" and ")+".":"No pure-strategy BNE: Player 1 must mix.")}));
   wrap.append(nc);
   const note=el("div","note-box"); note.style.marginTop="4px";
   const lessonEnd=" The informed player's strategy is a <b>plan for each type</b>: match Player 1 in the Matching Game, counter him in Odd-Even.";
   note.innerHTML = pr.regime==="low"
-    ? "<b>The lesson.</b> Player 1 wins by matching in <i>both</i> games, so being predictable helps him against the Matching type (who wants to match) and hurts him against the Odd-Even type (who wants to counter). With Odd-Even only <b>"+pct(pUsed)+"</b> likely, predictability pays: stick to one number and earn "+fmt(1-pUsed,2)+" a round (1 × "+pct(1-pUsed)+" + 0 × "+pct(pUsed)+"). Which number is just a convention — (1, 12) and (2, 21) are both BNEs."+lessonEnd+" Try the same game at 75%: then being predictable feeds the Odd-Even type, and Player 1 should mix 50/50."
+    ? "<b>The lesson.</b> Player 1 wins by matching in <i>both</i> games, so being predictable helps him against the Matching type (who wants to match) and hurts him against the Odd-Even type (who wants to counter). With Odd-Even only <b>"+pct(pUsed)+"</b> likely, predictability pays: stick to one number and earn "+fmt(1-pUsed,2)+" a round (1 × "+pct(1-pUsed)+" + 0 × "+pct(pUsed)+"). Which number is just a convention — (1, 21) and (2, 12) are both BNEs."+lessonEnd+" Try the same game at 75%: then being predictable feeds the Odd-Even type, and Player 1 should mix 50/50."
     : pr.regime==="high"
     ? "<b>The lesson.</b> Player 1 wins by matching in both games. With Odd-Even <b>"+pct(pUsed)+"</b> likely, being predictable mostly feeds the Odd-Even type, who counters him. If he always showed one number he'd earn only "+fmt(1-pUsed,2)+" a round, so in equilibrium he <b>mixes 50/50</b> and earns 0.5 whatever happens. There is no pure-strategy BNE."+lessonEnd
     : "<b>The lesson.</b> At exactly 50% Player 1 earns 0.5 whatever he does: predictability gains from the Matching type exactly what the Odd-Even type takes away. That's the tipping point — below 50% he should be predictable, above it unpredictable."+lessonEnd;
@@ -5774,10 +5775,10 @@ const TREE_PRESETS = {
   three:{ name:"Plans for unreached nodes",
     t:{p:1,a:[["Out",[1,4]],["In",{p:2,a:[["F",[0,0]],["A",{p:1,a:[["x",[3,1]],["y",[2,2]]]}]]}]]},
     note:"P1 moves twice → 2 information sets → 4 strategies, including plans like Out·x: what P1 WOULD do at a node that Out never reaches. A strategy is a complete plan, so these count — and the Out·x and Out·y rows are identical. (Out, F) is a Nash equilibrium that rests on the threat to Fight; in the subgame after In, P2 would Accommodate." },
-  bg:  { name:"Bayesian: Odd-Even or Matching", bayes:true, hidden:true,   // hidden until Bayesian games are taught (same games as G11, at 25% Odd-Even)
-    t:{p:0,a:[["Matching",{p:2,a:[["1",{p:1,i:"z",a:[["1",[1,1]],["2",[0,0]]]}],["2",{p:1,i:"z",a:[["1",[0,0]],["2",[1,1]]]}]]},0.75],
-              ["Odd-Even",{p:2,a:[["1",{p:1,i:"z",a:[["1",[1,0]],["2",[0,1]]]}],["2",{p:1,i:"z",a:[["1",[0,1]],["2",[1,0]]]}]]},0.25]]},
-    note:"Nature picks the game (Matching 75%, Odd-Even 25%). P2 knows it → one information set per type → 4 strategies (first digit = her move in the Matching Game, second = in Odd-Even). P1 knows neither the game nor P2's move → one information set with 4 nodes → 2 strategies. Only 1 subgame. Every cell is an EXPECTED payoff. Two Bayesian Nash equilibria, (1, 12) and (2, 21): P1 sticks to a number, the Matching type matches it, the Odd-Even type counters it — the same game as G11." },
+  bg:  { name:"Bayesian: Odd-Even or Matching", bayes:true, hidden:true,   // hidden until Bayesian games are taught (same games as G11, at 25% Odd-Even; same tree as the slide)
+    t:{p:0,a:[["OE",{p:1,i:"z",a:[["1",{p:2,i:"o",a:[["1",[1,0]],["2",[0,1]]]}],["2",{p:2,i:"o",a:[["1",[0,1]],["2",[1,0]]]}]]},0.25],
+              ["M",{p:1,i:"z",a:[["1",{p:2,i:"m",a:[["1",[1,1]],["2",[0,0]]]}],["2",{p:2,i:"m",a:[["1",[0,0]],["2",[1,1]]]}]]},0.75]]},
+    note:"Nature picks the game (OE = Odd-Even 25%, M = Matching 75%). P1 knows neither the game → one information set → 2 strategies. P2 knows the game but not P1's move → one information set per type → 4 strategies (first digit = her move in Odd-Even, second = in Matching). Only 1 subgame. Every cell is an EXPECTED payoff. Two Bayesian Nash equilibria, (1, 21) and (2, 12): P1 sticks to a number, the Odd-Even type counters it, the Matching type matches it — the same game as G11." },
   tinder:{ name:"Bayesian: Tinder BoS", bayes:true, hidden:true,
     t:{p:0,a:[["Meet",{p:1,i:"f",a:[["F",{p:2,i:"m",a:[["F",[2,1]],["M",[0,0]]]}],["M",{p:2,i:"m",a:[["F",[0,0]],["M",[1,2]]]}]]},0.75],
               ["Avoid",{p:1,i:"f",a:[["F",{p:2,i:"v",a:[["F",[2,0]],["M",[0,2]]]}],["M",{p:2,i:"v",a:[["F",[0,1]],["M",[1,0]]]}]]},0.25]]},
