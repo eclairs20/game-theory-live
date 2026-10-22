@@ -546,8 +546,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 
 - `robot` — **Robot Tournament** (**G10**; Public Goods is now labelled **G20**) — an Axelrod-style
   tournament on the G8/G9 Advertising Game (`RP_PAY`; Low = cooperate). **Teams** build one robot each; when
-  the instructor presses **⚔ Fight** every robot plays every other one. Config `{ capMin:2, joinMin:2, buildMin:10,
-  teamMax:4, teams:0, rounds:100, disc:5, house:true }` (`rbCfg()` → `nTeams` = number of teams, 0 = no limit).
+  the instructor presses **⚔ Fight** every robot plays every other one. Config `{ capMin:5, joinMin:5, buildMin:10,
+  teamMin:4, teamMax:6, teams:15, rounds:100, disc:5, house:true }` (`rbCfg()` → `nTeams` = number of teams, 0 = no limit;
+  `min`/`max` = team size incl. captain).
   **Flow: captains → join → build → fight.** (1) **Captains** (`capMin`): anyone taps *Become captain* and names a
   team (`rbCreateTeam`, blocked once `nTeams` teams exist); captains can rename (`rbRename`) or step down; the
   instructor can remove a team (`rbRemoveTeam`). At the timer the console runs **`rbLockCaptains`**: keeps the first
@@ -555,8 +556,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   appoints random captains from the students present (`ceil(present/max)`, capped by `nTeams`, auto names). (2) **Join**
   (`joinMin`): non-captains join or **switch** teams (`rbSwitch`, cap `teamMax` incl. captain, enforced by
   transaction) until it locks. At the timer **`rbFinalize`** places every present-but-unteamed student into the
-  smallest team (so captain-only teams fill first; past the cap if needed — nobody is left out); a captain still
-  alone joins another team as a player (no solos). (3) **Build** and (4) **Fight** as below.
+  smallest team (so captain-only teams fill first; past the cap if needed — nobody is left out), then enforces the
+  **minimum team size** with `rbBalance` (pure, in memory): while there are more teams than `floor(total/min)` the
+  smallest short team is dissolved (newest first on ties; its captain joins another team as a player), then any team
+  still under `min` is topped up with random non-captain players from the biggest teams. Min beats max when both
+  can't hold (7 students, min 4 → one team of 7). Auto-made teams use `rbTeamCount(n)` = min(ceil(n/max),
+  floor(n/min)), capped by `nTeams`. (3) **Build** and (4) **Fight** as below.
   - **Phases** live in `control.robot = {rk, capEnd, capLocked, joinEnd, finalized, buildEnd, fought}` (rk must equal `curKey`;
     `rbPhase()` → idle / captains / caplock / join / forming / build / locked / fought — a legacy state with only
     `teamsEnd` reads as past captains; from **server time** `srvNow()` via

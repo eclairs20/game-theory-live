@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-22.007";
+const APP_VERSION = "2026-10-22.008";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -616,7 +616,7 @@ const DEFAULT_CONFIG = {
   attackdefend:{ rounds:10 },   // Colonel Blotto: fixed roles (attacker 2 / defender 3), this many lockstep rounds per pair
   adwar:{ cont:50, min:20, cap:35 },    // Advertising Game (Infinite): % chance the market continues after each round (from the minimum on); hidden min / max rounds
   adfin:{ rounds:6 },                  // Advertising Game (Finite): a fixed, announced number of rounds
-  robot:{ capMin:2, joinMin:2, buildMin:10, teamMax:4, teams:0, rounds:100, disc:5, house:true },   // Robot Tournament: captains / join / build timers (min), team size cap, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
+  robot:{ capMin:5, joinMin:5, buildMin:10, teamMin:4, teamMax:6, teams:15, rounds:100, disc:5, house:true },   // Robot Tournament: captains / join / build timers (min), min / max team size, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
   bayes:{ pOdd:25, rounds:20 },          // Bayesian Game: % chance each round is Odd-Even (else the Matching Game); rounds per match
   publicgoods:{ E:8, mult:1.5 }
 };
@@ -3632,9 +3632,9 @@ let rbCtx=null, rbTeams={}, rbPresence={}, _rbPresSig=null, _rbLastPh=null, _rbH
 let rbFightAnimUntil=0, _rbBotT=null, srvOffset=0;
 const srvNow = ()=> Date.now()+(srvOffset||0);
 function rbCfg(){ const cf=cfg("robot"); return {
-  capMin: Math.max(0.5, +cf.capMin||2), joinMin: Math.max(0.5, +cf.joinMin||2), buildMin: Math.max(0.5, +cf.buildMin||10),
+  capMin: Math.max(0.5, +cf.capMin||5), joinMin: Math.max(0.5, +cf.joinMin||5), buildMin: Math.max(0.5, +cf.buildMin||10),
   nTeams: Math.max(0, Math.min(40, Math.round(+cf.teams||0))),
-  max: Math.max(2, Math.min(10, Math.round(+cf.teamMax||4))), rounds: Math.max(5, Math.min(500, Math.round(+cf.rounds||100))),
+  max: Math.max(2, Math.min(10, Math.round(+cf.teamMax||6))), min: Math.max(2, Math.min(Math.max(2, Math.min(10, Math.round(+cf.teamMax||6))), Math.round(+cf.teamMin||4))), rounds: Math.max(5, Math.min(500, Math.round(+cf.rounds||100))),
   disc: Math.max(0, Math.min(100, cf.disc==null ? 5 : +cf.disc||0)), house: cf.house!==false }; }
 function rbCtl(){ const r=control&&control.robot; return (r && r.rk===curKey) ? r : null; }
 /* idle → captains (anyone can found a team) → caplock (timer up; the console locks captains) → join (players
@@ -3824,7 +3824,7 @@ async function rbLockCaptains(){
     }
     if(!live.length){
       const pool=rbShuffle(Object.values(pres).filter(p=>p&&p.id&&now-(p.ts||0)<180000).map(p=>({id:String(p.id), name:p.name||String(p.id)})));
-      let k=Math.ceil(pool.length/C.max); if(C.nTeams>0) k=Math.min(k, C.nTeams);
+      const k=rbTeamCount(pool.length, C);
       const nm=rbAutoNamer(teams);
       pool.slice(0,k).forEach((m,i)=>{ const tid="a"+now.toString(36)+i+Math.random().toString(36).slice(2,5), key=encodeKey(m.id), members={};
         members[key]={id:m.id, name:m.name}; upd["rt/"+tid]={name:nm(), captain:m.id, members, ts:now+i, auto:true}; upd["rm/"+key]=tid; });
@@ -3834,9 +3834,33 @@ async function rbLockCaptains(){
   }catch(e){ console.warn("robot lock captains", e); }
   finally{ _rbCapLocking=false; }
 }
+/* How many auto-made teams for n students: enough to keep teams ≤ max, but never so many that one falls below
+   min (min wins when both can't hold, e.g. 7 students with min 4 / max 6 → one team of 7), capped by nTeams. */
+function rbTeamCount(n, C){ let k=Math.min(Math.ceil(n/C.max), Math.floor(n/C.min)); if(C.nTeams>0) k=Math.min(k, C.nTeams); return Math.max(1, k); }
+/* Minimum team size, applied in memory to {tid:[{id,name}]} (captain ids in caps). While there are more teams
+   than the class can fill to `min` (floor(total/min)), the smallest short team is dissolved and its members
+   (captain included, as a player) go to the smallest other teams. Then any team still short is topped up with
+   non-captain players moved from the biggest teams. Returns the dissolved tids; mem is updated in place. */
+function rbBalance(mem, caps, ts, min){
+  const gone=[], ids=()=>Object.keys(mem), sz=t=>mem[t].length;
+  const total=ids().reduce((a,t)=>a+sz(t),0), room=Math.max(1, Math.floor(total/min));
+  while(ids().length>room){
+    const short=ids().filter(t=>sz(t)<min).sort((a,b)=>sz(a)-sz(b) || (ts[b]||0)-(ts[a]||0))[0]; if(!short) break;
+    const ms=mem[short]; delete mem[short]; gone.push(short);
+    ms.forEach(m=>{ const to=ids().sort((a,b)=>sz(a)-sz(b))[0]; mem[to].push(m); });
+  }
+  for(let guard=0; guard<500; guard++){
+    const short=ids().filter(t=>sz(t)<min).sort((a,b)=>sz(a)-sz(b))[0]; if(!short) break;
+    const donor=ids().filter(t=>t!==short && sz(t)>min && mem[t].some(m=>String(m.id)!==String(caps[t]))).sort((a,b)=>sz(b)-sz(a))[0]; if(!donor) break;
+    const movable=mem[donor].filter(m=>String(m.id)!==String(caps[donor])), m=movable[Math.floor(Math.random()*movable.length)];
+    mem[donor]=mem[donor].filter(x=>x!==m); mem[short].push(m);
+  }
+  return gone;
+}
 /* Join time is up: place everyone present but unteamed into the smallest teams (teams nobody joined get them
-   first); a captain still alone after that joins another team as a player (no solo teams). If there are no
-   teams at all, group the students present into random teams. Then start building. */
+   first), then enforce the minimum team size (rbBalance: merge teams the class can't fill, top up short ones;
+   a dissolved team's captain joins another team as a player). If there are no teams at all, group the students
+   present into random teams. Then start building. */
 async function rbFinalize(){
   const r=rbCtl(); if(_rbFinalizing || !r || r.finalized || r.fought) return;
   _rbFinalizing=true;
@@ -3844,19 +3868,22 @@ async function rbFinalize(){
     const mc=r.rk, C=rbCfg(), now=srvNow();
     const teams=((await fb.ref(LIVE_ROOT(mc)+"/rt").once("value")).val())||{};
     const pres=((await fb.ref(LIVE_ROOT(mc)+"/rp").once("value")).val())||{};
-    const upd={}, inTeam=new Set(), size={}, gone=new Set();
+    const upd={}, inTeam=new Set();
     const live=Object.entries(teams).filter(([,t])=>t&&t.members&&Object.keys(t.members).length);
-    live.forEach(([tid,t])=>{ size[tid]=Object.keys(t.members).length; Object.values(t.members).forEach(m=>inTeam.add(String(m.id))); });
+    live.forEach(([,t])=>Object.values(t.members).forEach(m=>inTeam.add(String(m.id))));
     const pool=rbShuffle(Object.values(pres).filter(p=>p&&p.id&&!inTeam.has(String(p.id))&&now-(p.ts||0)<180000).map(p=>({id:String(p.id), name:p.name||String(p.id)})));
-    const add=(tid,m)=>{ const k=encodeKey(m.id); upd["rt/"+tid+"/members/"+k]={id:m.id, name:m.name||m.id}; upd["rm/"+k]=tid; size[tid]++; };
-    const smallest=(skip)=> Object.keys(size).filter(t=>t!==skip && !gone.has(t)).sort((a,b)=>size[a]-size[b])[0];
     if(live.length){
-      pool.forEach(m=>add(smallest(), m));   // smallest first → captain-only teams fill before anyone else grows
-      live.forEach(([tid,t])=>{ if(size[tid]!==1 || gone.has(tid)) return;
-        const to=smallest(tid); if(!to) return;   // the only team in the room — nothing to merge into
-        const m=Object.values(t.members)[0]; gone.add(tid); upd["rt/"+tid]=null; add(to, {id:String(m.id), name:m.name}); });
+      const mem={}, caps={}, ts={}, was={};
+      live.forEach(([tid,t])=>{ mem[tid]=Object.values(t.members).map(m=>({id:String(m.id), name:m.name||String(m.id)})); caps[tid]=t.captain; ts[tid]=t.ts||0;
+        mem[tid].forEach(m=>{ was[m.id]=tid; }); });
+      pool.forEach(m=>{ const to=Object.keys(mem).sort((a,b)=>mem[a].length-mem[b].length)[0]; mem[to].push(m); });   // smallest first → captain-only teams fill before anyone else grows
+      rbBalance(mem, caps, ts, C.min).forEach(tid=>{ upd["rt/"+tid]=null; });
+      Object.entries(mem).forEach(([tid,ms])=>{
+        const before=Object.keys(teams[tid].members||{}).sort().join(), members={};
+        ms.forEach(m=>{ const k=encodeKey(m.id); members[k]={id:m.id, name:m.name}; if(was[m.id]!==tid) upd["rm/"+k]=tid; });
+        if(Object.keys(members).sort().join()!==before) upd["rt/"+tid+"/members"]=members; });
     } else if(pool.length){
-      const nm=rbAutoNamer(teams), k=Math.max(1,Math.ceil(pool.length/C.max));
+      const nm=rbAutoNamer(teams), k=rbTeamCount(pool.length, C);
       for(let g=0; g<k; g++){ const ms=pool.filter((_,i)=>i%k===g), tid="a"+now.toString(36)+g+Math.random().toString(36).slice(2,5), members={};
         ms.forEach(m=>{ const key=encodeKey(m.id); members[key]={id:m.id, name:m.name}; upd["rm/"+key]=tid; });
         upd["rt/"+tid]={name:nm(), captain:ms[Math.floor(Math.random()*ms.length)].id, members, ts:now+g, auto:true}; }
@@ -4091,6 +4118,7 @@ function studentRobot(c){
       box.append(Object.assign(el("div"),{innerHTML:"★ You're the captain of <b>"+esc(mine.t.name||"Team")+"</b> — players are joining."}));
       box.append(rbMemberChips(mine.t)); c.append(box);
     } else c.append(Object.assign(el("div","tinylabel"),{textContent: mine ? "Your team is highlighted — tap another to switch" : "Pick a team",style:"margin-top:16px"}));
+    c.append(Object.assign(el("div","sm mut"),{textContent:"Teams have "+C.min+"–"+C.max+" players. When joining closes, a team with fewer than "+C.min+" gets players moved in from the biggest teams, or is merged into others if there aren't enough students.",style:"margin-top:4px"}));
     if(!list.length) c.append(Object.assign(el("div","sm mut"),{textContent:"No teams yet.",style:"margin-top:6px"}));
     list.forEach(([tid,t])=>{ const n=Object.keys(t.members||{}).length, here=mine&&mine.tid===tid, full=n>=C.max;
       let btn=null;
@@ -6489,14 +6517,14 @@ function paramEditor(){
   else if(g==="robot"){
     const grid=el("div","paramgrid");
     grid.append(mk("Captains step (minutes)","capMin",cf.capMin,"0.5"), mk("Joining step (minutes)","joinMin",cf.joinMin,"0.5"), mk("Robot building (minutes)","buildMin",cf.buildMin,"0.5"),
-      mk("Number of teams (0 = no limit)","teams",cf.teams), mk("Max team size (incl. captain)","teamMax",cf.teamMax), mk("Rounds per match","rounds",cf.rounds), mk("Discount rate per round (%)","disc",cf.disc));
+      mk("Number of teams (0 = no limit)","teams",cf.teams), mk("Min team size (incl. captain)","teamMin",cf.teamMin), mk("Max team size (incl. captain)","teamMax",cf.teamMax), mk("Rounds per match","rounds",cf.rounds), mk("Discount rate per round (%)","disc",cf.disc));
     wrap.append(grid);
     const setHouse=(v)=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.house=v; const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
     wrap.append(Object.assign(el("div","tinylabel"),{textContent:"House robots (Always Low, Always High, Random, Tit-for-tat)",style:"margin-top:10px"}));
     const hr=el("div","row"); hr.style.gap="8px"; hr.style.marginTop="4px";
     [[true,"Include"],[false,"Leave out"]].forEach(([v,l])=>{ const b=el("button","ghost-btn"+((cf.house!==false)===v?" hold-on":"")); b.textContent=l; b.onclick=()=>{ if((cf.house!==false)!==v) setHouse(v); }; hr.append(b); });
     wrap.append(hr);
-    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Open submissions → captains sign up and name their teams ("+cf.capMin+" min"+(+cf.teams?", first "+cf.teams+" teams":"")+") → players join or switch teams ("+cf.joinMin+" min, up to "+cf.teamMax+" per team; anyone left over is placed in the smallest teams, no solos) → captains build robots for "+cf.buildMin+" min → you press ⚔ Fight. Tip: number of teams ≈ class size ÷ "+cf.teamMax+". Every robot plays every other one for "+cf.rounds+" rounds of the Advertising Game (G8 payoffs). Scores are NPVs: each round's profit is discounted at "+cf.disc+"% per round (round 1 undiscounted; 0 = plain totals). Students see the rate and the formula while building.",style:"margin-top:6px"})); }
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Open submissions → captains sign up and name their teams ("+cf.capMin+" min"+(+cf.teams?", first "+cf.teams+" teams":"")+") → players join or switch teams ("+cf.joinMin+" min, "+cf.teamMin+"–"+cf.teamMax+" per team; anyone left over is placed in the smallest teams, and at the lock any team under "+cf.teamMin+" is topped up from the biggest teams or merged if the class can't fill every team) → captains build robots for "+cf.buildMin+" min → you press ⚔ Fight. Tip: number of teams ≈ class size ÷ "+cf.teamMax+". Every robot plays every other one for "+cf.rounds+" rounds of the Advertising Game (G8 payoffs). Scores are NPVs: each round's profit is discounted at "+cf.disc+"% per round (round 1 undiscounted; 0 = plain totals). Students see the rate and the formula while building.",style:"margin-top:6px"})); }
   else if(g==="bayes"){
     const grid=el("div","paramgrid"); grid.append(mk("Chance of Odd-Even (%)","pOdd",cf.pOdd), mk("Rounds per match","rounds",cf.rounds)); wrap.append(grid);
     const {p}=bgCfg(), pr=bgPredict(p);
