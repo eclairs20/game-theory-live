@@ -633,7 +633,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   has an "Ask the class" prompt and a Reveal/Hide button. Trees are tiny specs in `TREE_PRESETS` (decision node
   `{p, i, a:[[act, child]]}`, Nature `{p:0, a:[[label, child, prob]]}`, leaf `[u1,u2]`; same player + same `i` = one
   information set): P2 sees P1 / can't see / sees only some moves / plans for unreached nodes / **Bayesian Pennies or
-  Bidding** and **Bayesian Tinder BoS** (both reproduce the slides' 2×4 tables and BNEs). Engine: `treeBuild`
+  Bidding** and **Bayesian Tinder BoS** (both reproduce the slides' 2×4 tables and BNEs; currently `hidden:true` — not
+  offered in the Examples row until Bayesian games are taught; remove the flag to show them). Engine: `treeBuild`
   (layout, information sets, subgame test), `trStrats`, `trEval`, `treeSVG`. Also on the hub (`HUB_LESSONS` "trees").
   **Lessons are local:** while `lessonMode` is set, shared-data activity (subs, the instructor's control echo) does not
   redraw the screen (`scheduleSubsRender`, `teacherRenderSoon`, `onCtrl` return early), so taps aren't lost.

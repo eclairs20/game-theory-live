@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-22.001";
+const APP_VERSION = "2026-10-22.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -5503,11 +5503,11 @@ const TREE_PRESETS = {
   three:{ name:"Plans for unreached nodes",
     t:{p:1,a:[["Out",[1,4]],["In",{p:2,a:[["F",[0,0]],["A",{p:1,a:[["x",[3,1]],["y",[2,2]]]}]]}]]},
     note:"P1 moves twice → 2 information sets → 4 strategies, including plans like Out·x: what P1 WOULD do at a node that Out never reaches. A strategy is a complete plan, so these count — and the Out·x and Out·y rows are identical. (Out, F) is a Nash equilibrium that rests on the threat to Fight; in the subgame after In, P2 would Accommodate." },
-  pb:  { name:"Bayesian: Pennies or Bidding", bayes:true,
+  pb:  { name:"Bayesian: Pennies or Bidding", bayes:true, hidden:true,   // hidden until Bayesian games are taught
     t:{p:0,a:[["MP",{p:2,a:[["1",{p:1,i:"z",a:[["1",[1,0]],["2",[0,1]]]}],["2",{p:1,i:"z",a:[["1",[0,1]],["2",[1,0]]]}]]},0.5],
               ["Bid",{p:2,a:[["1",{p:1,i:"z",a:[["1",[0,0]],["2",[1,0]]]}],["2",{p:1,i:"z",a:[["1",[0,1]],["2",[0,0]]]}]]},0.5]]},
     note:"Nature picks the game. P2 knows it → one information set per type → 4 strategies (11, 12, 21, 22: first digit = her move in MP, second = in Bidding). P1 knows neither the game nor P2's move → one information set with 4 nodes → 2 strategies. Only 1 subgame. Every cell is an EXPECTED payoff: ½ × the MP outcome + ½ × the Bidding outcome." },
-  tinder:{ name:"Bayesian: Tinder BoS", bayes:true,
+  tinder:{ name:"Bayesian: Tinder BoS", bayes:true, hidden:true,
     t:{p:0,a:[["Meet",{p:1,i:"f",a:[["F",{p:2,i:"m",a:[["F",[2,1]],["M",[0,0]]]}],["M",{p:2,i:"m",a:[["F",[0,0]],["M",[1,2]]]}]]},0.75],
               ["Avoid",{p:1,i:"f",a:[["F",{p:2,i:"v",a:[["F",[2,0]],["M",[0,2]]]}],["M",{p:2,i:"v",a:[["F",[0,1]],["M",[1,0]]]}]]},0.25]]},
     note:"Nature picks P2's type (wants to Meet 0.75, wants to Avoid 0.25). P1 doesn't know it: 1 information set → 2 strategies. P2 knows her type but not P1's move: one information set per type → 2 × 2 = 4 strategies (FM = Football if Meet, Movie if Avoid). 1 subgame. Two Bayesian Nash equilibria: (F, FM) and (M, MF)." }
@@ -5722,7 +5722,7 @@ function treesLesson(){
 
   const pr=el("div","pset-row");
   pr.append(Object.assign(el("span","tinylabel"),{textContent:"Examples:",style:"align-self:center"}));
-  Object.keys(TREE_PRESETS).forEach(k=>{ const b=el("button","ghost-btn"+(TZ.preset===k?" on":""),TREE_PRESETS[k].name); b.type="button"; b.onclick=()=>{ const st=TZ.step; treeInit(k); TZ.step=st; render(); }; pr.append(b); });
+  Object.keys(TREE_PRESETS).filter(k=>!TREE_PRESETS[k].hidden).forEach(k=>{ const b=el("button","ghost-btn"+(TZ.preset===k?" on":""),TREE_PRESETS[k].name); b.type="button"; b.onclick=()=>{ const st=TZ.step; treeInit(k); TZ.step=st; render(); }; pr.append(b); });
   wrap.append(pr);
   const ctr=el("div","lesson-ctr");
   const reset=el("button","ghost-btn","Reset"); reset.onclick=()=>{ treeInit(TZ.preset); render(); };
