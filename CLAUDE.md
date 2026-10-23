@@ -657,7 +657,14 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - `analyzeBayes`: tiles (matches, realised Odd-Even %, **P1 predictability** = how often Player 1 showed their more
     frequent number, points per round) — below ½ the benchmarks show **pure BNE 100% / P1 0.75 · P2 1** AND the
     **mixed BNE** (everyone 50/50, 0.5 each), which the pure ones Pareto-dominate (captions say so); above ½ only the mixed
-    one exists. G11 text uses neutral pronouns ("they"), never he/she for the players. P1 predictability whole/first half/second half vs prediction, P2 "same as P1 in Matching / different
+    one exists. G11 text uses neutral pronouns ("they"), never he/she for the players. The predictability benchmark for the mixed BNE is
+    **what a coin-flipper scores** (`bgCoinPred(L)` = E[max share] over L rounds ≈ 59% at 20, ≈ 62% at 10), not 50%.
+    **"Did being predictable pay Player 1?"** groups P1s (80%+ / 61–79% / ≤60%) by P1 points per round (= how often the
+    pair showed the same number) vs the BNE. Under the theory 2×4 table, **"Where the class landed"** places each pair in
+    the cell of its habit (P1's more frequent number × P2's more frequent move when told Odd-Even and when told Matching),
+    with ★ cells and the share on a pure BNE; ties are left out and counted.
+  - **CSV**: a bayes row's response is `P1 [moves] · games [M O …] · points k/L · vs Partner` (`bgPoints` from both
+    subs + Nature's draws), so an export alone can be analysed. P1 predictability whole/first half/second half vs prediction, P2 "same as P1 in Matching / different
     in Odd-Even" + plan classification (Equilibrium plan / Same number always / Mixed), per-game 2×2 cell shares, the
     Bayesian 2×4 normal form at the round's pOdd with ★ BNEs, lesson note by regime, pairings, orphanWarning.
   - Live-update rule: `studentSubsSig` hides a partner's move for a round I haven't played yet (bayes only), so a

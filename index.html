@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-23.003";
+const APP_VERSION = "2026-10-23.004";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -3401,13 +3401,25 @@ function bgNormalForm(p){
     return "<td class='cell'"+(star?" style='background:var(--good-wash);box-shadow:inset 0 0 0 2px var(--good)'":"")+"><span style='color:var(--accent-ink)'>"+r(v[0])+"</span>, <span style='color:var(--gold)'>"+r(v[1])+"</span>"+(star?" <b style='color:var(--good)'>★</b>":"")+"</td>"; }).join("")+"</tr>"; });
   return {html, eqs};
 }
+/* What a coin-flipper scores on "predictability" (share of their more frequent number) over L rounds — not 50%:
+   a fair coin rarely splits exactly evenly (≈59% over 20 rounds, ≈62% over 10). The mixed BNE's benchmark. */
+function bgCoinPred(L){ L=Math.max(1,Math.round(L)); let lc=0, e=0; for(let k=0;k<=L;k++){ e+=Math.exp(lc - L*Math.LN2)*Math.max(k,L-k); lc+=Math.log((L-k)/(k+1)); } return e/L; }
+/* One player's points in a G11 match, from both subs and Nature's draws (for the CSV). */
+function bgPoints(s){
+  const p=allSubs[s.roundKey+"__"+encodeKey(String(s.partner||""))]; if(!p) return null;
+  const me=bgList(s), them=bgList(p), ty=bgList(s,"types").length? bgList(s,"types") : bgList(p,"types");
+  const L=Math.min(me.length, them.length, ty.length); let pts=0;
+  for(let i=0;i<L;i++){ const a1 = s.role==="P2" ? them[i] : me[i], a2 = s.role==="P2" ? me[i] : them[i]; pts+=bgPay(ty[i],a1,a2)[s.role==="P2"?1:0]; }
+  return {pts, L};
+}
 function analyzeBayes(list, teacher){
   list=list.filter(s=>isDone(s)&&!s.bot);
   const pairs=mutualPairs(list);
   const pUsed=(()=>{ const v=list.map(s=>s.pOdd).filter(x=>x!=null&&x!==""); return v.length? (+v[0])/100 : bgCfg().p; })();
   const pr=bgPredict(pUsed);
   let rounds=0, oN=0, u1=0, u2=0, mN=0, mMatch=0, oMis=0;
-  const p1Pred=[], half=[[],[]], cells={M:{},O:{}}, plans={};
+  const p1Pred=[], half=[[],[]], cells={M:{},O:{}}, plans={}, played={}, payGroups=[];   // played: "P1 number|P2 plan" → pairs
+  let unclear=0, lenSum=0;
   const rows=[];
   pairs.forEach(pp=>{
     let s1=pp.find(s=>s.role==="P1"), s2=pp.find(s=>s.role==="P2");
@@ -3428,11 +3440,18 @@ function analyzeBayes(list, teacher){
     const all=m2.slice(0,L), same=share(all);
     const plan = (mS!=null&&oS!=null&&mS>=0.6&&oS>=0.6) ? "Equilibrium plan" : same>=0.8 ? "Same number always" : "Mixed / other";
     plans[plan]=(plans[plan]||0)+1;
+    // Where this pair sits in the Bayesian normal form: P1's more frequent number × P2's more frequent move when told
+    // Odd-Even and when told Matching (the plan "OE,M"). A tie (e.g. 10–10) has no clear cell.
+    const maj=arr=>{ if(!arr.length) return null; const o=arr.filter(x=>x==="1").length; return o*2>arr.length?"1":o*2<arr.length?"2":null; };
+    const p1u=maj(a1), p2o=maj(inO), p2m=maj(inM);
+    if(p1u&&p2o&&p2m){ const k=p1u+"|"+p2o+p2m; played[k]=(played[k]||0)+1; } else unclear++;
+    payGroups.push({pred:share(a1), u1:pu1/L}); lenSum+=L;
     rows.push({s1,s2,L,pu1,pu2,a1:a1.join(""),a2:all.join(""),ty:ty.slice(0,L).join("").replace(/M/g,"m").replace(/O/g,"o")});
   });
   const avg=a=>a.length? a.reduce((s,v)=>s+v,0)/a.length : null;
   const wrap=el("div","stack");
   const predTxt = v=> v==null ? "50–100%" : pct(v);
+  const Lavg = pairs.length&&lenSum ? lenSum/payGroups.length : bgCfg().rounds, coinP=bgCoinPred(Lavg);   // the mixed BNE's predictability over this many rounds
   const tiles=el("div","stats");
   tiles.append(
     statTile("Matches", String(pairs.length), rounds? fmt(rounds/Math.max(1,pairs.length),0)+" rounds each" : "no complete pairs yet"),
@@ -3440,21 +3459,37 @@ function analyzeBayes(list, teacher){
     // Below 50% there are two pure BNEs (P1 always shows one number — which one doesn't matter here) AND a mixed BNE where
     // everyone plays 50/50; the pure ones give everybody more, so they're the headline. Above 50% only the mixed one exists.
     statTile("Player 1 predictability", p1Pred.length?pct(avg(p1Pred)):"—",
-      (pr.regime==="low" ? "pure BNE 100% (either number) · mixed BNE 50%" : pr.regime==="high" ? "BNE 50% (mixed — the only one)" : "BNE anywhere from 50% to 100%")+" · how often Player 1 repeated the same number", true),
+      (pr.regime==="low" ? "pure BNE 100% (either number) · mixed BNE ≈"+pct(coinP)+" (coin flip)" : pr.regime==="high" ? "BNE ≈"+pct(coinP)+" (mixed — coin flip, the only one)" : "BNE anywhere from 50% to 100%")+" · how often Player 1 repeated the same number", true),
     statTile("Points per round", rounds? fmt(u1/rounds,2)+" · "+fmt(u2/rounds,2) : "—",
       "P1 · P2 — "+(pr.regime==="low" ? "pure BNE "+fmt(pr.u1,2)+" · "+fmt(pr.u2,2)+" · mixed BNE 0.50 · 0.50" : "BNE "+fmt(pr.u1,2)+" · "+(pr.u2==null?"0.5–1":fmt(pr.u2,2)))));
   wrap.append(tiles);
+
+  // Did being predictable pay? Player 1 wins whenever the two numbers match (in either game), so P1's points per round
+  // are just "how often we showed the same number". Group Player 1s by how predictable they were.
+  if(payGroups.length>=2){
+    const G=[["Predictable 80%+",x=>x>=0.8,"#2e8b57"],["61–79%",x=>x>0.6&&x<0.8,"var(--accent)"],["Coin-like ≤60%",x=>x<=0.6,"#b5651d"]];
+    const items=[];
+    G.forEach(([lbl,f,col])=>{ const g=payGroups.filter(x=>f(x.pred)); if(g.length) items.push({label:lbl+" ("+g.length+")", value:Math.round(100*g.reduce((a,x)=>a+x.u1,0)/g.length)/100, color:col}); });
+    if(pr.regime!=="edge") items.push({label:pr.regime==="low"?"Pure BNE":"BNE", value:Math.round(pr.u1*100)/100, color:"var(--gold)"});
+    const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Did being predictable pay Player 1?"}));
+    card.append(barChart(items, 1, true, ""));
+    card.append(Object.assign(el("div","cap"),{textContent:"Player 1's points per round, grouped by how predictable each Player 1 was (number of pairs in brackets). Player 1 wins whenever both show the same number — in either game — so these points are simply how often the pair matched. "
+      +(pr.regime==="low"?"With Odd-Even only "+pct(pUsed)+" likely, a predictable Player 1 is easy for the Matching type to match, and the Odd-Even type is rare: theory says sticking to one number earns "+fmt(pr.u1,2)+" a round, while flipping a coin earns 0.50."
+       :pr.regime==="high"?"With Odd-Even "+pct(pUsed)+" likely, a predictable Player 1 mostly feeds the Odd-Even type, who counters — theory says mix 50/50 and earn 0.50."
+       :"At exactly 50% predictability neither helps nor hurts on average: 0.50 either way.")}));
+    wrap.append(card);
+  }
 
   if(p1Pred.length){
     const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Player 1: how predictable?"}));
     const items=[{label:"Whole match", value:Math.round(1000*avg(p1Pred))/10, color:"var(--accent)"}];
     if(half[0].length){ items.push({label:"First half", value:Math.round(1000*avg(half[0]))/10, color:"var(--muted)"}, {label:"Second half", value:Math.round(1000*avg(half[1]))/10, color:"var(--accent)"}); }
-    if(pr.regime==="low") items.push({label:"Pure BNE", value:100, color:"var(--gold)"}, {label:"Mixed BNE", value:50, color:"var(--gold)"});
-    else if(pr.p1!=null) items.push({label:"BNE (mixed)", value:Math.round(pr.p1*1000)/10, color:"var(--gold)"});
+    if(pr.regime==="low") items.push({label:"Pure BNE", value:100, color:"var(--gold)"}, {label:"Mixed BNE (coin flip)", value:Math.round(coinP*1000)/10, color:"var(--gold)"});
+    else if(pr.p1!=null) items.push({label:"BNE (coin flip)", value:Math.round(coinP*1000)/10, color:"var(--gold)"});
     card.append(barChart(items, 100, true, "%"));
     const stuck=p1Pred.filter(x=>x>=0.9).length;
-    card.append(Object.assign(el("div","cap"),{textContent:"Predictability = how often Player 1 showed the same number — the one they showed more often (50% = a coin flip, 100% = always the same). "+stuck+" of "+p1Pred.length+" Player 1s stuck to one number in at least 90% of rounds."
-      +(pr.regime==="low"?" Theory: in both pure BNEs, (1, 21) and (2, 12), Player 1 always shows the same number — 100%; which number doesn't matter. There is also a mixed BNE where everyone plays 50/50 and earns 0.5; the pure BNEs give everyone more (Player 1 "+fmt(pr.u1,2)+", Player 2 1), so they're the natural prediction — a class near 50% is stuck in the worst equilibrium."
+    card.append(Object.assign(el("div","cap"),{textContent:"Predictability = how often Player 1 showed the same number — the one they showed more often (100% = always the same). A coin-flipper scores about "+pct(coinP)+" over "+Math.round(Lavg)+" rounds, not 50% — a fair coin rarely splits exactly evenly. "+stuck+" of "+p1Pred.length+" Player 1s stuck to one number in at least 90% of rounds."
+      +(pr.regime==="low"?" Theory: in both pure BNEs, (1, 21) and (2, 12), Player 1 always shows the same number — 100%; which number doesn't matter. There is also a mixed BNE where everyone plays 50/50 and earns 0.5; the pure BNEs give everyone more (Player 1 "+fmt(pr.u1,2)+", Player 2 1), so they're the natural prediction — a class near "+pct(coinP)+" is playing like coin-flippers: the worst equilibrium."
        :pr.regime==="edge"?" At exactly 50% theory doesn't pin it down: anything from 50% to 100% is an equilibrium.":" Theory: no pure BNE — Player 1 mixes 50/50.")}));
     wrap.append(card);
   }
@@ -3492,6 +3527,22 @@ function analyzeBayes(list, teacher){
   const nt=el("table","matrix"); nt.style.cssText="font-size:.88rem;width:auto"; nt.innerHTML=nf.html;
   const ns=el("div","tablescroll"); ns.append(nt); nc.append(ns);
   nc.append(Object.assign(el("div","cap"),{textContent:"Player 2's strategy is a plan for each type: first digit = the move in Odd-Even, second = in the Matching Game (so 21 = show 2 if Odd-Even, 1 if Matching). "+(nf.eqs.length?"★ Pure Bayesian Nash equilibri"+(nf.eqs.length===1?"um: ":"a: ")+nf.eqs.join(" and ")+"."+(pr.regime==="low"?" (Not in the table: a mixed BNE where everyone plays 50/50 and earns 0.5.)":""):"No pure-strategy BNE: Player 1 must mix.")}));
+  // …and where the class actually landed in that table: each pair placed in the cell of its typical play.
+  const nPlayed=Object.values(played).reduce((a,b)=>a+b,0);
+  if(nPlayed){
+    const S2=["11","12","21","22"];
+    nc.append(Object.assign(el("div","tinylabel"),{textContent:"Where the class landed — "+nPlayed+" pair"+(nPlayed===1?"":"s")+" placed by how they usually played",style:"margin-top:14px"}));
+    let h="<tr><th></th>"+S2.map(x=>"<th style='color:var(--gold)'>"+x+"</th>").join("")+"</tr>";
+    ["1","2"].forEach(a=>{ h+="<tr><th style='color:var(--accent-ink)'>P1: "+a+"</th>"+S2.map(x=>{ const v=played[a+"|"+x]||0, sh=v/nPlayed, star=nf.eqs.includes("("+a+", "+x+")");
+      return "<td class='cell' style='background:color-mix(in srgb, var(--accent) "+Math.round(sh*70)+"%, transparent)"+(star?";box-shadow:inset 0 0 0 2px var(--good)":"")+"'><b>"+v+"</b>"+(v?" <span class='sm mut'>("+pct(sh)+")</span>":"")+(star?" <b style='color:var(--good)'>★</b>":"")+"</td>"; }).join("")+"</tr>"; });
+    const at=el("table","matrix"); at.style.cssText="font-size:.88rem;width:auto"; at.innerHTML=h;
+    const as=el("div","tablescroll"); as.append(at); nc.append(as);
+    const inStar=Object.entries(played).filter(([k])=>{ const [a,x]=k.split("|"); return nf.eqs.includes("("+a+", "+x+")"); }).reduce((t,[,v])=>t+v,0);
+    nc.append(Object.assign(el("div","cap"),{textContent:"Each pair counted once, in the cell of its usual play: Player 1's more frequent number (row) × Player 2's more frequent move when told Odd-Even and when told Matching (column, same digit order as above). "
+      +(nf.eqs.length? inStar+" of "+nPlayed+" pairs ("+pct(inStar/nPlayed)+") landed on a ★ pure BNE. " : "")
+      +"This only shows each pair's habit, not how consistently they played it — a Player 1 who showed 1 in 11 of 20 rounds counts the same as one who always did, so read it with the predictability chart above."
+      +(unclear?" "+unclear+" pair"+(unclear===1?"":"s")+" had no clear habit (an exact tie, or Player 2 never saw one of the games) and "+(unclear===1?"is":"are")+" left out.":"")}));
+  }
   wrap.append(nc);
   const note=el("div","note-box"); note.style.marginTop="4px";
   const lessonEnd=" The informed player's strategy is a <b>plan for each type</b>: match Player 1 in the Matching Game, counter Player 1 in Odd-Even.";
@@ -6394,7 +6445,11 @@ function exportCSV(){
     const sid=String(s.studentId||""); const idEmail = sid.includes("@") ? sid : "";
     const rn = roster[sid.toLowerCase()];
     const enrolled = s.guest ? "no" : (rn ? (rn.drop?"drop":rn.audit?"audit":"yes") : "no");
-    const resp = subValue(s);
+    let resp = subValue(s);
+    if(s.game==="bayes"){   // the export carries Nature's draws and the player's points, so the file alone can be analysed
+      const ty=bgList(s,"types"), pt=bgPoints(s);
+      resp=(s.role||"")+" ["+bgList(s).join(" ")+"] · games ["+ty.join(" ")+"] · points "+(pt?pt.pts+"/"+pt.L:"?")+" · vs "+(s.partnerName||"?");
+    }
     out.push([ROOM, (s.session!=null?sessLabel(s.session):""), s.game||"", (s.round!=null?s.round:""), s.roundKey||"", idEmail, s.name||"", s.sid||"", s.area||"", secOf(s), enrolled, resp, (s.ts?new Date(s.ts).toISOString():"")].map(csvCell).join(","));
   });
   try{
