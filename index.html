@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-22.008";
+const APP_VERSION = "2026-10-23.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -600,7 +600,7 @@ const GAMES = {
     blurb:"High or Low advertising against the same rival, round after round." },
   adfin: { name:"Advertising Game (Finite)", short:"G9", icon:"G9",
     blurb:"High or Low advertising against the same rival for a known, fixed number of rounds." },
-  robot: { name:"Robot Tournament", short:"G10", icon:"G10",
+  robot: { name:"Axelrod Tournament", short:"G10", icon:"G10",
     blurb:"Teams build a robot for the repeated Advertising Game — then every robot fights every other." },
   bayes: { name:"Bayesian Game", short:"G11", icon:"G11",
     blurb:"Odd-Even or the Matching Game? Player 2 knows which; Player 1 only knows the odds." },
@@ -616,7 +616,7 @@ const DEFAULT_CONFIG = {
   attackdefend:{ rounds:10 },   // Colonel Blotto: fixed roles (attacker 2 / defender 3), this many lockstep rounds per pair
   adwar:{ cont:50, min:20, cap:35 },    // Advertising Game (Infinite): % chance the market continues after each round (from the minimum on); hidden min / max rounds
   adfin:{ rounds:6 },                  // Advertising Game (Finite): a fixed, announced number of rounds
-  robot:{ capMin:5, joinMin:5, buildMin:10, teamMin:4, teamMax:6, teams:15, rounds:100, disc:5, house:true },   // Robot Tournament: captains / join / build timers (min), min / max team size, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
+  robot:{ capMin:5, joinMin:5, buildMin:10, teamMin:4, teamMax:6, teams:15, rounds:100, disc:5, house:true },   // Axelrod Tournament: captains / join / build timers (min), min / max team size, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
   bayes:{ pOdd:25, rounds:20 },          // Bayesian Game: % chance each round is Odd-Even (else the Matching Game); rounds per match
   publicgoods:{ E:8, mult:1.5 }
 };
@@ -996,7 +996,7 @@ async function openMeeting(patch){
     if(_schedUndo && _schedUndo.sess===want && !_schedUndo.ctrl) _schedUndo.ctrl={session:curSession(), round:control.round||1};
     p.session=want; p.round=1;
   }
-  // Robot Tournament: opening a new meeting starts its team-formation timer (a Reopen of the same meeting keeps it).
+  // Axelrod Tournament: opening a new meeting starts its team-formation timer (a Reopen of the same meeting keeps it).
   if(control.activeGame==="robot"){
     const rk="S"+(p.session!=null?p.session:curSession())+curMSection()+"-robot-"+(p.round!=null?p.round:(control.round||1));
     if(!(control.robot && control.robot.rk===rk)) p.robot={rk, capEnd: srvNow()+rbCfg().capMin*60000};
@@ -1107,7 +1107,7 @@ function boot(){
     }
   }catch(e){ fbAuth=null; }
   try{ fb.ref(".info/serverTimeOffset").on("value", s=>{ srvOffset=(s&&s.val())||0; }); }catch(e){}
-  setInterval(rbTick, 1000);   // Robot Tournament countdowns + phase changes (no-op for other games)
+  setInterval(rbTick, 1000);   // Axelrod Tournament countdowns + phase changes (no-op for other games)
   if(REQUIRE_GOOGLE && !fbAuth) authResolved=true;   // can't sign in — show the (unavailable) sign-in screen, not a spinner
   if(!REQUIRE_GOOGLE) attachData();                   // legacy/open mode: read immediately, name-join allowed
   // If auth restore stalls (slow mobile connection), stop showing a bare spinner and
@@ -1525,7 +1525,7 @@ function render(){
   syncCfgBtn();
   syncLogoutBtn();
   const app = $("#app");
-  // Robot Tournament teams listener: the instructor console (setting up) and students on the live class tab.
+  // Axelrod Tournament teams listener: the instructor console (setting up) and students on the live class tab.
   const wantRobot = !!(control && control.activeGame==="robot" && control.phase!=="revealed" && curKey && !diagOn()
     && (isTeacher() ? (presentMode || !histSel) : (control.phase==="open" && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class")));
   if(wantRobot) rbEnsure(curKey); else if(rbCtx) rbDetach();
@@ -3484,7 +3484,7 @@ function analyzeBayes(list, teacher){
   return wrap;
 }
 
-/* ── G10 Robot Tournament ─────────────────────────────────────────────────────────────────────
+/* ── G10 Axelrod Tournament ─────────────────────────────────────────────────────────────────────
    Teams build a robot that plays the repeated Advertising Game (G8/G9 payoffs, Low = cooperate) for
    them; when the instructor presses Fight every robot plays every other one. Three phases, all keyed
    to this meeting (control.robot.rk === curKey): FORM TEAMS (timer) → BUILD ROBOTS (timer, captain
@@ -3898,7 +3898,7 @@ async function rbFinalize(){
    saved, and the phase state — the console goes back to "Start team formation". Works mid-phase and while
    submissions are open (it's the tournament's own control, not a round change). */
 async function rbReset(){
-  if(!confirm("Reset the Robot Tournament for this meeting? All teams and robots are deleted and team formation starts over.")) return;
+  if(!confirm("Reset the Axelrod Tournament for this meeting? All teams and robots are deleted and team formation starts over.")) return;
   const key=curKey;
   for(const s of subs.slice()){ try{ await fb.ref(SUB_DOC(key,s.studentId)).remove(); }catch(e){} }
   try{ await fb.ref(LIVE_ROOT(key)).remove(); }catch(e){}
@@ -4066,7 +4066,7 @@ function rbBuilder(c, tid, t, capBuild){
 /* ── student screen ── */
 function studentRobot(c){
   const ph=rbPhase(), C=rbCfg();
-  c.append(Object.assign(el("h2"),{textContent:"Robot Tournament",style:"font-size:1.4rem;margin:6px 0 4px"}));
+  c.append(Object.assign(el("h2"),{textContent:"Axelrod Tournament",style:"font-size:1.4rem;margin:6px 0 4px"}));
   if(ph==="idle"){ c.append(el("p","lead","Waiting for your instructor to start team formation…")); return; }
   const intro=el("p","sm mut"); intro.style.margin="0";
   intro.textContent="Your team builds a robot that plays the Advertising Game for you. When the instructor presses Fight, every robot plays every other robot ("+C.rounds+" rounds a match). Your score is the NPV of your robot's profits"+(C.disc>0?", discounted at "+C.disc+"% per round":"")+" — highest NPV wins.";
@@ -4155,7 +4155,7 @@ function studentRobot(c){
 function rbConsoleCard(){
   const ph=rbPhase(), r=rbCtl(), C=rbCfg();
   const card=el("div","card stage");
-  card.append(el("div","eyebrow gold","Robot Tournament · "+sessLabel(liveSess())+" · Round "+liveRound()));
+  card.append(el("div","eyebrow gold","Axelrod Tournament · "+sessLabel(liveSess())+" · Round "+liveRound()));
   const title = ph==="idle" ? (isOpenNow()?"Ready to start team formation":"Open submissions to start team formation")
     : ph==="captains" ? "Step 1 · Captains signing up" : ph==="caplock" ? "Locking captains…"
     : ph==="join" ? "Step 2 · Players joining teams" : ph==="forming" ? "Locking teams…" : ph==="build" ? "Step 3 · Robots being built"
@@ -4226,7 +4226,7 @@ function rbConsoleCard(){
 function rbPresentBody(){
   const ph=rbPhase(), r=rbCtl();
   const cnt=el("div","present-count");
-  const lbl = ph==="captains"?"Captains: start a team" : ph==="caplock"?"Captains locked" : ph==="join"?"Join a team" : ph==="forming"?"Locking teams…" : ph==="build"?"Build your robot" : ph==="locked"?"Robots locked — fight coming" : ph==="fought"?"Fight over":"Robot Tournament";
+  const lbl = ph==="captains"?"Captains: start a team" : ph==="caplock"?"Captains locked" : ph==="join"?"Join a team" : ph==="forming"?"Locking teams…" : ph==="build"?"Build your robot" : ph==="locked"?"Robots locked — fight coming" : ph==="fought"?"Fight over":"Axelrod Tournament";
   const status=el("div","present-status"+(rbTimed(ph)?" live":"")); status.append(el("span","dot"), document.createTextNode(lbl)); cnt.append(status);
   const num=el("div","present-num");
   if(r && rbTimed(ph)) num.append(rbCountdown(rbPhaseEnd(r,ph), true)); else num.textContent=String(rbTeamList().length);

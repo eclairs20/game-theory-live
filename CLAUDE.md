@@ -544,7 +544,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   backward-induction lesson note (unique SPNE = High every round) with the class's Low rate before vs in
   the last round.
 
-- `robot` — **Robot Tournament** (**G10**; Public Goods is now labelled **G20**) — an Axelrod-style
+- `robot` — **Axelrod Tournament** (**G10**; was "Robot Tournament" — internal key kept as `robot`, and students
+  still "build a robot"; Public Goods is now labelled **G20**) — an Axelrod-style
   tournament on the G8/G9 Advertising Game (`RP_PAY`; Low = cooperate). **Teams** build one robot each; when
   the instructor presses **⚔ Fight** every robot plays every other one. Config `{ capMin:5, joinMin:5, buildMin:10,
   teamMin:4, teamMax:6, teams:15, rounds:100, disc:5, house:true }` (`rbCfg()` → `nTeams` = number of teams, 0 = no limit;
