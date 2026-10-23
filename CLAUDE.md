@@ -347,7 +347,11 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     top of pile), and the G5 builder previews the pile you're stacking the same way.
     `isDone(s)` (`s.done!==false`) still gates every
     "submitted" count (`liveCount`, `presentView`, `attendanceCard`, analyses filter
-    `isDone(s) && !s.bot`).
+    `isDone(s) && !s.bot`). **`isDone` also counts a `done:false` match sub as finished when the match is evidently
+    over** — its moves (`subMoves`: `seq` entries or `piles`) reach the announced `rounds` (G9, G11), or the partner's sub
+    is done, names this player back and has the same number of moves (all lockstep games: G5/G6 live, G7, G8, G9, G11).
+    The client only saves `done:true` when the "Match complete" screen draws, so a phone locked right after the last
+    tap left that player "in progress" and their partner flagged as unpaired.
   - **Practice bot** — a "🤖 Practice bot" button in the lobby sets `d.bot` and drops you straight
     into a match against a locally-generated ~Nash opponent (`botRBSeq`/`botPiles`), revealed hand
     by hand as you play; on completion `saveBot()` writes a synthetic `"bot:<myId>"` opponent sub so
@@ -554,15 +558,26 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   team (`rbCreateTeam`, blocked once `nTeams` teams exist); captains can rename (`rbRename`) or step down; the
   instructor can remove a team (`rbRemoveTeam`). At the timer the console runs **`rbLockCaptains`**: keeps the first
   `nTeams` teams by creation time (later ones dropped, their captains become players) and, if nobody volunteered,
-  appoints random captains from the students present (`ceil(present/max)`, capped by `nTeams`, auto names). (2) **Join**
+  appoints random captains from the students who **tapped** (see *Active-only placement*), auto names. (2) **Join**
   (`joinMin`): non-captains join or **switch** teams (`rbSwitch`, cap `teamMax` incl. captain, enforced by
-  transaction) until it locks. At the timer **`rbFinalize`** places every present-but-unteamed student into the
+  transaction) until it locks. At the timer **`rbFinalize`** places every **tapped**-but-unteamed student into the
   smallest team (so captain-only teams fill first; past the cap if needed — nobody is left out), then enforces the
   **minimum team size** with `rbBalance` (pure, in memory): while there are more teams than `floor(total/min)` the
   smallest short team is dissolved (newest first on ties; its captain joins another team as a player), then any team
   still under `min` is topped up with random non-captain players from the biggest teams. Min beats max when both
   can't hold (7 students, min 4 → one team of 7). Auto-made teams use `rbTeamCount(n)` = min(ceil(n/max),
   floor(n/min)), capped by `nTeams`. (3) **Build** and (4) **Fight** as below.
+  - **Active-only placement** — only students who **tapped something in this meeting** are ever placed automatically
+    (`rbMarkActive` writes `rp/<enc(id)>/act` = ts; called by the **🙋 I'm in — put me in a team** button `rbImIn`
+    (captains + join steps, for anyone not in a team), and by create / join / switch / leave). A page merely left open
+    — e.g. a student from the previous section, whose phone follows whatever is running now — heartbeats presence but is
+    never dealt into a team. Meeting-scoped, so attending another section still works. The heartbeat uses `update` (not
+    `set`) so it keeps `act`; `rbEnsure` reads it back so "✓ You're in" survives a reload (`_rbAct`). The console splits
+    unteamed students into "will be placed" (tapped) and "page open but haven't tapped — won't be placed"; the Present
+    view tells students to tap. Late arrivals (after the join lock) are never placed — they Join a team with space.
+  - **Instructor fixes**: a **✕** on every member chip in the console (`rbRemoveMember`, any phase before the Fight —
+    a removed captain hands captaincy to the next member, the last member removes the team, and their `act` is cleared);
+    **↺ Reopen building +2 min** in the locked phase (`rbAdjust({buildEnd})` — every team can edit again).
   - **Phases** live in `control.robot = {rk, capEnd, capLocked, joinEnd, finalized, buildEnd, fought}` (rk must equal `curKey`;
     `rbPhase()` → idle / captains / caplock / join / forming / build / locked / fought — a legacy state with only
     `teamsEnd` reads as past captains; from **server time** `srvNow()` via
@@ -579,7 +594,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     JSON changed) and a `visibilitychange` re-read, so a dropped/throttled phone socket still shows new teams;
     while a student types a team name the list holds still (render guard) and catches up on blur (`rbNewName` keeps the text). Join = transaction on `members` (cap `teamMax`).
     **No solos** (see the flow above; if no team exists at all at join lock, the present students are dealt into
-    `ceil(n/max)` random teams). Late students can join a team with space during build. Clear also removes `control.robot`. **↺ Reset tournament** (`rbReset`, on the console card in
+    `rbTeamCount(n)` random teams). Late students can join a team with space during build. Clear also removes `control.robot`. **↺ Reset tournament** (`rbReset`, on the console card in
     every phase, NOT frozen while open) deletes the meeting's teams/robots (live node), any robot subs and
     `control.robot`, so the card returns to "Start team formation" — the way out of a test run with no teams.
   - **Captain-only editing**: the captain's draft (`draftFor("robot-"+mc)`) is written to `rt/<tid>/bot`
@@ -637,8 +652,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - **Theory** (`bgPredict`, `bgNormalForm`): P1 wins by matching in both games. pOdd < ½ → two mirror BNEs (1,21) and
     (2,12) (P2 strategy = move in Odd-Even, move in Matching — the slides' order): P1 sticks to a number, Matching type matches, Odd-Even
     type counters; payoffs P1 1−p, P2 1. pOdd > ½ → no pure BNE, P1 mixes 50/50, everyone 0.5. pOdd = ½ → knife-edge.
-  - `analyzeBayes`: tiles (matches, realised Odd-Even %, **P1 predictability** = share of his usual number, points per
-    round vs BNE), P1 predictability whole/first half/second half vs prediction, P2 "same as P1 in Matching / different
+  - `analyzeBayes`: tiles (matches, realised Odd-Even %, **P1 predictability** = how often Player 1 showed their more
+    frequent number, points per round) — below ½ the benchmarks show **pure BNE 100% / P1 0.75 · P2 1** AND the
+    **mixed BNE** (everyone 50/50, 0.5 each), which the pure ones Pareto-dominate (captions say so); above ½ only the mixed
+    one exists. G11 text uses neutral pronouns ("they"), never he/she for the players. P1 predictability whole/first half/second half vs prediction, P2 "same as P1 in Matching / different
     in Odd-Even" + plan classification (Equilibrium plan / Same number always / Mixed), per-game 2×2 cell shares, the
     Bayesian 2×4 normal form at the round's pOdd with ★ BNEs, lesson note by regime, pairings, orphanWarning.
   - Live-update rule: `studentSubsSig` hides a partner's move for a round I haven't played yet (bayes only), so a

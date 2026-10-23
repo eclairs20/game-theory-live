@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-23.001";
+const APP_VERSION = "2026-10-23.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1259,7 +1259,23 @@ function mySub(){ return subs.find(s=>s.studentId===myId) || null; }
 function mySubWith(partner){ const m=mySub(); return (m && String(m.partner)===String(partner)) ? m : null; }
 /* A submission counts as "in" once done!==false. Older games never set done, so
    they are always done; the pair card games write done:false while still tapping. */
-function isDone(s){ return !!s && s.done!==false; }
+/* A submission counts as done when its done flag isn't false — OR, for a two-player match saved move by move, when
+   the match is evidently over even though this player's phone never drew the final screen (it only saves done:true
+   when "Match complete" renders, so a phone locked right after the last tap stayed "in progress" and its partner
+   showed as unpaired). Over = every announced round is in (s.rounds), or the partner's own sub is done, names this
+   player back and has the same number of moves (lockstep games: G5/G6 live, G7, G8, G9, G11). */
+function subMoves(s){
+  if(s.piles){ try{ const a=JSON.parse(s.piles); return Array.isArray(a)? a.filter(Boolean).length : null; }catch(e){ return null; } }
+  return s.seq ? String(s.seq).split(",").filter(x=>x!=="").length : null;
+}
+function isDone(s){
+  if(!s) return false; if(s.done!==false) return true;
+  if(!s.partner || !s.roundKey) return false;
+  const n=subMoves(s); if(!n) return false;
+  if(s.rounds && n>=+s.rounds) return true;
+  const p=allSubs[s.roundKey+"__"+encodeKey(String(s.partner))];
+  return !!p && p.done!==false && String(p.partner)===String(s.studentId) && subMoves(p)===n;
+}
 function oppColor(c){ return c==="red"?"black":"red"; }
 /* Pair card games write their sub incrementally so a partner can watch it fill in
    live. done:false = still tapping; the Submit button flips it to done:true. */
@@ -3232,7 +3248,7 @@ function analyzeAdWar(list, fin){
    rpMatch); roles are fixed per match (red → Player 1, black → Player 2, reusing pairData.colors). Nature's
    draw is deterministic from the pair + round (never from the moves), so both phones agree; each sub stores
    its own moves (`seq` "1,2,…") and the drawn games (`types` "M,O,…"), so the analysis needs no seed.
-   BNE: Player 1 wins by matching in BOTH games; the Matching type matches him, the Odd-Even type counters.
+   BNE: Player 1 wins by matching in BOTH games; the Matching type matches Player 1, the Odd-Even type counters.
    pOdd < ½ → Player 1 sticks to one number (mirror BNEs (1,21) and (2,12), P2's digits = move in Odd-Even, move in Matching — the slides' order); pOdd > ½ → he mixes 50/50. */
 const BG_NAME={M:"Matching Game", O:"Odd-Even"};
 function bgCfg(){ const cf=cfg("bayes"); return { p:Math.max(0,Math.min(100,+cf.pOdd||0))/100, R:Math.max(2,Math.min(60,Math.round(+cf.rounds||20))) }; }
@@ -3421,27 +3437,34 @@ function analyzeBayes(list, teacher){
   tiles.append(
     statTile("Matches", String(pairs.length), rounds? fmt(rounds/Math.max(1,pairs.length),0)+" rounds each" : "no complete pairs yet"),
     statTile("Odd-Even rounds", rounds?pct(oN/rounds):"—", "chance set at "+pct(pUsed)),
-    statTile("Player 1 predictability", p1Pred.length?pct(avg(p1Pred)):"—", "BNE: "+predTxt(pr.p1)+" · share of his usual number", true),
-    statTile("Points per round", rounds? fmt(u1/rounds,2)+" · "+fmt(u2/rounds,2) : "—", "P1 · P2 — BNE "+fmt(pr.u1,2)+" · "+(pr.u2==null?"0.5–1":fmt(pr.u2,2))));
+    // Below 50% there are two pure BNEs (P1 always shows one number — which one doesn't matter here) AND a mixed BNE where
+    // everyone plays 50/50; the pure ones give everybody more, so they're the headline. Above 50% only the mixed one exists.
+    statTile("Player 1 predictability", p1Pred.length?pct(avg(p1Pred)):"—",
+      (pr.regime==="low" ? "pure BNE 100% (either number) · mixed BNE 50%" : pr.regime==="high" ? "BNE 50% (mixed — the only one)" : "BNE anywhere from 50% to 100%")+" · how often Player 1 repeated the same number", true),
+    statTile("Points per round", rounds? fmt(u1/rounds,2)+" · "+fmt(u2/rounds,2) : "—",
+      "P1 · P2 — "+(pr.regime==="low" ? "pure BNE "+fmt(pr.u1,2)+" · "+fmt(pr.u2,2)+" · mixed BNE 0.50 · 0.50" : "BNE "+fmt(pr.u1,2)+" · "+(pr.u2==null?"0.5–1":fmt(pr.u2,2)))));
   wrap.append(tiles);
 
   if(p1Pred.length){
-    const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Player 1: how predictable was he?"}));
+    const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Player 1: how predictable?"}));
     const items=[{label:"Whole match", value:Math.round(1000*avg(p1Pred))/10, color:"var(--accent)"}];
     if(half[0].length){ items.push({label:"First half", value:Math.round(1000*avg(half[0]))/10, color:"var(--muted)"}, {label:"Second half", value:Math.round(1000*avg(half[1]))/10, color:"var(--accent)"}); }
-    if(pr.p1!=null) items.push({label:"BNE prediction", value:Math.round(pr.p1*1000)/10, color:"var(--gold)"});
+    if(pr.regime==="low") items.push({label:"Pure BNE", value:100, color:"var(--gold)"}, {label:"Mixed BNE", value:50, color:"var(--gold)"});
+    else if(pr.p1!=null) items.push({label:"BNE (mixed)", value:Math.round(pr.p1*1000)/10, color:"var(--gold)"});
     card.append(barChart(items, 100, true, "%"));
     const stuck=p1Pred.filter(x=>x>=0.9).length;
-    card.append(Object.assign(el("div","cap"),{textContent:"Predictability = the share of rounds Player 1 showed his usual number (50% = a coin flip, 100% = always the same). "+stuck+" of "+p1Pred.length+" Player 1s stuck to one number in at least 90% of rounds."+(pr.regime==="edge"?" At exactly 50% theory doesn't pin it down: anything from 50% to 100% is an equilibrium.":"")}));
+    card.append(Object.assign(el("div","cap"),{textContent:"Predictability = how often Player 1 showed the same number — the one they showed more often (50% = a coin flip, 100% = always the same). "+stuck+" of "+p1Pred.length+" Player 1s stuck to one number in at least 90% of rounds."
+      +(pr.regime==="low"?" Theory: in both pure BNEs, (1, 21) and (2, 12), Player 1 always shows the same number — 100%; which number doesn't matter. There is also a mixed BNE where everyone plays 50/50 and earns 0.5; the pure BNEs give everyone more (Player 1 "+fmt(pr.u1,2)+", Player 2 1), so they're the natural prediction — a class near 50% is stuck in the worst equilibrium."
+       :pr.regime==="edge"?" At exactly 50% theory doesn't pin it down: anything from 50% to 100% is an equilibrium.":" Theory: no pure BNE — Player 1 mixes 50/50.")}));
     wrap.append(card);
   }
   if(mN+oN){
-    const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Player 2: did she use what only she knew?"}));
+    const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Player 2: did they use what only they knew?"}));
     const items=[];
     if(mN) items.push({label:"Matching: same as P1", value:Math.round(1000*mMatch/mN)/10, color:"#2e8b57"});
     if(oN) items.push({label:"Odd-Even: different", value:Math.round(1000*oMis/oN)/10, color:"#b5651d"});
     card.append(barChart(items, 100, true, "%"));
-    card.append(Object.assign(el("div","cap"),{textContent:"How often Player 2 got what she wanted in each game: the same number as Player 1 in the Matching Game, a different one in Odd-Even. BNE: "+(pr.regime==="low"?"100% in both (Player 1 is predictable, so both types can read him).":pr.regime==="high"?"about 50% in both (Player 1 mixes, so neither type can read him).":"anywhere from 50% to 100%, depending on how predictable Player 1 is.")}));
+    card.append(Object.assign(el("div","cap"),{textContent:"How often Player 2 got what they wanted in each game: the same number as Player 1 in the Matching Game, a different one in Odd-Even. BNE: "+(pr.regime==="low"?"100% in both in the pure BNEs (Player 1 is predictable, so both types can read them); about 50% in the mixed BNE.":pr.regime==="high"?"about 50% in both (Player 1 mixes, so neither type can read them).":"anywhere from 50% to 100%, depending on how predictable Player 1 is.")}));
     const pk=Object.keys(plans);
     if(pk.length){ const order=["Equilibrium plan","Same number always","Mixed / other"];
       card.append(Object.assign(el("div","tinylabel"),{textContent:"Player 2's plan (a strategy is a plan for each type)",style:"margin-top:10px"}));
@@ -3468,15 +3491,15 @@ function analyzeBayes(list, teacher){
   const nc=el("div","chart-card"); nc.append(Object.assign(el("h3"),{textContent:"The Bayesian game at "+pct(pUsed)+" Odd-Even — expected payoffs"}));
   const nt=el("table","matrix"); nt.style.cssText="font-size:.88rem;width:auto"; nt.innerHTML=nf.html;
   const ns=el("div","tablescroll"); ns.append(nt); nc.append(ns);
-  nc.append(Object.assign(el("div","cap"),{textContent:"Player 2's strategy is a plan for each type: first digit = her move in Odd-Even, second = in the Matching Game (so 21 = show 2 if Odd-Even, 1 if Matching). "+(nf.eqs.length?"★ Bayesian Nash equilibri"+(nf.eqs.length===1?"um: ":"a: ")+nf.eqs.join(" and ")+".":"No pure-strategy BNE: Player 1 must mix.")}));
+  nc.append(Object.assign(el("div","cap"),{textContent:"Player 2's strategy is a plan for each type: first digit = the move in Odd-Even, second = in the Matching Game (so 21 = show 2 if Odd-Even, 1 if Matching). "+(nf.eqs.length?"★ Pure Bayesian Nash equilibri"+(nf.eqs.length===1?"um: ":"a: ")+nf.eqs.join(" and ")+"."+(pr.regime==="low"?" (Not in the table: a mixed BNE where everyone plays 50/50 and earns 0.5.)":""):"No pure-strategy BNE: Player 1 must mix.")}));
   wrap.append(nc);
   const note=el("div","note-box"); note.style.marginTop="4px";
-  const lessonEnd=" The informed player's strategy is a <b>plan for each type</b>: match Player 1 in the Matching Game, counter him in Odd-Even.";
+  const lessonEnd=" The informed player's strategy is a <b>plan for each type</b>: match Player 1 in the Matching Game, counter Player 1 in Odd-Even.";
   note.innerHTML = pr.regime==="low"
-    ? "<b>The lesson.</b> Player 1 wins by matching in <i>both</i> games, so being predictable helps him against the Matching type (who wants to match) and hurts him against the Odd-Even type (who wants to counter). With Odd-Even only <b>"+pct(pUsed)+"</b> likely, predictability pays: stick to one number and earn "+fmt(1-pUsed,2)+" a round (1 × "+pct(1-pUsed)+" + 0 × "+pct(pUsed)+"). Which number is just a convention — (1, 21) and (2, 12) are both BNEs."+lessonEnd+" Try the same game at 75%: then being predictable feeds the Odd-Even type, and Player 1 should mix 50/50."
+    ? "<b>The lesson.</b> Player 1 wins by matching in <i>both</i> games, so being predictable helps against the Matching type (who wants to match) and hurts against the Odd-Even type (who wants to counter). With Odd-Even only <b>"+pct(pUsed)+"</b> likely, predictability pays: stick to one number and earn "+fmt(1-pUsed,2)+" a round (1 × "+pct(1-pUsed)+" + 0 × "+pct(pUsed)+"). Which number is just a convention — (1, 21) and (2, 12) are both BNEs. (Everyone playing 50/50 is a BNE too, but it pays everyone only 0.5.)"+lessonEnd+" Try the same game at 75%: then being predictable feeds the Odd-Even type, and Player 1 should mix 50/50."
     : pr.regime==="high"
-    ? "<b>The lesson.</b> Player 1 wins by matching in both games. With Odd-Even <b>"+pct(pUsed)+"</b> likely, being predictable mostly feeds the Odd-Even type, who counters him. If he always showed one number he'd earn only "+fmt(1-pUsed,2)+" a round, so in equilibrium he <b>mixes 50/50</b> and earns 0.5 whatever happens. There is no pure-strategy BNE."+lessonEnd
-    : "<b>The lesson.</b> At exactly 50% Player 1 earns 0.5 whatever he does: predictability gains from the Matching type exactly what the Odd-Even type takes away. That's the tipping point — below 50% he should be predictable, above it unpredictable."+lessonEnd;
+    ? "<b>The lesson.</b> Player 1 wins by matching in both games. With Odd-Even <b>"+pct(pUsed)+"</b> likely, being predictable mostly feeds the Odd-Even type, who counters. Always showing one number would earn Player 1 only "+fmt(1-pUsed,2)+" a round, so in equilibrium Player 1 <b>mixes 50/50</b> and earns 0.5 whatever happens. There is no pure-strategy BNE."+lessonEnd
+    : "<b>The lesson.</b> At exactly 50% Player 1 earns 0.5 whatever they do: predictability gains from the Matching type exactly what the Odd-Even type takes away. That's the tipping point — below 50% Player 1 should be predictable, above it unpredictable."+lessonEnd;
   wrap.append(note);
   wrap.append(pairingsCard(pairs, pp=>{ const r=rows.find(x=>pp.includes(x.s1)); if(!r) return pairName(pp[0])+" ↔ "+pairName(pp[1]);
     return pairName(r.s1)+" (P1, "+r.pu1+")  ↔  "+pairName(r.s2)+" (P2, "+r.pu2+") · "+r.L+" rounds · games "+r.ty+" · P1 "+r.a1+" / P2 "+r.a2; }));
@@ -3628,7 +3651,7 @@ function rbEvolution(F, x0, G){
 }
 
 /* ── shared state, timers, listeners ── */
-let rbCtx=null, rbTeams={}, rbPresence={}, _rbPresSig=null, _rbLastPh=null, _rbHbAt=0, _rbPresAt=0, _rbFinalizing=false;
+let rbCtx=null, rbTeams={}, rbPresence={}, _rbPresSig=null, _rbAct=null, _rbLastPh=null, _rbHbAt=0, _rbPresAt=0, _rbFinalizing=false;
 let rbFightAnimUntil=0, _rbBotT=null, srvOffset=0;
 const srvNow = ()=> Date.now()+(srvOffset||0);
 function rbCfg(){ const cf=cfg("robot"); return {
@@ -3679,6 +3702,7 @@ function rbPollTeams(){
     if(sg!==_rbTeamsSig){ rbTeams=v; _rbTeamsSig=sg; rbTeamsRender(); } }).catch(()=>{});
 }
 function rbEnsure(mc){ if(rbCtx===mc) return; rbDetach(); rbCtx=mc; rbTeams={}; _rbTeamsSig="{}"; _rbHbAt=0; _rbPresAt=0;
+  if(!isTeacher() && haveIdentity()) fb.ref(LIVE_ROOT(mc)+"/rp/"+encodeKey(String(myId))+"/act").once("value").then(s=>{ if(s&&s.val() && rbCtx===mc && _rbAct!==mc){ _rbAct=mc; render(); } }).catch(()=>{});
   if(!_rbVisHook){ _rbVisHook=true; try{ document.addEventListener("visibilitychange",()=>{ if(!document.hidden && rbCtx) rbPollTeams(); }); }catch(e){} }
   try{ fb.ref(LIVE_ROOT(mc)+"/rt").on("value", rbOnTeams, ()=>{}); }catch(e){} }
 function rbDetach(){ if(!rbCtx) return; try{ fb.ref(LIVE_ROOT(rbCtx)+"/rt").off(); }catch(e){} rbCtx=null; rbTeams={}; rbPresence={}; }
@@ -3699,20 +3723,30 @@ function rbTick(){
     if(rbCtx===curKey && ph!=="locked" && ph!=="idle" && Date.now()-_rbPresAt>5000){
       _rbPresAt=Date.now();
       fb.ref(LIVE_ROOT(curKey)+"/rp").once("value").then(s=>{ rbPresence=(s&&s.val())||{};
-        const sig=Object.keys(rbPresence).sort().join(","); if(sig!==_rbPresSig){ _rbPresSig=sig; render(); } }).catch(()=>{});
+        const sig=Object.keys(rbPresence).sort().map(k=>k+((rbPresence[k]||{}).act?"+":"")).join(","); if(sig!==_rbPresSig){ _rbPresSig=sig; render(); } }).catch(()=>{});
     }
   } else if(rbCtx===curKey && haveIdentity() && control.phase==="open" && Date.now()-_rbHbAt>15000){
     _rbHbAt=Date.now();
-    fb.ref(LIVE_ROOT(curKey)+"/rp/"+encodeKey(String(myId))).set({id:String(myId), name:myName||String(myId), ts:srvNow()}).catch(()=>{});
+    fb.ref(LIVE_ROOT(curKey)+"/rp/"+encodeKey(String(myId))).update({id:String(myId), name:myName||String(myId), ts:srvNow()}).catch(()=>{});   // update, not set: keeps the "act" (tapped) mark
   }
 }
 
 /* ── team actions (students) ── */
+/* "Active" = this student tapped something in THIS meeting (I'm in / become captain / join / switch / leave). Only
+   active students are placed automatically when captains or teams lock — a page merely left open (e.g. a student
+   from the previous section, whose phone follows whatever is running now) is never dealt into a team. The mark
+   lives on the presence node (rp/<me>/act) and is meeting-scoped, so attending another section still works. */
+function rbMarkActive(){
+  const mc=curKey; if(!mc || !haveIdentity()) return Promise.resolve();
+  _rbAct=mc; const t=srvNow();
+  return fb.ref(LIVE_ROOT(mc)+"/rp/"+encodeKey(String(myId))).update({id:String(myId), name:myName||String(myId), ts:t, act:t}).catch(()=>{});
+}
 async function rbCreateTeam(name){
   name=String(name||"").trim().slice(0,24);
   if(!name){ toast("Give your team a name"); return; }
   const C=rbCfg(); if(C.nTeams && rbTeamList().length>=C.nTeams){ toast("All "+C.nTeams+" teams have captains — you'll pick a team next"); return; }
   if(Object.values(rbTeams).some(t=>t&&String(t.name||"").toLowerCase()===name.toLowerCase())){ toast("That team name is taken"); return; }
+  rbMarkActive();
   const mc=curKey, me=encodeKey(String(myId)), tid="t"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   const res=await fb.ref(LIVE_ROOT(mc)+"/rm/"+me).transaction(cur=> cur==null ? tid : undefined);
   if(!res||!res.committed){ toast("You're already in a team"); return; }
@@ -3721,6 +3755,7 @@ async function rbCreateTeam(name){
   catch(e){ await fb.ref(LIVE_ROOT(mc)+"/rm/"+me).remove(); toast("Couldn't create the team — try again"); }
 }
 async function rbJoin(tid){
+  rbMarkActive();
   const mc=curKey, me=encodeKey(String(myId)), max=rbCfg().max;
   const res=await fb.ref(LIVE_ROOT(mc)+"/rm/"+me).transaction(cur=> cur==null ? tid : undefined);
   if(!res||!res.committed){ toast("You're already in a team"); return; }
@@ -3734,6 +3769,7 @@ async function rbJoin(tid){
    size cap is enforced by transaction, so two people can't overfill a team. Captains can't switch. */
 async function rbSwitch(tid){
   const mine=rbMyTeam(); if(!mine) return rbJoin(tid);
+  rbMarkActive();
   if(mine.tid===tid) return;
   if(String(mine.t.captain)===String(myId)){ toast("Captains stay with their team"); return; }
   const mc=curKey, me=encodeKey(String(myId)), max=rbCfg().max;
@@ -3753,7 +3789,19 @@ async function rbRemoveTeam(tid){   // instructor: drop a team (e.g. an unsuitab
   const t=rbTeams[tid]||{}, upd={}; upd["rt/"+tid]=null; Object.keys(t.members||{}).forEach(k=>{ upd["rm/"+k]=null; });
   try{ await fb.ref(LIVE_ROOT(curKey)).update(upd); }catch(e){}
 }
+/* Instructor: take one student out of a team (e.g. someone dealt in who isn't in the room). A removed captain hands the
+   captaincy to the next member; removing the last member removes the team. Their "tapped" mark is cleared so a
+   later lock doesn't place them again. Before the Fight only — after it, the records are ordinary subs. */
+async function rbRemoveMember(tid, m){
+  const mc=curKey, t=rbTeams[tid]||{}, k=encodeKey(String(m.id)), upd={};
+  const left=Object.entries(t.members||{}).filter(([kk])=>kk!==k);
+  if(!left.length) upd["rt/"+tid]=null;
+  else { upd["rt/"+tid+"/members/"+k]=null; if(String(t.captain)===String(m.id)) upd["rt/"+tid+"/captain"]=String(left[0][1].id); }
+  upd["rm/"+k]=null; upd["rp/"+k+"/act"]=null;
+  try{ await fb.ref(LIVE_ROOT(mc)).update(upd); toast((m.name||m.id)+" removed from "+(t.name||"the team")); }catch(e){ toast("Couldn't remove — try again"); }
+}
 async function rbLeave(tid){
+  rbMarkActive();
   const mc=curKey, me=encodeKey(String(myId)), t=rbTeams[tid]||{};
   const left=Object.entries(t.members||{}).filter(([k])=>k!==me);
   try{
@@ -3806,7 +3854,7 @@ function rbAutoNamer(teams){
 }
 function rbShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const x=a[i]; a[i]=a[j]; a[j]=x; } return a; }
 /* Captains' time is up: keep the first N teams if a team limit is set (later ones are dropped — their captains
-   become players), and if nobody volunteered appoint random captains from the students present. Then open
+   become players), and if nobody volunteered appoint random captains from the students who tapped "I'm in". Then open
    the join step. */
 let _rbCapLocking=false;
 async function rbLockCaptains(){
@@ -3823,7 +3871,7 @@ async function rbLockCaptains(){
       live=live.slice(0,C.nTeams);
     }
     if(!live.length){
-      const pool=rbShuffle(Object.values(pres).filter(p=>p&&p.id&&now-(p.ts||0)<180000).map(p=>({id:String(p.id), name:p.name||String(p.id)})));
+      const pool=rbShuffle(Object.values(pres).filter(p=>p&&p.id&&p.act).map(p=>({id:String(p.id), name:p.name||String(p.id)})));   // only students who tapped (rbMarkActive)
       const k=rbTeamCount(pool.length, C);
       const nm=rbAutoNamer(teams);
       pool.slice(0,k).forEach((m,i)=>{ const tid="a"+now.toString(36)+i+Math.random().toString(36).slice(2,5), key=encodeKey(m.id), members={};
@@ -3857,7 +3905,7 @@ function rbBalance(mem, caps, ts, min){
   }
   return gone;
 }
-/* Join time is up: place everyone present but unteamed into the smallest teams (teams nobody joined get them
+/* Join time is up: place everyone who tapped "I'm in" (or otherwise acted in this meeting) but has no team into the smallest teams (teams nobody joined get them
    first), then enforce the minimum team size (rbBalance: merge teams the class can't fill, top up short ones;
    a dissolved team's captain joins another team as a player). If there are no teams at all, group the students
    present into random teams. Then start building. */
@@ -3871,7 +3919,7 @@ async function rbFinalize(){
     const upd={}, inTeam=new Set();
     const live=Object.entries(teams).filter(([,t])=>t&&t.members&&Object.keys(t.members).length);
     live.forEach(([,t])=>Object.values(t.members).forEach(m=>inTeam.add(String(m.id))));
-    const pool=rbShuffle(Object.values(pres).filter(p=>p&&p.id&&!inTeam.has(String(p.id))&&now-(p.ts||0)<180000).map(p=>({id:String(p.id), name:p.name||String(p.id)})));
+    const pool=rbShuffle(Object.values(pres).filter(p=>p&&p.id&&p.act&&!inTeam.has(String(p.id))).map(p=>({id:String(p.id), name:p.name||String(p.id)})));   // only students who tapped in this meeting
     if(live.length){
       const mem={}, caps={}, ts={}, was={};
       live.forEach(([tid,t])=>{ mem[tid]=Object.values(t.members).map(m=>({id:String(m.id), name:m.name||String(m.id)})); caps[tid]=t.captain; ts[tid]=t.ts||0;
@@ -3954,6 +4002,14 @@ function rbStrip(moves){
     s.append(q); });
   return s;
 }
+/* "I'm in" — the tap that makes an unteamed student eligible to be placed automatically (rbMarkActive). */
+function rbImIn(when){
+  const box=el("div"); box.style.cssText="margin-top:12px;padding:12px 14px;border:1px dashed var(--accent);border-radius:14px";
+  if(_rbAct===curKey){ box.append(Object.assign(el("div"),{innerHTML:"✓ <b>You're in.</b> "+(when||"If you haven't picked a team when joining closes, you'll be placed in one.")})); return box; }
+  const b=el("button","btn","🙋 I'm in — put me in a team"); b.onclick=()=>{ rbMarkActive(); render(); };
+  box.append(b, Object.assign(el("div","sm mut"),{textContent:"Playing today? Tap this (or join a team). Only students who tap are placed in a team automatically when joining closes.",style:"margin-top:6px"}));
+  return box;
+}
 function rbMemberChips(t, opts){
   opts=opts||{};
   const row=el("div","row"); row.style.cssText="gap:6px;flex-wrap:wrap;margin-top:6px";
@@ -3962,6 +4018,8 @@ function rbMemberChips(t, opts){
     const ch=el("span","chip"); ch.textContent=(cap?"★ ":"")+(m.name||m.id)+(me?" (you)":"");
     if(cap) ch.title="Captain";
     if(opts.onPick && !cap){ ch.style.cursor="pointer"; ch.title=opts.pickTitle||""; ch.onclick=()=>opts.onPick(m); }
+    if(opts.onRemove){ const x=el("button","linkbtn","✕"); x.type="button"; x.title="Remove from team"; x.setAttribute("aria-label","Remove "+(m.name||m.id)+" from team");
+      x.style.cssText="margin-left:6px;padding:0 2px;font-weight:700;color:var(--bad)"; x.onclick=e=>{ e.stopPropagation(); opts.onRemove(m); }; ch.append(x); }
     row.append(ch); });
   return row;
 }
@@ -4103,9 +4161,10 @@ function studentRobot(c){
         const b=el("button","btn","Become captain"); b.onclick=go;
         inp.onkeydown=e=>{ if(e.key==="Enter") go(); };
         f.append(inp,b); c.append(f);
-        c.append(Object.assign(el("div","sm mut"),{textContent:"Not captaining? Just wait — you'll pick a team in the next step.",style:"margin-top:6px"}));
+        c.append(Object.assign(el("div","sm mut"),{textContent:"Not captaining? Tap I'm in below — you'll pick a team in the next step.",style:"margin-top:6px"}));
       }
-    }
+      c.append(rbImIn("You'll pick a team in the next step — and if you don't, you'll be placed in one."));
+    } else c.append(rbImIn());
     c.append(Object.assign(el("div","tinylabel"),{textContent:"Teams so far ("+list.length+(C.nTeams?" of "+C.nTeams:"")+")",style:"margin-top:16px"}));
     if(!list.length) c.append(Object.assign(el("div","sm mut"),{textContent:"No captains yet.",style:"margin-top:6px"}));
     list.forEach(([tid,t])=>c.append(teamRow(tid,t,null)));
@@ -4118,6 +4177,7 @@ function studentRobot(c){
       box.append(Object.assign(el("div"),{innerHTML:"★ You're the captain of <b>"+esc(mine.t.name||"Team")+"</b> — players are joining."}));
       box.append(rbMemberChips(mine.t)); c.append(box);
     } else c.append(Object.assign(el("div","tinylabel"),{textContent: mine ? "Your team is highlighted — tap another to switch" : "Pick a team",style:"margin-top:16px"}));
+    if(!mine) c.append(rbImIn());
     c.append(Object.assign(el("div","sm mut"),{textContent:"Teams have "+C.min+"–"+C.max+" players. When joining closes, a team with fewer than "+C.min+" gets players moved in from the biggest teams, or is merged into others if there aren't enough students.",style:"margin-top:4px"}));
     if(!list.length) c.append(Object.assign(el("div","sm mut"),{textContent:"No teams yet.",style:"margin-top:6px"}));
     list.forEach(([tid,t])=>{ const n=Object.keys(t.members||{}).length, here=mine&&mine.tid===tid, full=n>=C.max;
@@ -4186,7 +4246,9 @@ function rbConsoleCard(){
     const f=el("button","btn gold","⚔ Fight!"); f.onclick=()=>robotFight();
     btns.append(p,e,f);
   } else if(ph==="locked"){
-    const f=el("button","btn gold big","⚔ Fight!"); f.onclick=()=>robotFight(); btns.append(f);
+    const ro=el("button","ghost-btn","↺ Reopen building +2 min"); ro.title="Give captains 2 more minutes to edit their robots (every team can edit again)";
+    ro.onclick=()=>rbAdjust({buildEnd:srvNow()+120000});
+    const f=el("button","btn gold big","⚔ Fight!"); f.onclick=()=>robotFight(); btns.append(ro,f);
   }
   if(ph!=="idle" || rbTeamList().length){
     const rs=el("button","ghost-btn","↺ Reset tournament"); rs.title="Delete all teams and robots and start team formation again";
@@ -4195,16 +4257,20 @@ function rbConsoleCard(){
   // teams overview
   const list=rbTeamList(), inTeams=new Set();
   list.forEach(([,t])=>Object.values(t.members||{}).forEach(m=>inTeams.add(String(m.id))));
-  const now=srvNow(), loose=Object.values(rbPresence||{}).filter(p=>p&&p.id&&!inTeams.has(String(p.id))&&now-(p.ts||0)<180000);
+  // Unteamed students: those who tapped (I'm in / any team action) get placed at the lock; a page that's merely open
+  // (e.g. left on from the previous section) is listed separately and never placed.
+  const now=srvNow(), unteamed=Object.values(rbPresence||{}).filter(p=>p&&p.id&&!inTeams.has(String(p.id)));
+  const loose=unteamed.filter(p=>p.act), idle=unteamed.filter(p=>!p.act && now-(p.ts||0)<180000);
   const st=el("div","stats"); st.style.marginTop="14px";
   const early = ph==="captains"||ph==="caplock"||ph==="join";
   st.append(statTile("Teams", String(list.length)+(C.nTeams?" / "+C.nTeams:""), ph==="captains"?"captains signing up":""),
     statTile("Students in teams", String(inTeams.size), ""),
-    statTile("Without a team", String(loose.length), early?"placed automatically when teams lock":"", loose.length&&!early?"bad":null),
+    statTile("Without a team", String(loose.length), (early?"tapped I'm in · placed when teams lock":"tapped, not in a team")+(idle.length?" · +"+idle.length+" page open, not tapped":""), loose.length&&!early?"bad":null),
     statTile("Robots done", String(list.filter(([,t])=>t.ready).length)+"/"+list.length, list.filter(([,t])=>t.bot).length+" configured · never-configured fight as Tit-for-tat"));
   card.append(st);
   if(ph==="build" && list.length && list.every(([,t])=>t.ready)) card.append(Object.assign(el("div","note-box teal"),{innerHTML:"<b>All robots are locked in.</b> You can press ⚔ Fight now.",style:"margin-top:10px"}));
-  if(loose.length) card.append(Object.assign(el("div","sm mut"),{textContent:"Without a team: "+loose.map(p=>p.name||p.id).join(", "),style:"margin-top:8px"}));
+  if(loose.length) card.append(Object.assign(el("div","sm mut"),{textContent:(early?"Without a team — will be placed when teams lock: ":"Without a team (tapped in, can still join a team with space): ")+loose.map(p=>p.name||p.id).join(", "),style:"margin-top:8px"}));
+  if(idle.length) card.append(Object.assign(el("div","sm mut"),{textContent:"Page open but haven't tapped anything — won't be placed (e.g. still logged in from another section): "+idle.map(p=>p.name||p.id).join(", "),style:"margin-top:4px"}));
   if(list.length){
     const tbl=el("div"); tbl.style.marginTop="12px";
     list.forEach(([tid,t])=>{
@@ -4214,7 +4280,9 @@ function rbConsoleCard(){
         +(ph==="build"||ph==="locked" ? (t.ready?" <span class='chip' style='border-color:#2e8b57;color:#2e8b57'>✓ done</span>":(ph==="build"?" <span class='chip'>building…</span>":"")) : "")}));
       if(ph==="captains"||ph==="join"){ const rm=el("button","linkbtn","remove team"); rm.type="button"; rm.onclick=()=>{ if(confirm("Remove team “"+(t.name||"")+"”? Its members become free to join another team.")) rbRemoveTeam(tid); }; hd.append(rm); }
       row.append(hd);
-      row.append(rbMemberChips(t, ph==="build"||ph==="join" ? {onPick:m=>{ if(confirm("Make "+(m.name||m.id)+" captain of "+(t.name||"this team")+"?")) rbSetCaptain(tid,m.id); }, pickTitle:"Make captain"} : null));
+      const mo = ph==="build"||ph==="join" ? {onPick:m=>{ if(confirm("Make "+(m.name||m.id)+" captain of "+(t.name||"this team")+"?")) rbSetCaptain(tid,m.id); }, pickTitle:"Make captain"} : {};
+      if(ph!=="fought") mo.onRemove=m=>{ if(confirm("Remove "+(m.name||m.id)+" from "+(t.name||"this team")+"?"+(String(t.captain)===String(m.id)?" The captaincy passes to the next member.":""))) rbRemoveMember(tid,m); };
+      row.append(rbMemberChips(t, mo));
       row.append(Object.assign(el("div","sm mut"),{textContent: t.bot ? ("🤖 "+(rbNorm(t.bot).name||"(unnamed)")+" · "+rbFamily(t.bot)+" — "+rbSentence(t.bot)) : "🤖 not configured yet (will fight as Tit-for-tat)",style:"margin-top:6px"}));
       tbl.append(row); });
     card.append(tbl);
@@ -4233,6 +4301,7 @@ function rbPresentBody(){
   cnt.append(num);
   const list=rbTeamList(), lim=rbCfg().nTeams;
   cnt.append(el("div","present-numlabel", (r && rbTimed(ph)) ? (list.length+(lim?" of "+lim:"")+" team"+(list.length===1&&!lim?"":"s")+(ph==="captains"?" so far":"")) : (list.length===1?"team":"teams")));
+  if(ph==="captains"||ph==="join") cnt.append(Object.assign(el("div","present-numlabel"),{textContent:"Playing? Join a team or tap 🙋 I'm in on your phone — only students who tap are placed in a team.",style:"margin-top:10px;font-size:1rem"}));
   if(list.length){ const tl=el("div"); tl.style.cssText="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;justify-content:center";
     list.forEach(([,t])=>{ const ch=el("span","chip"); ch.style.fontSize="1rem"; ch.textContent=(ph==="build"&&t.ready?"✓ ":"")+(t.name||"Team")+" · "+Object.keys(t.members||{}).length; if(ph==="build"&&t.ready) ch.style.borderColor="#2e8b57"; tl.append(ch); }); cnt.append(tl); }
   return cnt;
@@ -4552,7 +4621,7 @@ function revealNarr(g){
   if(g==="attackdefend") return "How did the class attack and defend Blotto's town — and how often did it fall?";
   if(g==="adwar") return "Did facing the same rival again and again keep firms advertising Low?";
   if(g==="adfin") return "Did knowing the last round make cooperation unravel?";
-  if(g==="bayes") return "Did Player 1 play predictably — and did Player 2 use what only she knew?";
+  if(g==="bayes") return "Did Player 1 play predictably — and did Player 2 use what only they knew?";
   if(g==="robot") return "Which robot strategies earned the most — and which ones got exploited?";
   return "How close did the group get to the socially optimal outcome?";
 }
@@ -6528,7 +6597,7 @@ function paramEditor(){
   else if(g==="bayes"){
     const grid=el("div","paramgrid"); grid.append(mk("Chance of Odd-Even (%)","pOdd",cf.pOdd), mk("Rounds per match","rounds",cf.rounds)); wrap.append(grid);
     const {p}=bgCfg(), pr=bgPredict(p);
-    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Pairs: Player 1 and Player 2 (random, fixed for the match). Each round Nature draws Odd-Even with this chance, otherwise the Matching Game; only Player 2 is told which. Odd-Even: Player 1 wins on an even total, Player 2 on an odd total. Matching Game: both score 1 if they show the same number. Theory at "+Math.round(p*100)+"%: "+(pr.regime==="low"?"Player 1 sticks to one number; Player 2 matches him in the Matching Game and counters him in Odd-Even (P1 earns "+fmt(pr.u1,2)+", P2 1.0 a round).":pr.regime==="high"?"Player 1 mixes 50/50 (no pure BNE); everyone earns 0.5 a round.":"the tipping point — Player 1 earns 0.5 whatever he does.")+" To compare, play another round at a different chance (e.g. 75%) — each round's results are kept separately.",style:"margin-top:6px"})); }
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Pairs: Player 1 and Player 2 (random, fixed for the match). Each round Nature draws Odd-Even with this chance, otherwise the Matching Game; only Player 2 is told which. Odd-Even: Player 1 wins on an even total, Player 2 on an odd total. Matching Game: both score 1 if they show the same number. Theory at "+Math.round(p*100)+"%: "+(pr.regime==="low"?"Player 1 sticks to one number; Player 2 matches Player 1 in the Matching Game and counters in Odd-Even (P1 earns "+fmt(pr.u1,2)+", P2 1.0 a round); everyone playing 50/50 is a worse mixed BNE (0.5 each).":pr.regime==="high"?"Player 1 mixes 50/50 (no pure BNE); everyone earns 0.5 a round.":"the tipping point — Player 1 earns 0.5 whatever they do.")+" To compare, play another round at a different chance (e.g. 75%) — each round's results are kept separately.",style:"margin-top:6px"})); }
   else if(g==="adfin"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played (announced to students)","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Same High/Low advertising game as G8, but every pair plays exactly this many rounds and students are told so (\"Round 3 of "+rpFinRounds()+"\", with the final round flagged). Backward induction predicts High in every round; compare the class's play near the end with G8.",style:"margin-top:6px"})); }
