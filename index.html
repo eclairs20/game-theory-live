@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-10-23.002";
+const APP_VERSION = "2026-10-23.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -6485,7 +6485,7 @@ function historyPanel(){
   if(!list.length){ c.append(Object.assign(el("div","card stage center mut"),{textContent:"No submissions recorded for this meeting."})); }
   else {
     c.append(analysisBody(h.game, list, true));
-    const who=el("div","card stage"); who.append(el("div","eyebrow","Who submitted"), submittedTable(list)); c.append(who);
+    const who=el("div","card stage"); who.append(el("div","eyebrow","Who submitted"), submittedTable(list,{removable:true})); c.append(who);
   }
   // Clear exactly this meeting (one section's record key), with a confirmation that names it.
   const danger=el("div","card stage");
@@ -6509,10 +6509,20 @@ async function clearMeeting(rk){
   try{ await fb.ref(LIVE_ROOT(rk)).remove(); }catch(e){}
   toast(n ? ("Cleared "+n+" submission"+(n===1?"":"s")) : "Nothing to clear");
 }
-function submittedTable(list){
+/* Instructor: delete ONE student's record (e.g. someone dealt into the wrong section's meeting). Confirms with the
+   name and meeting; nothing else in the meeting is touched. */
+async function removeRecord(s){
+  const k=Object.keys(allSubs).find(x=>allSubs[x]===s) || (s.roundKey+"__"+encodeKey(String(s.studentId)));
+  const pk=parseRoundKey(s.roundKey)||{}, g=GAMES[pk.game]||{};
+  const where=(g.name||pk.game||"this game")+" · "+sessLabel(pk.session)+(pk.section?"."+pk.section:"")+" · Round "+pk.round;
+  if(!confirm("Remove "+(s.name||s.studentId)+"'s record from “"+where+"”?\n\nOnly this one record is deleted; everyone else's stays. This can't be undone.")) return;
+  try{ await fb.ref(SUBS_PATH()+"/"+k).remove(); toast("Removed "+(s.name||s.studentId)+"'s record"); }catch(e){ toast("Couldn't remove — try again"); }
+}
+function submittedTable(list, opts){
+  opts=opts||{};
   const rows=(list||subs).slice().sort((a,b)=>a.ts-b.ts);
   const showStatus=haveRoster(), showSec=rosterSections().length>0;
-  let html="<tr><th>#</th><th>Player</th>"+(showSec?"<th>Sec</th>":"")+"<th>Response</th>"+(showStatus?"<th>Status</th>":"")+"</tr>";
+  let html="<tr><th>#</th><th>Player</th>"+(showSec?"<th>Sec</th>":"")+"<th>Response</th>"+(showStatus?"<th>Status</th>":"")+(opts.removable?"<th></th>":"")+"</tr>";
   rows.forEach((s,i)=>{
     const em=subEmail(s), rn=roster[String(s.studentId).toLowerCase()];
     const stat = !rn ? "<span style='color:var(--gold);font-weight:600'>Guest</span>"
@@ -6524,9 +6534,11 @@ function submittedTable(list){
       (showSec?("<td>"+esc(secOf(s)||"—")+"</td>"):"")+
       "<td class='cell'>"+esc(subValue(s))+"</td>"+
       (showStatus?("<td>"+stat+"</td>"):"")+
+      (opts.removable?"<td><button type='button' class='linkbtn' data-rm='"+i+"' style='color:var(--bad);white-space:nowrap' title='Delete only this record'>✕ Remove</button></td>":"")+
       "</tr>";
   });
   const t=el("table","matrix"); t.style.fontSize=".86rem"; t.innerHTML=html;
+  if(opts.removable) t.querySelectorAll("[data-rm]").forEach(b=>{ b.onclick=()=>removeRecord(rows[+b.dataset.rm]); });
   const scroll=el("div","tablescroll"); scroll.style.marginTop="10px"; scroll.append(t); return scroll;
 }
 function attendanceCard(){
@@ -6552,7 +6564,7 @@ function attendanceCard(){
       Object.assign(el("h3"),{textContent:sv.length+" submitted this round",style:"margin:4px 0 2px"}),
       Object.assign(el("div","sm mut"),{textContent:"No class roster loaded yet — everyone joins as a guest. Load the roster (left) to track enrolled attendance.",style:"margin-bottom:2px"}));
   }
-  if(sv.length) card.append(submittedTable(sv));
+  if(sv.length) card.append(submittedTable(sv,{removable:!isOpenNow()}));   // no single-record deletes while students are submitting
   if(haveRoster() && todo.length){
     const blk=el("div"); blk.style.marginTop="14px";
     blk.append(Object.assign(el("div","tinylabel"),{textContent:"Not yet ("+todo.length+")",style:"margin-bottom:6px"}));

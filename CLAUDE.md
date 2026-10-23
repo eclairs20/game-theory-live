@@ -131,7 +131,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     (`pastMeetings`, newest first, round shown only when a session had several), each with per-section chips
     (with counts) and Both. A past chip sets local `histSel` → the results area shows `historyPanel` (read-only:
     analysis, who submitted, **Clear this meeting…** → `clearMeeting(rk)`, confirm names the meeting, single
-    section only) and the round controls **collapse to "Viewing past results — ← Back to today"**, so nothing on
+    section only; each who-submitted row also has **✕ Remove** → `removeRecord(s)`, deleting just that one student's
+    record after a confirm naming them and the meeting — also on today's attendance card, but hidden while submissions
+    are open) and the round controls **collapse to "Viewing past results — ← Back to today"**, so nothing on
     screen can act on today's round meanwhile; the attendance card is hidden. Writes nothing to `control`.
     Other games' history: pick that game up top (frozen while a round is open). This replaced stepping the
     session back, which closed submissions for the whole class.
