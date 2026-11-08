@@ -670,6 +670,48 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - Live-update rule: `studentSubsSig` hides a partner's move for a round I haven't played yet (bayes only), so a
     partner moving first never redraws my screen; verified 10/10 taps under ~20 writes/s.
 
+- `placement` — **Placement Season** (**G12**) — **signalling** (Spence). Candidates are dealt a private type
+  (**H** / **L**, high/low productivity) and choose **Grad** or **MBA**; recruiter **firms** (teams of students, one
+  **captain** taps) see only the degree and choose an offer **per degree** (Player 2's S₂ᴹᴮᴬ / S₂ᴳʳᵃᵈ). Self-contained
+  `ps*` block. Config `{ mode:"fixed"|"bid", variant:"A"|"B"|"D"|"E", firms:5, firmMax:4 }` (`psCfg()`).
+  - **Variants** (`PS_VARIANTS`; productivity `prod[type][deg][track]`, recruiter payoff = productivity − salary):
+    **A** Classic MBA (50% H, MBA cost H 40 / L 160; Manager 200 / Analyst 100; productivity H 300/150, L 100/100 —
+    the MBA adds no skill), **B** Online MBA (costs 10/40), **D** MBA builds skills (Manager 300; MBA-trained H 400 /
+    L 350 as managers), **E** Strong batch (80% H). Each has a `lesson` line. D is fixed-mode only (300 is outside
+    the pay band).
+  - **Modes.** **Fixed**: salary is set by the track; CVs are **dealt** to firms in batches that match the class by
+    degree **and** type (deal MBA-H, MBA-L, Grad-H, Grad-L round-robin on one counter, start rotated by round), so
+    firms compete on judgement only. **Bid**: offer = track + salary inside **pay bands** (`PS_BAND`: Manager
+    200–250, Analyst 100–150 — the bands make every in-band combination separating at costs 40/160); one shared
+    pool, **no hiring limit**: every candidate goes to the highest salary for their own degree, ties at the top
+    split evenly (seeded). Bands don't overlap, so a Manager offer always out-pays an Analyst one.
+  - **Flow** (`control.ps = {rk, step}`, `psStep()`): Open → **roles** (first round of a meeting only, when it has
+    no firms: students tap *Join* on a firm card, first joiner = captain) → **choose** (candidates dealt a type,
+    pick Grad/MBA, changeable until the next step) → **recruit** (choices lock; captains set offers; bid mode shows
+    a live job board) → Reveal → Next round (goes straight to choose; firms are kept). Step buttons are on the
+    console card (`psConsoleCard`, with live H/L × MBA/Grad counts, firms with ✕ remove / tap-to-make-captain,
+    **Reset firms**) and on the Present view; Reveal is locked until the recruit step. `openMeeting` sets `ps`.
+  - **Data.** Firms are **meeting-level** (they persist across rounds): `live/<S1A-placement>/pf/<A..H>` =
+    `{members, captain}`, pointer `pr/<enc(id)>` (claimed by transaction, size cap by transaction). Types per round:
+    `live/<roundKey>/pt/n` counter → `psTypeFor` (a seeded block of 10 with exactly q% H) → `pt/t/<enc(id)>`.
+    Subs: candidate `{pt:"C", type, deg, mode, variant}`; recruiter `{pt:"F", fid, cap}` (written automatically so
+    they count as present), the captain's carries `offer:{MBA:{t,w},Grad:{t,w}}` + `members`. One sub per student
+    per round, so being a recruiter and a candidate in the same round is impossible.
+  - **Outcome** `psRound(list)` is recomputed from subs only (cached by a signature), so live preview, reveal,
+    history and CSV agree; `psRoundsUpTo`/`psLeaderboard` give **cumulative profit per mode** within the meeting
+    (fixed and bidding phases have separate leaderboards). Candidates in the choose step and recruiters see **last
+    round's placement report** (`psLastReport`).
+  - **Reveal** (`analyzePlacement`): candidate's own result (firm, track, salary − MBA cost, phase total); a
+    recruiter's **KPI panel** (cumulative profit + rank, hires by degree, MBA hit rate, profit per hire, avg paid vs
+    produced) and hires with types; the class table H/L × MBA/Grad with **μ** (share H among MBAs) and **β**; fixed
+    mode states the Manager threshold per degree (`psThreshold`, 2/3 for A) and whether Manager was the best reply;
+    bid mode compares salary with what each pool produced; the variant's lesson; the leaderboard. CSV/`subValue`:
+    `psSubValue`.
+  - **Live-update rule:** `psSubsSig` = my own record (+ the captain's offer for a teammate; the captain draws from
+    the local `_psOffer` draft); the firms listener has `psViewSig` (`_drawn.ps`). Live counts and the job board are
+    **patched in place** (`psPatchLive`, `[data-ps-live]`) on every subs change — never a full redraw. Verified with
+    ~20 writes/s: every candidate toggle and captain stepper tap registered and the rival board updated live.
+
 ## Interactive lessons (no submissions)
 - **Pareto optimality** (`paretoLesson`, local `lessonMode="pareto"` + `PZ` state) — an
   instructor-launched, full-screen **payoff-matrix checker** (a teaching visual, not a game;
