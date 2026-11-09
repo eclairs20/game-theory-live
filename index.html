@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-09.001";
+const APP_VERSION = "2026-11-09.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1404,24 +1404,51 @@ function parseRoster(text){
   return out;
 }
 
-/* ─── Google sign-in (student) ─── */
+/* ─── Google sign-in (student) ───
+   POPUP ONLY. The old fallback to signInWithRedirect broke on phones: iOS Safari / Chrome partition the storage the
+   redirect needs, and apps' built-in browsers (WhatsApp, Gmail, Instagram, LinkedIn…) block it outright, so the student
+   was stranded on game-theory-live.firebaseapp.com with "Unable to process request due to missing initial state".
+   Now a blocked or closed pop-up just explains what to do, and an in-app browser gets an "open in Safari/Chrome" note. */
+let _gsiHelp=null;   // why the last attempt failed: "blocked" | "inapp" | null
+function inAppBrowser(){
+  const ua=navigator.userAgent||"";
+  if(/FBAN|FBAV|FB_IAB|Instagram|LinkedInApp|Snapchat|Twitter|MicroMessenger|Line\/|WhatsApp|GSA\/|; wv\)/i.test(ua)) return true;
+  return /iPhone|iPad|iPod/i.test(ua) && /AppleWebKit/i.test(ua) && !/Safari\//i.test(ua);   // iOS web view (no Safari token)
+}
 async function googleSignIn(){
   if(!fbAuth){ toast("Google sign-in isn't available here"); return; }
+  if(inAppBrowser()){ _gsiHelp="inapp"; render(); return; }
   const provider=new firebase.auth.GoogleAuthProvider();
   provider.setCustomParameters({ prompt:"select_account" });
-  try{ await fbAuth.signInWithPopup(provider); }
+  try{ await fbAuth.signInWithPopup(provider); _gsiHelp=null; }
   catch(e){
     const c=e&&e.code;
-    if(c==="auth/popup-blocked"||c==="auth/popup-closed-by-user"||c==="auth/cancelled-popup-request"){
-      try{ await fbAuth.signInWithRedirect(provider); return; }catch(e2){ toast(googleErr(e2)); }
-    } else { toast(googleErr(e)); }
+    if(c==="auth/popup-blocked"){ _gsiHelp="blocked"; render(); }
+    else if(c==="auth/popup-closed-by-user"||c==="auth/cancelled-popup-request") toast("Sign-in was closed before it finished — tap Continue with Google again.");
+    else if(c==="auth/web-storage-unsupported"||c==="auth/operation-not-supported-in-this-environment"){ _gsiHelp="inapp"; render(); }
+    else toast(googleErr(e));
   }
+}
+/* Shown under the Google button after a failed attempt (or straight away in an app's built-in browser). */
+function signInHelp(){
+  const why = _gsiHelp || (inAppBrowser() ? "inapp" : null); if(!why) return null;
+  const box=el("div","note-box"); box.style.marginTop="12px";
+  box.append(Object.assign(el("div"),{innerHTML: why==="inapp"
+    ? "<b>Open this page in Safari or Chrome to sign in.</b> You're in an app's built-in browser (for example WhatsApp or Gmail), where Google sign-in doesn't work. Tap the <b>⋯</b> or share menu and choose <b>Open in browser</b> (or Open in Safari / Chrome) — or copy the link and paste it into your browser."
+    : "<b>The Google sign-in window was blocked.</b> Allow pop-ups for this page and tap Continue with Google again. On an iPhone: Settings → Safari → turn off <b>Block Pop-ups</b>, then come back. Or open the link in Chrome."}));
+  const row=el("div","row"); row.style.cssText="gap:8px;margin-top:8px;flex-wrap:wrap";
+  const cp=el("button","ghost-btn","Copy link");
+  cp.onclick=()=>{ const u=location.href; try{ navigator.clipboard.writeText(u).then(()=>toast("Link copied — paste it into Safari or Chrome"),()=>prompt("Copy this link:",u)); }catch(e){ prompt("Copy this link:",u); } };
+  row.append(cp, Object.assign(el("span","sm mut"),{textContent:location.href,style:"word-break:break-all;align-self:center"}));
+  box.append(row);
+  return box;
 }
 function googleErr(e){
   const c=e&&e.code||"";
   if(c==="auth/operation-not-allowed") return "Google sign-in isn't switched on yet — ask your instructor.";
   if(c==="auth/unauthorized-domain") return "This page isn't authorized for Google sign-in yet.";
-  return "Google sign-in didn't complete — try again, or join with your name.";
+  if(c==="auth/network-request-failed") return "No connection — check your internet and try again.";
+  return "Google sign-in didn't complete — try again"+(REQUIRE_GOOGLE?".":", or join with your name.");
 }
 async function signOutStudent(){ try{ if(fbAuth) await fbAuth.signOut(); }catch(e){} }
 /* Full log-out for a shared classroom PC: sign out of Google (if signed in), close
@@ -1693,6 +1720,7 @@ function joinPanel(){
     const gb=el("button","gbtn");
     gb.innerHTML="<svg class='g' viewBox='0 0 48 48' aria-hidden='true'><path fill='#EA4335' d='M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.5 5.4 2.5 13.3l7.8 6.1C12.2 13.2 17.6 9.5 24 9.5z'/><path fill='#4285F4' d='M46.1 24.6c0-1.6-.1-3.1-.4-4.6H24v9.1h12.4c-.5 2.9-2.1 5.3-4.6 7l7.1 5.5c4.1-3.8 6.5-9.4 6.5-16z'/><path fill='#FBBC05' d='M10.3 28.6c-.5-1.4-.7-2.9-.7-4.6s.3-3.2.7-4.6l-7.8-6.1C.9 16.5 0 20.1 0 24s.9 7.5 2.5 10.7l7.8-6.1z'/><path fill='#34A853' d='M24 48c6.2 0 11.5-2 15.3-5.5l-7.1-5.5c-2 1.3-4.6 2.1-8.2 2.1-6.4 0-11.8-3.7-13.7-9.1l-7.8 6.1C6.5 42.6 14.6 48 24 48z'/></svg>Continue with Google";
     gb.onclick=googleSignIn; wrap.append(gb);
+    const help=signInHelp(); if(help) wrap.append(help);
     if(nameAllowed) wrap.append(Object.assign(el("div","orline"),{textContent:"or join with a name"}));
   } else if(REQUIRE_GOOGLE){
     wrap.append(Object.assign(el("p","lead"),{textContent:"Google sign-in is required to join but isn't available right now. Reload the page, or ask your instructor."}));

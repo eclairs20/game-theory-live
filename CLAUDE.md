@@ -258,6 +258,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   name (`manualId` + `gtl_name`). Sign-in is optional: if the auth SDK is missing or the
   Google provider/authorized-domain isn't set up in the Firebase console, the app falls back
   to name-join and the Google button errors gracefully.
+- **Sign-in is POPUP ONLY** (`googleSignIn`). The old fallback to `signInWithRedirect` stranded phone users on
+  `game-theory-live.firebaseapp.com` with "Unable to process request due to missing initial state" — iOS Safari/Chrome
+  partition the storage the redirect needs, and apps' built-in browsers (WhatsApp, Gmail, Instagram…) block it. Now
+  `auth/popup-blocked` shows how to allow pop-ups, a closed pop-up just toasts, and an in-app browser (`inAppBrowser()`:
+  known app tokens, Android `; wv)`, or an iOS web view without the `Safari/` token) gets "Open this page in Safari or
+  Chrome" + **Copy link** (`signInHelp`, under the Google button). `getRedirectResult` at boot only clears an old pending one.
 - One-time console setup for Google: Authentication → Sign-in method → enable **Google**;
   Authentication → Settings → Authorized domains → add `eclairs20.github.io`.
 - Instructor console has a **Class roster** editor (paste `email, name` lines) and a live
