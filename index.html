@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-08.001";
+const APP_VERSION = "2026-11-09.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -4673,8 +4673,9 @@ const PS_VARIANTS={
 function psCfg(){ const c=cfg("placement"); const mode=c.mode==="bid"?"bid":"fixed";
   let v=PS_VARIANTS[c.variant]?c.variant:"A"; if(mode==="bid" && v==="D") v="A";
   return {mode, v, V:PS_VARIANTS[v], firms:Math.max(2,Math.min(8,Math.round(+c.firms||5))), max:Math.max(1,Math.min(8,Math.round(+c.firmMax||4)))}; }
-const psFid = i=> String.fromCharCode(65+i);
-const psFirmName = fid=> "Firm "+fid;
+/* A firm's display name: from the round's records (R.names, so history keeps the name used then), else the live
+   firm, else a fallback. Captains name their firm when they start it. */
+function psFirmName(fid, R){ return (R && R.names && R.names[fid]) || (psFirms[fid] && psFirms[fid].name) || ("Firm "+String(fid||"").slice(-3).toUpperCase()); }
 function psBase(rk){ const p=parseRoundKey(rk||curKey); return p ? "S"+p.session+p.section+"-placement" : null; }
 function psCtl(){ const p=control&&control.ps; return (p && p.rk===curKey) ? p : null; }
 function psStep(){ const p=psCtl(); return p ? (p.step||"choose") : "choose"; }
@@ -4690,23 +4691,30 @@ function psThreshold(V,deg){
 
 /* ── live state: firms (meeting-level) + my dealt type ── */
 let psCtx=null, psFirms={}, _psFirmsSig="{}", _psType={}, _psTypeBusy={}, _psPart={}, _psOffer={}, _psPollAt=0, _psVis=false;
-function psEnsure(base){ if(psCtx===base) return; psDetach(); psCtx=base; psFirms={}; _psFirmsSig="{}";
+function psEnsure(base){ if(psCtx===base) return; psDetach(); psCtx=base; psFirms={}; _psFirmsSig="{}"; psPtrHook();
   if(!_psVis){ _psVis=true; try{ document.addEventListener("visibilitychange",()=>{ if(!document.hidden && psCtx) psPoll(); }); }catch(e){} }
   try{ fb.ref(LIVE_ROOT(base)+"/pf").on("value", s=>psOnFirms(base,s), ()=>{}); }catch(e){} }
 function psDetach(){ if(!psCtx) return; try{ fb.ref(LIVE_ROOT(psCtx)+"/pf").off(); }catch(e){} psCtx=null; psFirms={}; _psFirmsSig="{}"; }
 function psOnFirms(base,s){ if(psCtx!==base) return; const v=(s&&s.val())||{}, sg=JSON.stringify(v); if(sg===_psFirmsSig) return; psFirms=v; _psFirmsSig=sg; psFirmsRender(); }
 function psPoll(){ const b=psCtx; if(!b) return; _psPollAt=Date.now();
   fb.ref(LIVE_ROOT(b)+"/pf").once("value").then(s=>psOnFirms(b,s)).catch(()=>{}); }
-function psFirmsRender(){ if(isTeacher()){ teacherRenderSoon(); return; } const sg=psViewSig(); if(sg!==null && sg===_drawn.ps) return; render(); }
+let _psDeferT=null;
+/* Firm-list changes redraw a student only when what they see changed — and never while a finger is down (a classmate
+   starting a firm at the moment you press "Start a firm" would otherwise replace the button mid-tap). */
+function psFirmsRender(){ if(isTeacher()){ teacherRenderSoon(); return; } const sg=psViewSig(); if(sg!==null && sg===_drawn.ps) return;
+  if(_ptrDown){ clearTimeout(_psDeferT); _psDeferT=setTimeout(psFirmsRender,150); return; } render(); }
+function psPtrHook(){ if(_ptrHook) return; _ptrHook=true; try{
+  document.addEventListener("pointerdown",()=>{ _ptrDown=true; },true);
+  ["pointerup","pointercancel"].forEach(ev=>document.addEventListener(ev,()=>{ setTimeout(()=>{ _ptrDown=false; },0); },true)); }catch(e){} }
 function psMembers(f){ return Object.values((f&&f.members)||{}).filter(Boolean).sort((a,b)=>String(a.name).localeCompare(String(b.name))); }
 function psMyFirm(){ const me=encodeKey(String(myId)); for(const fid in psFirms){ const f=psFirms[fid]; if(f && f.members && f.members[me]) return {fid, f, cap:String(f.captain)===String(myId)}; } return null; }
-function psActiveFids(){ return Object.keys(psFirms).filter(fid=>psMembers(psFirms[fid]).length).sort(); }
+function psActiveFids(){ return Object.keys(psFirms).filter(fid=>psMembers(psFirms[fid]).length).sort((a,b)=>((psFirms[a].ts||0)-(psFirms[b].ts||0))||(a<b?-1:1)); }
 /* What a student sees of the firms: every firm while roles are open; afterwards only their own firm. */
 function psViewSig(){
   if(isTeacher() || !psCtx) return null;
   const mine=psMyFirm();
-  if(psStep()==="roles") return "R|"+Object.keys(psFirms).sort().map(fid=>fid+":"+(psFirms[fid].captain||"")+":"+psMembers(psFirms[fid]).map(m=>m.id).join(",")).join(";");
-  return "M|"+(mine ? mine.fid+":"+(mine.f.captain||"")+":"+psMembers(mine.f).map(m=>m.name).join(",") : "-");
+  if(psStep()==="roles") return "R|"+Object.keys(psFirms).sort().map(fid=>fid+":"+(psFirms[fid].name||"")+":"+(psFirms[fid].captain||"")+":"+psMembers(psFirms[fid]).map(m=>m.id).join(",")).join(";");
+  return "M|"+(mine ? mine.fid+":"+(mine.f.name||"")+":"+(mine.f.captain||"")+":"+psMembers(mine.f).map(m=>m.name).join(",") : "-");
 }
 /* Exactly q% H in every block of 10 arrivals (seeded per round), so the realised share matches the variant. */
 function psTypeFor(rk, k, q){ const b=Math.floor(k/10), nH=Math.round(q/10);
@@ -4729,29 +4737,77 @@ async function psEnsureType(rk){
   _psTypeBusy[rk]=false; if(curKey===rk) render();
 }
 
-/* ── firm actions ── */
+/* ── firm actions ──
+   Captains START a firm and name it (up to cfg.firms firms); others JOIN a named firm (up to cfg.firmMax members).
+   The one-firm-per-student pointer (pr/<me>) and the size cap are claimed by transaction. Captains rename until
+   candidates start choosing; the instructor can rename or remove any firm, remove any member, reset all firms, or copy
+   the previous meeting's firms. */
+let psNewName="", psRenameTxt=null;
+function psNameErr(name, exceptFid){
+  name=String(name||"").trim();
+  if(!name) return "Give your firm a name";
+  if(Object.keys(psFirms).some(fid=>fid!==exceptFid && String((psFirms[fid]||{}).name||"").toLowerCase()===name.toLowerCase())) return "That name is taken";
+  return null; }
+async function psCreateFirm(name){
+  const base=psCtx; if(!base) return false; name=String(name||"").trim().slice(0,24);
+  const err=psNameErr(name); if(err){ toast(err); return false; }
+  if(psActiveFids().length>=psCfg().firms){ toast("All "+psCfg().firms+" firms are taken — join one"); return false; }
+  const me=encodeKey(String(myId)), fid="f"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  const r=await fb.ref(LIVE_ROOT(base)+"/pr/"+me).transaction(cur=> cur==null ? fid : undefined);
+  if(!r||!r.committed){ toast("You're already in a firm"); return false; }
+  const members={}; members[me]={id:String(myId), name:myName||String(myId)};
+  try{ await fb.ref(LIVE_ROOT(base)+"/pf/"+fid).set({name, captain:String(myId), members, ts:srvNow()}); return true; }
+  catch(e){ await fb.ref(LIVE_ROOT(base)+"/pr/"+me).remove(); toast("Couldn't start the firm — try again"); return false; }
+}
 async function psJoin(fid){
   const base=psCtx; if(!base) return; const me=encodeKey(String(myId)), max=psCfg().max;
   const r=await fb.ref(LIVE_ROOT(base)+"/pr/"+me).transaction(cur=> cur==null ? fid : undefined);
   if(!r||!r.committed){ toast("You're already in a firm"); return; }
   const r2=await fb.ref(LIVE_ROOT(base)+"/pf/"+fid+"/members").transaction(cur=>{
-    cur=cur||{}; if(cur[me]) return cur; if(Object.keys(cur).length>=max) return undefined;
+    if(cur==null) return undefined; if(cur[me]) return cur; if(Object.keys(cur).length>=max) return undefined;
     const nx=Object.assign({},cur); nx[me]={id:String(myId), name:myName||String(myId)}; return nx; });
-  if(!r2||!r2.committed){ await fb.ref(LIVE_ROOT(base)+"/pr/"+me).remove(); toast(psFirmName(fid)+" is full"); return; }
-  await fb.ref(LIVE_ROOT(base)+"/pf/"+fid+"/captain").transaction(cur=> cur ? undefined : String(myId));
+  if(!r2||!r2.committed){ await fb.ref(LIVE_ROOT(base)+"/pr/"+me).remove(); toast(psFirmName(fid)+" is full"); }
+}
+async function psRenameFirm(fid, name){
+  name=String(name||"").trim().slice(0,24); const err=psNameErr(name, fid); if(err){ toast(err); return false; }
+  try{ await fb.ref(LIVE_ROOT(psCtx)+"/pf/"+fid+"/name").set(name); toast("Renamed to "+name); return true; }catch(e){ toast("Couldn't rename — try again"); return false; }
+}
+async function psRemoveFirm(fid){
+  const base=psCtx; if(!base) return; const up={}; up["pf/"+fid]=null;
+  psMembers(psFirms[fid]).forEach(m=>{ up["pr/"+encodeKey(String(m.id))]=null; });
+  try{ await fb.ref(LIVE_ROOT(base)).update(up); }catch(e){ toast("Couldn't remove the firm"); }
 }
 async function psRemoveMember(fid, id){
   const base=psCtx; if(!base) return; const k=encodeKey(String(id)), f=psFirms[fid]||{};
+  const rest=psMembers(f).filter(m=>String(m.id)!==String(id));
+  if(!rest.length) return psRemoveFirm(fid);   // the last member leaving closes the firm
   try{
     await fb.ref(LIVE_ROOT(base)+"/pf/"+fid+"/members/"+k).remove();
     await fb.ref(LIVE_ROOT(base)+"/pr/"+k).remove();
-    if(String(f.captain)===String(id)){ const next=psMembers(f).find(m=>String(m.id)!==String(id));
-      await fb.ref(LIVE_ROOT(base)+"/pf/"+fid+"/captain").set(next?String(next.id):null); }
+    if(String(f.captain)===String(id)) await fb.ref(LIVE_ROOT(base)+"/pf/"+fid+"/captain").set(String(rest[0].id));
   }catch(e){ toast("Couldn't update the firm — try again"); }
 }
 function psLeave(){ const m=psMyFirm(); if(m) psRemoveMember(m.fid, myId); }
 async function psMakeCaptain(fid, id){ try{ await fb.ref(LIVE_ROOT(psCtx)+"/pf/"+fid+"/captain").set(String(id)); }catch(e){} }
-async function psResetFirms(){ if(!psCtx) return; try{ await fb.ref(LIVE_ROOT(psCtx)).remove(); toast("Firms cleared"); }catch(e){ toast("Couldn't clear the firms"); } }
+async function psResetFirms(){ if(!psCtx) return; try{ await fb.ref(LIVE_ROOT(psCtx)).remove(); toast("Recruiters reset — students can start firms again"); }catch(e){ toast("Couldn't reset the firms"); } }
+/* The most recent EARLIER meeting's firms, rebuilt from its records (recruiter subs carry fid, firm name, captain flag). */
+function psPrevFirms(){
+  const cur=psCtx; let best=null;
+  Object.values(allSubs).forEach(s=>{ if(s && s.game==="placement" && s.pt==="F" && psBase(s.roundKey)!==cur && (!best || (s.ts||0)>(best.ts||0))) best=s; });
+  if(!best) return null;
+  const rk=best.roundKey, firms={};
+  Object.values(allSubs).filter(s=>s && s.roundKey===rk && s.pt==="F").forEach(s=>{
+    const f=firms[s.fid]||(firms[s.fid]={name:s.firmName||("Firm "+s.fid), members:{}, ts:s.ts||0});
+    f.members[encodeKey(String(s.studentId))]={id:String(s.studentId), name:s.name||String(s.studentId)};
+    if(s.cap) f.captain=String(s.studentId); if(s.cap && s.firmName) f.name=s.firmName; });
+  Object.values(firms).forEach(f=>{ if(!f.captain) f.captain=Object.values(f.members)[0].id; });
+  return {rk, firms};
+}
+async function psCopyPrevFirms(){
+  const P=psPrevFirms(); if(!P || !psCtx) return;
+  const up={}; Object.keys(P.firms).forEach(fid=>{ const f=P.firms[fid]; up["pf/"+fid]=Object.assign({}, f, {ts:f.ts||srvNow()}); Object.keys(f.members).forEach(k=>{ up["pr/"+k]=fid; }); });
+  try{ await fb.ref(LIVE_ROOT(psCtx)).update(up); toast("Copied "+Object.keys(P.firms).length+" firms from the last meeting"); }catch(e){ toast("Couldn't copy the firms"); }
+}
 async function psSetStep(step){ const rk=curKey; await writeControl({ps:{rk, step}}); }
 
 /* Recruiters write a participation sub (counts them as present) and the captain's sub carries the firm's offer. */
@@ -4791,8 +4847,9 @@ function psRound(list){
   const ref=list.find(s=>s.variant) || {};
   const mode=ref.mode==="bid"?"bid":"fixed", v=PS_VARIANTS[ref.variant]?ref.variant:"A", V=PS_VARIANTS[v];
   const offers={}; firmSubs.filter(s=>s.offer).sort((a,b)=>(a.ts||0)-(b.ts||0)).forEach(s=>{ offers[s.fid]={offer:s.offer, by:s.name, members:s.members||""}; });
-  const fids=Object.keys(offers).sort();
-  const members={}; firmSubs.forEach(s=>{ (members[s.fid]||(members[s.fid]=[])).push(s.name||s.studentId); });
+  const fids=Object.keys(offers).sort((a,b)=>{ const ta=(firmSubs.find(s=>s.fid===a&&s.cap)||{}).ts||0, tb=(firmSubs.find(s=>s.fid===b&&s.cap)||{}).ts||0; return a<b?-1:a>b?1:ta-tb; });
+  const members={}, names={}; firmSubs.forEach(s=>{ (members[s.fid]||(members[s.fid]=[])).push(s.name||s.studentId); });
+  firmSubs.slice().sort((a,b)=>((a.cap?1:0)-(b.cap?1:0))||((a.ts||0)-(b.ts||0))).forEach(s=>{ if(s.firmName) names[s.fid]=s.firmName; });
   const res={};
   const place=(s,fid)=>{ const o=offers[fid].offer[s.deg]; const t=o&&o.t==="Mgr"?"Mgr":"Ana", sal=psSal(V,mode,offers[fid].offer,s.deg);
     const prod=V.prod[s.type][s.deg][t]; res[s.studentId]={fid, track:t, salary:sal, pay:sal-psCost(V,s), prod, profit:prod-sal}; };
@@ -4817,7 +4874,7 @@ function psRound(list){
     const avg=k=> hires.length ? Math.round(hires.reduce((a,s)=>a+res[s.studentId][k],0)/hires.length) : null;
     return {fid, offer:offers[fid].offer, members:members[fid]||[], hires, profit, nMBA:mb.length, nGrad:hires.length-mb.length,
       hit: mb.length ? mb.filter(s=>s.type==="H").length/mb.length : null, paid:avg("salary"), made:avg("prod"), perHire: hires.length?Math.round(profit/hires.length):null}; });
-  const out={rk, mode, v, V, cands, firmSubs, offers, fids, res, firms};
+  const out={rk, mode, v, V, cands, firmSubs, offers, fids, res, firms, names};
   _psCache[ck]=out; return out;
 }
 /* Earlier rounds of the same meeting and mode, for cumulative scores. */
@@ -4880,7 +4937,7 @@ function psBoardHTML(R, exceptFid, big){
     const vals=fs.map(f=>offers[f]?psSal(C.V,C.mode,offers[f],d):null).filter(x=>x!=null), best=vals.length?Math.max(...vals):null;
     h+="<div style='flex:1 1 220px;min-width:0'><div class='tinylabel'>"+d+" offers</div>";
     fs.forEach(f=>{ if(f===exceptFid) return; const o=offers[f]; const w=o?psSal(C.V,C.mode,o,d):null;
-      h+="<div style='display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:"+(big?"1.15rem":".9rem")+"'><span>"+psFirmName(f)+"</span><span style='font-family:IBM Plex Mono,monospace;font-weight:700;"+(w!=null&&w===best?"color:var(--gold)":"")+"'>"+(o?esc(psOfferTxt(C.V,C.mode,o,d)):"—")+"</span></div>"; });
+      h+="<div style='display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:"+(big?"1.15rem":".9rem")+"'><span>"+esc(psFirmName(f))+"</span><span style='font-family:IBM Plex Mono,monospace;font-weight:700;"+(w!=null&&w===best?"color:var(--gold)":"")+"'>"+(o?esc(psOfferTxt(C.V,C.mode,o,d)):"—")+"</span></div>"; });
     h+="</div>"; });
   return "<div style='display:flex;gap:18px;flex-wrap:wrap'>"+h+"</div>";
 }
@@ -4920,19 +4977,38 @@ function studentPlacement(c){
       c.append(h("You're a recruiter at "+psFirmName(mf.fid)));
       c.append(el("p","lead", mf.cap ? "You're the captain: you'll tap your firm's decisions. Talk it over with your team." : "Your captain taps the firm's decisions — help them decide."));
       c.append(psFirmBox(mf.fid, true));
+      if(mf.cap){   // captains can rename until candidates start choosing
+        const row=el("div"); row.style.cssText="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px";
+        const inp=el("input","input"); inp.maxLength=24; inp.style.maxWidth="240px"; inp.placeholder="Firm name";
+        inp.value = psRenameTxt!=null ? psRenameTxt : (mf.f.name||""); inp.oninput=()=>{ psRenameTxt=inp.value; }; inp.onblur=rbBlurRedraw;
+        const b=el("button","ghost-btn","Rename"); b.onclick=()=>psRenameFirm(mf.fid, inp.value).then(ok=>{ if(ok) psRenameTxt=null; });
+        row.append(inp,b); c.append(row);
+        c.append(el("div","sm mut","You can rename your firm until candidates start choosing."));
+      }
       const lv=el("button","ghost-btn","Leave this firm"); lv.style.marginTop="10px"; lv.onclick=psLeave; c.append(lv);
     } else {
-      c.append(h("Recruiters: join a firm"));
-      c.append(el("p","lead","Each firm hires candidates in every round and competes on profit. Seats are limited — everyone not in a firm plays as a candidate."));
+      const fs=psActiveFids(), full=fs.length>=C.firms;
+      c.append(h("Recruiters: start a firm or join one"));
+      c.append(el("p","lead","Firms hire candidates every round and compete on profit. Start a firm and name it (you'll be its captain), or join a classmate's firm. Everyone not in a firm plays as a candidate."));
+      if(!full){
+        const card=el("div","card"); card.style.cssText="padding:12px;margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center";
+        const inp=el("input","input"); inp.maxLength=24; inp.style.cssText="max-width:260px;flex:1 1 180px"; inp.placeholder="Your firm's name";
+        inp.value=psNewName; inp.oninput=()=>{ psNewName=inp.value; }; inp.onblur=rbBlurRedraw;
+        const go=()=>psCreateFirm(inp.value).then(ok=>{ if(ok) psNewName=""; });
+        inp.onkeydown=e=>{ if(e.key==="Enter") go(); };
+        const b=el("button","btn","Start a firm"); b.onclick=go;
+        card.append(inp,b); c.append(card);
+        c.append(el("div","sm mut",(C.firms-fs.length)+" of "+C.firms+" firm"+(C.firms===1?"":"s")+" still open."));
+      } else c.append(Object.assign(el("div","sm mut"),{textContent:"All "+C.firms+" firms have started — join one below.",style:"margin-top:10px"}));
       const grid=el("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:12px";
-      for(let i=0;i<C.firms;i++){ const fid=psFid(i), f=psFirms[fid]||{}, ms=psMembers(f), full=ms.length>=C.max;
+      fs.forEach(fid=>{ const f=psFirms[fid]||{}, ms=psMembers(f), isFull=ms.length>=C.max;
         const card=el("div","card"); card.style.cssText="padding:12px;display:flex;flex-direction:column;gap:6px";
         card.append(Object.assign(el("div"),{textContent:psFirmName(fid),style:"font-weight:700"}));
-        card.append(Object.assign(el("div","sm mut"),{textContent: ms.length ? ms.map(m=>m.name).join(", ") : "No one yet"}));
-        const b=el("button", full?"ghost-btn":"btn", full?"Full ("+C.max+")":"Join ("+ms.length+"/"+C.max+")"); b.disabled=full; b.onclick=()=>psJoin(fid);
-        card.append(b); grid.append(card); }
-      c.append(grid);
-      c.append(Object.assign(el("div","note-box"),{textContent:"Not joining a firm? You don't need to do anything — you'll play as a candidate when the round starts.",style:"margin-top:12px"}));
+        card.append(Object.assign(el("div","sm mut"),{textContent: ms.map(m=>m.name).join(", ")}));
+        const b=el("button", isFull?"ghost-btn":"btn", isFull?"Full ("+C.max+")":"Join ("+ms.length+"/"+C.max+")"); b.disabled=isFull; b.onclick=()=>psJoin(fid);
+        card.append(b); grid.append(card); });
+      if(fs.length) c.append(grid);
+      c.append(Object.assign(el("div","note-box"),{textContent:"Not a recruiter? You don't need to do anything — you'll play as a candidate when the round starts.",style:"margin-top:12px"}));
     }
     return;
   }
@@ -4962,7 +5038,7 @@ function studentPlacement(c){
 function psFirmBox(fid, showCap){
   const f=psFirms[fid]||{}, ms=psMembers(f);
   const box=el("div","card"); box.style.cssText="padding:12px;margin-top:10px";
-  box.append(Object.assign(el("div","tinylabel"),{textContent:psFirmName(fid)+" · "+ms.length+" member"+(ms.length===1?"":"s")}));
+  box.append(Object.assign(el("div"),{textContent:psFirmName(fid),style:"font-weight:700;font-size:1.05rem"}), Object.assign(el("div","tinylabel"),{textContent:ms.length+" member"+(ms.length===1?"":"s")}));
   box.append(Object.assign(el("div"),{innerHTML: ms.map(m=>esc(m.name)+(showCap && String(f.captain)===String(m.id)?" <b>(captain)</b>":"")).join(", ") || "—",style:"margin-top:4px"}));
   return box;
 }
@@ -5013,10 +5089,12 @@ function psPresentBody(){
   const big=(t)=>Object.assign(el("div"),{textContent:t,style:"font-family:Fraunces,Georgia,serif;font-size:2rem;font-weight:650"});
   w.append(Object.assign(el("div","tinylabel"),{textContent:(C.mode==="bid"?"Bidding war":"Fixed salaries")+" · "+C.V.name}));
   if(step==="roles"){
-    w.append(big("Recruiters: join a firm on your phone"));
+    w.append(big("Recruiters: start a firm or join one on your phone"));
+    const fs=psActiveFids();
+    w.append(el("div","sm mut",fs.length+" of "+C.firms+" firms started · up to "+C.max+" recruiters each"));
     const g=el("div"); g.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px";
-    for(let i=0;i<C.firms;i++){ const fid=psFid(i), ms=psMembers(psFirms[fid]);
-      const b=el("div","card"); b.style.padding="10px 12px"; b.append(Object.assign(el("div"),{textContent:psFirmName(fid)+" · "+ms.length+"/"+C.max,style:"font-weight:700"}), Object.assign(el("div","sm mut"),{textContent:ms.map(m=>m.name).join(", ")||"—"})); g.append(b); }
+    fs.forEach(fid=>{ const ms=psMembers(psFirms[fid]);
+      const b=el("div","card"); b.style.padding="10px 12px"; b.append(Object.assign(el("div"),{textContent:psFirmName(fid)+" · "+ms.length+"/"+C.max,style:"font-weight:700"}), Object.assign(el("div","sm mut"),{textContent:ms.map(m=>m.name).join(", ")})); g.append(b); });
     w.append(g, el("p","lead","Everyone else plays as a candidate."));
   } else if(step==="choose"){
     w.append(big("Candidates: Grad or MBA?"));
@@ -5041,7 +5119,7 @@ function psConsoleCard(){
   steps.forEach(([k,l])=>{ const b=el("button", step===k&&open?"btn":"ghost-btn", l); b.onclick=()=>psSetStep(k); if(!open){ b.disabled=true; } sr.append(b); });
   card.append(sr);
   if(open){
-    const tip={roles:"Students tap a firm to become its recruiters (the first to join is captain). When the firms look right, press 2 · Candidates choose.",
+    const tip={roles:"Volunteers start a firm and name it on their phone (they become its captain); others join a firm. When the firms look right, press 2 · Candidates choose.",
       choose:"Candidates are dealt a type and pick Grad or MBA. Recruiters wait. When most have chosen, press 3 · Recruiters decide — choices then lock.",
       recruit:"Captains set their firm's offers"+(C.mode==="bid"?" — the job board is live on every phone and on Present":"")+". Then press Reveal results."}[step];
     card.append(Object.assign(el("div","sm mut"),{textContent:tip}));
@@ -5053,25 +5131,36 @@ function psConsoleCard(){
   t.innerHTML="<tr><th style='text-align:left'>Candidates (live)</th><th>MBA</th><th>Grad</th></tr><tr><td style='text-align:left'>Type H</td><td>"+n("H","MBA")+"</td><td>"+n("H","Grad")+"</td></tr><tr><td style='text-align:left'>Type L</td><td>"+n("L","MBA")+"</td><td>"+n("L","Grad")+"</td></tr>";
   card.append(t);
   // firms
+  const fs=psActiveFids();
   const fh=el("div"); fh.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:8px;flex-wrap:wrap";
-  fh.append(Object.assign(el("div","tinylabel"),{textContent:"Firms ("+psActiveFids().length+" active · up to "+C.max+" each)"}));
-  const rs=el("button","ghost-btn ab-clear","Reset firms"); rs.onclick=()=>{ if(confirm("Remove every firm and its members for this meeting? Students go back to being candidates.")) psResetFirms(); };
-  fh.append(rs); card.append(fh);
-  const grid=el("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-top:8px";
-  for(let i=0;i<C.firms;i++){ const fid=psFid(i), f=psFirms[fid]||{}, ms=psMembers(f);
+  fh.append(Object.assign(el("div","tinylabel"),{textContent:"Recruiter firms ("+fs.length+" of "+C.firms+" · up to "+C.max+" each)"}));
+  const fbtns=el("div"); fbtns.style.cssText="display:flex;gap:8px;flex-wrap:wrap";
+  const prev=psPrevFirms();
+  if(!fs.length && prev){ const cp=el("button","ghost-btn","Copy last meeting's firms ("+Object.keys(prev.firms).length+")");
+    cp.title="Same recruiters as "+sessLabel((parseRoundKey(prev.rk)||{}).session)+((parseRoundKey(prev.rk)||{}).section?"."+parseRoundKey(prev.rk).section:"")+": "+Object.values(prev.firms).map(f=>f.name).join(", ");
+    cp.onclick=()=>psCopyPrevFirms(); fbtns.append(cp); }
+  if(fs.length){ const rs=el("button","ghost-btn ab-clear","Reset recruiters"); rs.onclick=()=>{ if(confirm("Remove every firm and its recruiters for this meeting? Everyone becomes a candidate, and students can start new firms (step 1).")) psResetFirms().then(()=>{ if(isOpenNow() && psStep()!=="roles") psSetStep("roles"); }); }; fbtns.append(rs); }
+  fh.append(fbtns); card.append(fh);
+  const grid=el("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:8px";
+  fs.forEach(fid=>{ const f=psFirms[fid]||{}, ms=psMembers(f);
     const fsub=subs.filter(s=>s.pt==="F"&&s.fid===fid&&s.offer).sort((a,b)=>(b.ts||0)-(a.ts||0))[0];
     const b=el("div","card"); b.style.padding="10px 12px";
-    b.append(Object.assign(el("div"),{innerHTML:"<b>"+psFirmName(fid)+"</b> <span class='sm mut'>"+ms.length+"/"+C.max+"</span>"+(fsub?" <span class='sm' style='color:var(--good)'>✓ offer set</span>":"")}));
+    const top=el("div"); top.style.cssText="display:flex;justify-content:space-between;gap:6px;align-items:baseline";
+    top.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(psFirmName(fid))+"</b> <span class='sm mut'>"+ms.length+"/"+C.max+"</span>"+(fsub?" <span class='sm' style='color:var(--good)'>✓ offer set</span>":"")}));
+    const acts=el("div"); acts.style.cssText="display:flex;gap:8px;white-space:nowrap";
+    const rn=el("button","linkbtn","Rename"); rn.type="button"; rn.onclick=()=>{ const nm=prompt("New name for "+psFirmName(fid)+":", psFirmName(fid)); if(nm!=null) psRenameFirm(fid, nm); };
+    const rm=el("button","linkbtn","Remove firm"); rm.type="button"; rm.style.color="var(--bad)"; rm.onclick=()=>{ if(confirm("Remove "+psFirmName(fid)+"? Its recruiters become candidates.")) psRemoveFirm(fid); };
+    acts.append(rn, rm); top.append(acts); b.append(top);
     if(fsub && step==="recruit") b.append(Object.assign(el("div","sm"),{textContent:"MBA → "+psOfferTxt(C.V,C.mode,fsub.offer,"MBA")+" · Grad → "+psOfferTxt(C.V,C.mode,fsub.offer,"Grad"),style:"margin-top:4px"}));
     ms.forEach(m=>{ const r=el("div"); r.style.cssText="display:flex;justify-content:space-between;gap:6px;align-items:center;font-size:.86rem;margin-top:4px";
       const isCap=String(f.captain)===String(m.id);
       const nm=el("button","linkbtn", m.name+(isCap?" ★":"")); nm.type="button"; nm.title=isCap?"Captain":"Make captain"; nm.onclick=()=>{ if(!isCap) psMakeCaptain(fid, m.id); };
-      const x=el("button","linkbtn","✕"); x.type="button"; x.title="Remove from the firm"; x.style.color="var(--bad)"; x.onclick=()=>{ if(confirm("Remove "+m.name+" from "+psFirmName(fid)+"?")) psRemoveMember(fid, m.id); };
+      const x=el("button","linkbtn","✕"); x.type="button"; x.title="Remove from the firm (they become a candidate)"; x.style.color="var(--bad)"; x.onclick=()=>{ if(confirm("Remove "+m.name+" from "+psFirmName(fid)+"?")) psRemoveMember(fid, m.id); };
       r.append(nm, x); b.append(r); });
-    if(!ms.length) b.append(el("div","sm mut","Empty"));
-    grid.append(b); }
-  card.append(grid);
-  card.append(Object.assign(el("div","sm mut"),{textContent:"★ = captain (taps for the firm). Tap a name to make them captain; ✕ removes them (they become a candidate).",style:"margin-top:8px"}));
+    grid.append(b); });
+  if(fs.length) card.append(grid);
+  else card.append(Object.assign(el("div","sm mut"),{textContent: isOpenNow()&&step==="roles" ? "No firms yet — ask for volunteers to start firms on their phones." : "No firms yet. They're started by students in step 1 · Firms sign up.",style:"margin-top:6px"}));
+  card.append(Object.assign(el("div","sm mut"),{textContent:"★ = captain (taps for the firm; names it and can rename until step 2). Tap a name to make them captain; ✕ removes a recruiter (they become a candidate). Reset recruiters clears every firm — use it to swap recruiters between phases or sessions.",style:"margin-top:8px"}));
   return card;
 }
 
@@ -5110,13 +5199,13 @@ function analyzePlacement(list, teacher){
     const myS=list.find(s=>s.studentId===myId);
     if(R && myS && myS.pt==="C" && R.res[myId]){
       const r=R.res[myId], b=el("div","card stage"); b.style.background="color-mix(in srgb, var(--good) 10%, var(--surface))";
-      b.append(el("div","eyebrow","Your result"), Object.assign(el("h2"),{textContent:psFirmName(r.fid)+" · "+PS_TRK[r.track]+" track",style:"font-size:1.6rem;margin:4px 0"}));
+      b.append(el("div","eyebrow","Your result"), Object.assign(el("h2"),{textContent:"Hired by "+psFirmName(r.fid,R)+" · "+PS_TRK[r.track]+" track",style:"font-size:1.6rem;margin:4px 0"}));
       const tb=el("table","matrix"); tb.style.maxWidth="380px";
       tb.innerHTML="<tr><td style='text-align:left'>Type</td><td>"+myS.type+"</td></tr><tr><td style='text-align:left'>Salary</td><td>"+r.salary+"</td></tr><tr><td style='text-align:left'>MBA cost</td><td>"+(myS.deg==="MBA"?"−"+psCost(V,myS):"0")+"</td></tr><tr><td style='text-align:left'><b>Your payoff</b></td><td><b>"+r.pay+"</b></td></tr><tr><td style='text-align:left'>Your total so far (this "+(mode==="bid"?"bidding war":"fixed-salary")+" phase)</td><td>"+psMyTotal(R)+"</td></tr>";
       b.append(tb); wrap.append(b);
     } else if(myS && myS.pt==="F"){
       const R2=Rs.find(X=>X.rk===myS.roundKey), f=R2 && R2.firms.find(x=>x.fid===myS.fid);
-      if(f){ const b=el("div","card stage"); b.append(el("div","eyebrow",psFirmName(f.fid)+" · your firm"), psKpiPanel(R2, f, psLeaderboard(R2)));
+      if(f){ const b=el("div","card stage"); b.append(el("div","eyebrow",psFirmName(f.fid,R2)+" · your firm"), psKpiPanel(R2, f, psLeaderboard(R2)));
         b.append(Object.assign(el("div","tinylabel"),{textContent:"Your hires, types revealed",style:"margin-top:12px"}), psHiresTable(R2, f)); wrap.append(b); }
     }
   }
@@ -5160,18 +5249,18 @@ function analyzePlacement(list, teacher){
   lbCard.append(el("div","eyebrow","Recruiter leaderboard · "+(mode==="bid"?"bidding war":"fixed salaries")+" · ranked on total profit"));
   const lt=el("table","matrix"); lt.style.marginTop="8px";
   let lh="<tr><th style='text-align:left'>Firm</th><th>MBA offer</th><th>Grad offer</th><th>Hires</th><th>MBA hit rate</th><th>This round</th><th>Total</th></tr>";
-  Rs.forEach(R=>psLeaderboard(R).forEach((f,i)=>{ lh+="<tr"+(i===0?" style='font-weight:700'":"")+"><td style='text-align:left'>"+(i+1)+". "+psFirmName(f.fid)+secTag(R)+(teacher&&f.members.length?"<div class='submail'>"+esc(f.members.join(", "))+"</div>":"")+"</td><td>"+esc(psOfferTxt(R.V,R.mode,f.offer,"MBA"))+"</td><td>"+esc(psOfferTxt(R.V,R.mode,f.offer,"Grad"))+"</td><td>"+f.hires.length+"</td><td>"+(f.hit==null?"—":pct(f.hit))+"</td><td>"+psSigned(f.profit)+"</td><td>"+psSigned(f.cum)+"</td></tr>"; }));
+  Rs.forEach(R=>psLeaderboard(R).forEach((f,i)=>{ lh+="<tr"+(i===0?" style='font-weight:700'":"")+"><td style='text-align:left'>"+(i+1)+". "+esc(psFirmName(f.fid,R))+secTag(R)+(teacher&&f.members.length?"<div class='submail'>"+esc(f.members.join(", "))+"</div>":"")+"</td><td>"+esc(psOfferTxt(R.V,R.mode,f.offer,"MBA"))+"</td><td>"+esc(psOfferTxt(R.V,R.mode,f.offer,"Grad"))+"</td><td>"+f.hires.length+"</td><td>"+(f.hit==null?"—":pct(f.hit))+"</td><td>"+psSigned(f.profit)+"</td><td>"+psSigned(f.cum)+"</td></tr>"; }));
   lt.innerHTML=lh; const lw=el("div","tablescroll"); lw.append(lt); lbCard.append(lw);
   if(!Rs.some(R=>R.firms.length)) lbCard.append(el("div","sm mut","No firm set an offer in this round."));
   wrap.append(lbCard);
-  if(teacher){ Rs.forEach(R=>R.firms.forEach(f=>{ const c=el("div","card stage"); c.append(el("div","eyebrow",psFirmName(f.fid)+secTag(R)+" · hires"), psHiresTable(R,f)); wrap.append(c); })); }
+  if(teacher){ Rs.forEach(R=>R.firms.forEach(f=>{ const c=el("div","card stage"); c.append(el("div","eyebrow",psFirmName(f.fid,R)+secTag(R)+" · hires"), psHiresTable(R,f)); wrap.append(c); })); }
   return wrap;
 }
 function psSubValue(s){
-  if(s.pt==="F") return psFirmName(s.fid)+(s.offer ? " (captain) · MBA → "+psOfferTxt(PS_VARIANTS[s.variant]||PS_VARIANTS.A, s.mode==="bid"?"bid":"fixed", s.offer,"MBA")+" · Grad → "+psOfferTxt(PS_VARIANTS[s.variant]||PS_VARIANTS.A, s.mode==="bid"?"bid":"fixed", s.offer,"Grad") : " (recruiter)");
+  if(s.pt==="F") return (s.firmName||psFirmName(s.fid))+(s.offer ? " (captain) · MBA → "+psOfferTxt(PS_VARIANTS[s.variant]||PS_VARIANTS.A, s.mode==="bid"?"bid":"fixed", s.offer,"MBA")+" · Grad → "+psOfferTxt(PS_VARIANTS[s.variant]||PS_VARIANTS.A, s.mode==="bid"?"bid":"fixed", s.offer,"Grad") : " (recruiter)");
   if(s.pt==="C"){ let out="Type "+(s.type||"?")+" · "+(s.deg||"?");
     try{ const R=psRound(Object.values(allSubs).filter(x=>x&&x.roundKey===s.roundKey)); const r=R.res[s.studentId];
-      if(r) out+=" → "+psFirmName(r.fid)+" "+PS_TRK[r.track]+" "+r.salary+" · payoff "+r.pay; }catch(e){}
+      if(r) out+=" → "+psFirmName(r.fid,R)+" "+PS_TRK[r.track]+" "+r.salary+" · payoff "+r.pay; }catch(e){}
     return out; }
   return "—";
 }

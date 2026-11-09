@@ -686,13 +686,20 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     pool, **no hiring limit**: every candidate goes to the highest salary for their own degree, ties at the top
     split evenly (seeded). Bands don't overlap, so a Manager offer always out-pays an Analyst one.
   - **Flow** (`control.ps = {rk, step}`, `psStep()`): Open → **roles** (first round of a meeting only, when it has
-    no firms: students tap *Join* on a firm card, first joiner = captain) → **choose** (candidates dealt a type,
+    no firms: volunteers tap **Start a firm** and **name it** — they become its captain, up to `firms` firms, names unique
+    and ≤24 chars (`psCreateFirm`); others tap *Join* on a named firm (`psJoin`, cap `firmMax`); captains can rename until
+    step 2 (`psRenameFirm`); typing uses `psNewName`/`psRenameTxt` + `rbBlurRedraw`, and firm-list redraws wait while a
+    finger is down (`psFirmsRender` checks `_ptrDown`, hook `psPtrHook`) so a classmate starting a firm can't swallow a tap) → **choose** (candidates dealt a type,
     pick Grad/MBA, changeable until the next step) → **recruit** (choices lock; captains set offers; bid mode shows
     a live job board) → Reveal → Next round (goes straight to choose; firms are kept). Step buttons are on the
-    console card (`psConsoleCard`, with live H/L × MBA/Grad counts, firms with ✕ remove / tap-to-make-captain,
-    **Reset firms**) and on the Present view; Reveal is locked until the recruit step. `openMeeting` sets `ps`.
-  - **Data.** Firms are **meeting-level** (they persist across rounds): `live/<S1A-placement>/pf/<A..H>` =
-    `{members, captain}`, pointer `pr/<enc(id)>` (claimed by transaction, size cap by transaction). Types per round:
+    console card (`psConsoleCard`: live H/L × MBA/Grad counts; per firm **Rename** / **Remove firm**
+    (`psRemoveFirm`), ✕ to remove a recruiter (`psRemoveMember`; last member closes the firm), tap a name to make captain;
+    **Reset recruiters** (`psResetFirms`, back to step 1 if open) to swap recruiters between phases or sessions; and, when
+    the meeting has no firms, **Copy last meeting's firms** (`psPrevFirms`/`psCopyPrevFirms`, rebuilt from the latest
+    earlier meeting's recruiter subs) to keep the same recruiters) and on the Present view; Reveal is locked until the recruit step. `openMeeting` sets `ps`.
+  - **Data.** Firms are **meeting-level** (they persist across rounds): `live/<S1A-placement>/pf/<fid>` =
+    `{name, captain, members, ts}` (fid generated; `psFirmName(fid, R)` prefers the name recorded in that round's subs,
+    so history keeps the name used then), pointer `pr/<enc(id)>` (claimed by transaction, size cap by transaction). Types per round:
     `live/<roundKey>/pt/n` counter → `psTypeFor` (a seeded block of 10 with exactly q% H) → `pt/t/<enc(id)>`.
     Subs: candidate `{pt:"C", type, deg, mode, variant}`; recruiter `{pt:"F", fid, cap}` (written automatically so
     they count as present), the captain's carries `offer:{MBA:{t,w},Grad:{t,w}}` + `members`. One sub per student
