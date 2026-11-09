@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-09.002";
+const APP_VERSION = "2026-11-09.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -4718,11 +4718,35 @@ function psThreshold(V,deg){
 }
 
 /* ── live state: firms (meeting-level) + my dealt type ── */
-let psCtx=null, psFirms={}, _psFirmsSig="{}", _psType={}, _psTypeBusy={}, _psPart={}, _psOffer={}, _psPollAt=0, _psVis=false;
-function psEnsure(base){ if(psCtx===base) return; psDetach(); psCtx=base; psFirms={}; _psFirmsSig="{}"; psPtrHook();
+let psCtx=null, psFirms={}, psReady={}, _psReadySig="{}", psRolePick={}, _psFirmsSig="{}", _psType={}, _psTypeBusy={}, _psPart={}, _psOffer={}, _psPollAt=0, _psVis=false;
+function psEnsure(base){ if(psCtx===base) return; psDetach(); psCtx=base; psFirms={}; _psFirmsSig="{}"; psReady={}; _psReadySig="{}"; psPtrHook();
   if(!_psVis){ _psVis=true; try{ document.addEventListener("visibilitychange",()=>{ if(!document.hidden && psCtx) psPoll(); }); }catch(e){} }
-  try{ fb.ref(LIVE_ROOT(base)+"/pf").on("value", s=>psOnFirms(base,s), ()=>{}); }catch(e){} }
-function psDetach(){ if(!psCtx) return; try{ fb.ref(LIVE_ROOT(psCtx)+"/pf").off(); }catch(e){} psCtx=null; psFirms={}; _psFirmsSig="{}"; }
+  try{ fb.ref(LIVE_ROOT(base)+"/pf").on("value", s=>psOnFirms(base,s), ()=>{}); }catch(e){}
+  try{ fb.ref(LIVE_ROOT(base)+"/pc").on("value", s=>psOnReady(base,s), ()=>{}); }catch(e){} }
+function psDetach(){ if(!psCtx) return; try{ fb.ref(LIVE_ROOT(psCtx)+"/pf").off(); fb.ref(LIVE_ROOT(psCtx)+"/pc").off(); }catch(e){} psCtx=null; psFirms={}; _psFirmsSig="{}"; psReady={}; _psReadySig="{}"; }
+/* Candidates who tapped "Candidate" at step 1 (live/<base>/pc/<enc(id)> = {id,name,ts}). Only the counts use other people's
+   marks; a student's screen depends only on their own mark (psViewSig). */
+function psOnReady(base,s){ if(psCtx!==base) return; const v=(s&&s.val())||{}, sg=JSON.stringify(v); if(sg===_psReadySig) return; psReady=v; _psReadySig=sg; psFirmsRender(); }
+const psIsReady = ()=> !!psReady[encodeKey(String(myId))];
+async function psPickCandidate(){ if(!psCtx) return; psRolePick[psCtx]=null;
+  try{ await fb.ref(LIVE_ROOT(psCtx)+"/pc/"+encodeKey(String(myId))).set({id:String(myId), name:myName||String(myId), ts:srvNow()}); }catch(e){ toast("Couldn't save — check your connection"); }
+  render(); }
+async function psClearReady(){ if(!psCtx) return; try{ await fb.ref(LIVE_ROOT(psCtx)+"/pc/"+encodeKey(String(myId))).remove(); }catch(e){} }
+function psPickRecruiter(){ if(!psCtx) return; psRolePick[psCtx]="rec"; psClearReady(); render(); }
+/* Recruiter seats still open: empty places in started firms + full firms not yet started. */
+function psSeatsLeft(){ const C=psCfg(), fs=psActiveFids(); return fs.reduce((a,fid)=>a+Math.max(0, C.max-psMembers(psFirms[fid]).length),0) + Math.max(0, C.firms-fs.length)*C.max; }
+/* Role counts for the console and the projector. "Haven't picked" needs a roster (section's enrolled students). */
+function psRoleCounts(){
+  const inFirm={}; psActiveFids().forEach(fid=>psMembers(psFirms[fid]).forEach(m=>{ inFirm[String(m.id).toLowerCase()]=1; }));
+  const ready=Object.values(psReady).filter(x=>x && !inFirm[String(x.id).toLowerCase()]);
+  const recruiters=Object.keys(inFirm).length;
+  let notPicked=null;
+  if(haveRoster()){ const rl=curMSection()?enrolledRoster().filter(e=>e.section===curMSection()):enrolledRoster();
+    const picked={}; ready.forEach(x=>{ picked[String(x.id).toLowerCase()]=1; }); Object.keys(inFirm).forEach(k=>{ picked[k]=1; });
+    notPicked=rl.filter(e=>!picked[String(e.email).toLowerCase()] && !(e.email2 && picked[String(e.email2).toLowerCase()])).length; }
+  return {ready:ready.length, recruiters, firms:psActiveFids().length, notPicked};
+}
+function psCountsLine(c){ return c.ready+" candidate"+(c.ready===1?"":"s")+" ready · "+c.recruiters+" recruiter"+(c.recruiters===1?"":"s")+" in "+c.firms+" firm"+(c.firms===1?"":"s")+(c.notPicked!=null?" · "+c.notPicked+" haven't picked yet":""); }
 function psOnFirms(base,s){ if(psCtx!==base) return; const v=(s&&s.val())||{}, sg=JSON.stringify(v); if(sg===_psFirmsSig) return; psFirms=v; _psFirmsSig=sg; psFirmsRender(); }
 function psPoll(){ const b=psCtx; if(!b) return; _psPollAt=Date.now();
   fb.ref(LIVE_ROOT(b)+"/pf").once("value").then(s=>psOnFirms(b,s)).catch(()=>{}); }
@@ -4741,7 +4765,7 @@ function psActiveFids(){ return Object.keys(psFirms).filter(fid=>psMembers(psFir
 function psViewSig(){
   if(isTeacher() || !psCtx) return null;
   const mine=psMyFirm();
-  if(psStep()==="roles") return "R|"+Object.keys(psFirms).sort().map(fid=>fid+":"+(psFirms[fid].name||"")+":"+(psFirms[fid].captain||"")+":"+psMembers(psFirms[fid]).map(m=>m.id).join(",")).join(";");
+  if(psStep()==="roles") return "R|"+(psIsReady()?1:0)+"|"+Object.keys(psFirms).sort().map(fid=>fid+":"+(psFirms[fid].name||"")+":"+(psFirms[fid].captain||"")+":"+psMembers(psFirms[fid]).map(m=>m.id).join(",")).join(";");
   return "M|"+(mine ? mine.fid+":"+(mine.f.name||"")+":"+(mine.f.captain||"")+":"+psMembers(mine.f).map(m=>m.name).join(",") : "-");
 }
 /* Exactly q% H in every block of 10 arrivals (seeded per round), so the realised share matches the variant. */
@@ -4784,7 +4808,7 @@ async function psCreateFirm(name){
   const r=await fb.ref(LIVE_ROOT(base)+"/pr/"+me).transaction(cur=> cur==null ? fid : undefined);
   if(!r||!r.committed){ toast("You're already in a firm"); return false; }
   const members={}; members[me]={id:String(myId), name:myName||String(myId)};
-  try{ await fb.ref(LIVE_ROOT(base)+"/pf/"+fid).set({name, captain:String(myId), members, ts:srvNow()}); return true; }
+  try{ await fb.ref(LIVE_ROOT(base)+"/pf/"+fid).set({name, captain:String(myId), members, ts:srvNow()}); psClearReady(); return true; }
   catch(e){ await fb.ref(LIVE_ROOT(base)+"/pr/"+me).remove(); toast("Couldn't start the firm — try again"); return false; }
 }
 async function psJoin(fid){
@@ -4794,7 +4818,8 @@ async function psJoin(fid){
   const r2=await fb.ref(LIVE_ROOT(base)+"/pf/"+fid+"/members").transaction(cur=>{
     if(cur==null) return undefined; if(cur[me]) return cur; if(Object.keys(cur).length>=max) return undefined;
     const nx=Object.assign({},cur); nx[me]={id:String(myId), name:myName||String(myId)}; return nx; });
-  if(!r2||!r2.committed){ await fb.ref(LIVE_ROOT(base)+"/pr/"+me).remove(); toast(psFirmName(fid)+" is full"); }
+  if(!r2||!r2.committed){ await fb.ref(LIVE_ROOT(base)+"/pr/"+me).remove(); toast(psFirmName(fid)+" is full"); return; }
+  psClearReady();
 }
 async function psRenameFirm(fid, name){
   name=String(name||"").trim().slice(0,24); const err=psNameErr(name, fid); if(err){ toast(err); return false; }
@@ -5014,8 +5039,27 @@ function studentPlacement(c){
         c.append(el("div","sm mut","You can rename your firm until candidates start choosing."));
       }
       const lv=el("button","ghost-btn","Leave this firm"); lv.style.marginTop="10px"; lv.onclick=psLeave; c.append(lv);
+    } else if(psIsReady()){
+      c.append(h("✓ You're a candidate"));
+      c.append(el("p","lead","Wait for the round to start. Each round you'll get a private type (H or L) and choose Grad or MBA."));
+      if(psSeatsLeft()>0){ const sw=el("button","linkbtn","Change to recruiter"); sw.type="button"; sw.style.marginTop="6px"; sw.onclick=psPickRecruiter; c.append(sw); }
+    } else if(psRolePick[psCtx]!=="rec"){
+      c.append(h("Pick your role for today"));
+      const seats=psSeatsLeft(), grid=el("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px";
+      const card=(icon,title,txt,sub,on,fn)=>{ const b=el("button","card"); b.type="button";
+        b.style.cssText="text-align:left;padding:16px;display:flex;flex-direction:column;gap:6px;cursor:"+(on?"pointer":"not-allowed")+";opacity:"+(on?1:.55)+";border:1.5px solid var(--line);background:var(--surface)";
+        b.append(Object.assign(el("div"),{textContent:icon+" "+title,style:"font-weight:700;font-size:1.15rem"}), el("div","sm",txt));
+        if(sub) b.append(Object.assign(el("div","sm mut"),{textContent:sub}));
+        if(on) b.onclick=fn; else b.disabled=true; return b; };
+      const fs=psActiveFids();
+      grid.append(
+        card("🏢","Recruiter","Start a firm and name it, or join a classmate's firm. Your firm hires candidates every round.", seats>0 ? fs.length+" of "+C.firms+" firms started · "+seats+" seat"+(seats===1?"":"s")+" left" : "Recruiter seats are full", seats>0, psPickRecruiter),
+        card("🎓","Candidate","Each round you get a private type and choose Grad or MBA. Recruiters see only your degree.", "", true, psPickCandidate));
+      c.append(grid);
+      c.append(Object.assign(el("div","sm mut"),{textContent:"If you don't pick, you'll play as a candidate.",style:"margin-top:10px"}));
     } else {
       const fs=psActiveFids(), full=fs.length>=C.firms;
+      const bk=el("button","linkbtn","← Back to roles"); bk.type="button"; bk.onclick=()=>{ psRolePick[psCtx]=null; render(); }; c.append(bk);
       c.append(h("Recruiters: start a firm or join one"));
       c.append(el("p","lead","Firms hire candidates every round and compete on profit. Start a firm and name it (you'll be its captain), or join a classmate's firm. Everyone not in a firm plays as a candidate."));
       if(!full){
@@ -5036,7 +5080,7 @@ function studentPlacement(c){
         const b=el("button", isFull?"ghost-btn":"btn", isFull?"Full ("+C.max+")":"Join ("+ms.length+"/"+C.max+")"); b.disabled=isFull; b.onclick=()=>psJoin(fid);
         card.append(b); grid.append(card); });
       if(fs.length) c.append(grid);
-      c.append(Object.assign(el("div","note-box"),{textContent:"Not a recruiter? You don't need to do anything — you'll play as a candidate when the round starts.",style:"margin-top:12px"}));
+      const cb=el("button","ghost-btn","I'll be a candidate instead"); cb.style.marginTop="12px"; cb.onclick=psPickCandidate; c.append(cb);
     }
     return;
   }
@@ -5117,13 +5161,17 @@ function psPresentBody(){
   const big=(t)=>Object.assign(el("div"),{textContent:t,style:"font-family:Fraunces,Georgia,serif;font-size:2rem;font-weight:650"});
   w.append(Object.assign(el("div","tinylabel"),{textContent:(C.mode==="bid"?"Bidding war":"Fixed salaries")+" · "+C.V.name}));
   if(step==="roles"){
-    w.append(big("Recruiters: start a firm or join one on your phone"));
-    const fs=psActiveFids();
-    w.append(el("div","sm mut",fs.length+" of "+C.firms+" firms started · up to "+C.max+" recruiters each"));
+    w.append(big("Pick your role on your phone"));
+    const fs=psActiveFids(), rc=psRoleCounts();
+    const cn=el("div"); cn.style.cssText="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-end";
+    [[rc.ready,"candidates ready"],[rc.recruiters,"recruiters in "+rc.firms+" firm"+(rc.firms===1?"":"s")]].concat(rc.notPicked!=null?[[rc.notPicked,"haven't picked yet"]]:[]).forEach(([n,l])=>{
+      const d=el("div"); d.append(Object.assign(el("div"),{textContent:String(n),style:"font-family:'IBM Plex Mono',monospace;font-size:2.6rem;font-weight:700;line-height:1"}), el("div","sm mut",l)); cn.append(d); });
+    w.append(cn);
+    w.append(el("div","sm mut",fs.length+" of "+C.firms+" firms started · up to "+C.max+" recruiters each · not picking = candidate"));
     const g=el("div"); g.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px";
     fs.forEach(fid=>{ const ms=psMembers(psFirms[fid]);
       const b=el("div","card"); b.style.padding="10px 12px"; b.append(Object.assign(el("div"),{textContent:psFirmName(fid)+" · "+ms.length+"/"+C.max,style:"font-weight:700"}), Object.assign(el("div","sm mut"),{textContent:ms.map(m=>m.name).join(", ")})); g.append(b); });
-    w.append(g, el("p","lead","Everyone else plays as a candidate."));
+    w.append(g);
   } else if(step==="choose"){
     w.append(big("Candidates: Grad or MBA?"));
     const n=el("div"); n.style.cssText="font-family:'IBM Plex Mono',monospace;font-size:3.4rem;font-weight:700;line-height:1"; n.append(psLive("count"));
@@ -5147,11 +5195,12 @@ function psConsoleCard(){
   steps.forEach(([k,l])=>{ const b=el("button", step===k&&open?"btn":"ghost-btn", l); b.onclick=()=>psSetStep(k); if(!open){ b.disabled=true; } sr.append(b); });
   card.append(sr);
   if(open){
-    const tip={roles:"Volunteers start a firm and name it on their phone (they become its captain); others join a firm. When the firms look right, press 2 · Candidates choose.",
+    const tip={roles:"Everyone picks a role on their phone: Recruiter (start and name a firm, or join one) or Candidate. Anyone who doesn\'t pick plays as a candidate. When the firms look right, press 2 · Candidates choose.",
       choose:"Candidates are dealt a type and pick Grad or MBA. Recruiters wait. When most have chosen, press 3 · Recruiters decide — choices then lock.",
       recruit:"Captains set their firm's offers"+(C.mode==="bid"?" — the job board is live on every phone and on Present":"")+". Then press Reveal results."}[step];
     card.append(Object.assign(el("div","sm mut"),{textContent:tip}));
   }
+  if(open && step==="roles") card.append(Object.assign(el("div"),{textContent:psCountsLine(psRoleCounts()),style:"font-weight:600;margin-top:8px"}));
   // live counts (instructor only — types are private)
   const cs=subs.filter(s=>s.pt==="C"&&s.deg);
   const n=(t,d)=>cs.filter(s=>s.type===t&&s.deg===d).length;

@@ -692,7 +692,11 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     pool, **no hiring limit**: every candidate goes to the highest salary for their own degree, ties at the top
     split evenly (seeded). Bands don't overlap, so a Manager offer always out-pays an Analyst one.
   - **Flow** (`control.ps = {rk, step}`, `psStep()`): Open → **roles** (first round of a meeting only, when it has
-    no firms: volunteers tap **Start a firm** and **name it** — they become its captain, up to `firms` firms, names unique
+    no firms: every student first sees a **role picker** — 🏢 **Recruiter** (seats left shown; greyed when full) or 🎓
+    **Candidate** (writes a ready mark `live/<base>/pc/<enc(id)>` = `{id,name,ts}`, `psPickCandidate`; "Change to recruiter" /
+    "I'll be a candidate instead" switch back; **not picking = candidate**). Console and **Present** show live counts
+    (`psRoleCounts`: candidates ready · recruiters in N firms · haven't picked yet, the last from the section's enrolled roster).
+    Recruiters: volunteers tap **Start a firm** and **name it** — they become its captain, up to `firms` firms, names unique
     and ≤24 chars (`psCreateFirm`); others tap *Join* on a named firm (`psJoin`, cap `firmMax`); captains can rename until
     step 2 (`psRenameFirm`); typing uses `psNewName`/`psRenameTxt` + `rbBlurRedraw`, and firm-list redraws wait while a
     finger is down (`psFirmsRender` checks `_ptrDown`, hook `psPtrHook`) so a classmate starting a firm can't swallow a tap) → **choose** (candidates dealt a type,
