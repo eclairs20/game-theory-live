@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-09.003";
+const APP_VERSION = "2026-11-10.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -605,7 +605,7 @@ const GAMES = {
   bayes: { name:"Bayesian Game", short:"G11", icon:"G11",
     blurb:"Odd-Even or the Matching Game? Player 2 knows which; Player 1 only knows the odds." },
   placement: { name:"Placement Season", short:"G12", icon:"G12",
-    blurb:"Grad or MBA? Candidates signal; recruiter firms decide who gets the Manager track." },
+    blurb:"Grad or MBA? Candidates signal; recruiter firms decide who gets the Manager role." },
   publicgoods: { name:"Public Goods", short:"G20", icon:"G20",
     blurb:"Contribute to a shared fund that pays everyone." }
 };
@@ -620,7 +620,7 @@ const DEFAULT_CONFIG = {
   adfin:{ rounds:6 },                  // Advertising Game (Finite): a fixed, announced number of rounds
   robot:{ capMin:5, joinMin:5, buildMin:10, teamMin:4, teamMax:6, teams:15, rounds:100, disc:5, house:true },   // Axelrod Tournament: captains / join / build timers (min), min / max team size, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
   bayes:{ pOdd:25, rounds:20 },          // Bayesian Game: % chance each round is Odd-Even (else the Matching Game); rounds per match
-  placement:{ mode:"fixed", variant:"A", firms:5, firmMax:4 },   // Placement Season: "fixed" salaries (track per degree, dealt batches) or "bid" (track + salary in pay bands, shared pool); variant A/B/D/E; firms and max recruiters per firm
+  placement:{ mode:"fixed", variant:"A", firms:5, firmMax:4 },   // Placement Season: "fixed" salaries (role per degree, dealt batches) or "bid" (role + salary in pay bands, shared pool); variant A/B/D/E; firms and max recruiters per firm
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -1586,6 +1586,7 @@ function render(){
   const wantPs = !!(control && control.activeGame==="placement" && curKey
     && (isTeacher() || (haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class")));
   if(wantPs) psEnsure(psBase(curKey)); else if(psCtx) psDetach();
+  if(wantPs && isTeacher()) psDealtEnsure(curKey); else if(_psDealtRk) psDealtDetach();
   // Instructor "View as student" diagnostic (read-only) — show exactly what a chosen student
   // sees, wrapped in a picker + exit. Takes precedence over every other screen.
   if(diagOn()){ app.replaceChildren(diagView()); return; }
@@ -4677,14 +4678,15 @@ function orderingPicker(current, onChange, kind){
 /* ═══════════════════════ G12 · Placement Season (signalling) ═══════════════════════
    Candidates are dealt a private type (H or L, Nature) and choose Grad or MBA; recruiter FIRMS (teams of students,
    one captain taps) see only the degree and set one offer per degree:
-     · fixed mode — a track per degree (Manager / Analyst at fixed salaries); CVs are dealt to firms in batches that
+     · fixed mode — a role per degree (Manager / Analyst at fixed salaries); CVs are dealt to firms in batches that
        match the class mix by degree AND type, so firms compete on judgement (leaderboard on profit);
-     · bid mode   — a track + salary per degree inside pay bands (Manager 200–250, Analyst 100–150), one shared pool:
+     · bid mode   — a role + salary per degree inside pay bands (Manager 200–250, Analyst 100–150), one shared pool:
        every candidate goes to the highest salary for their degree; ties at the top split evenly.
    Everything is recomputed deterministically from subs (psRound), so live view, reveal, history and CSV agree.
    Firms live in a MEETING-level live node (live/<S1A-placement>/pf, pointer pr/<me>) so they persist across rounds;
    types are dealt per round from live/<roundKey>/pt (a counter → a seeded block sequence with exactly q% H per 10). */
-const PS_TRK={Mgr:"Manager", Ana:"Analyst"};
+const PS_TRK={Mgr:"Manager", Ana:"Analyst"};   // the ROLE a firm offers a degree (the UI says "role"; "track" survives only in code)
+const PS_DUMMY_NOTE="For profit, every firm that splits a group of candidates gets the same number of H and of L — dummies fill any gap. Dummies count toward profit only, nothing else.";
 const PS_BAND={Mgr:[200,250], Ana:[100,150]};
 const PS_BASE_PROD={H:{Grad:{Mgr:300,Ana:150}, MBA:{Mgr:300,Ana:150}}, L:{Grad:{Mgr:100,Ana:100}, MBA:{Mgr:100,Ana:100}}};
 const PS_VARIANTS={
@@ -4696,7 +4698,7 @@ const PS_VARIANTS={
      prod:{H:{Grad:{Mgr:300,Ana:150}, MBA:{Mgr:400,Ana:150}}, L:{Grad:{Mgr:100,Ana:100}, MBA:{Mgr:350,Ana:100}}},
      lesson:"When the MBA itself raises productivity, everyone does it and recruiters put every MBA on Manager: human capital, not signalling — pooling on MBA, and efficient."},
   E:{name:"Strong batch", q:80, cH:40, cL:160, salM:200, salA:100, prod:PS_BASE_PROD,
-     lesson:"With 80% H the batch already clears the recruiters' bar: a Grad can get the Manager track without paying for a signal. Separating is still an equilibrium — which one the class lands in is a coordination question."}
+     lesson:"With 80% H the batch already clears the recruiters' bar: a Grad can get the Manager role without paying for a signal. Separating is still an equilibrium — which one the class lands in is a coordination question."}
 };
 function psCfg(){ const c=cfg("placement"); const mode=c.mode==="bid"?"bid":"fixed";
   let v=PS_VARIANTS[c.variant]?c.variant:"A"; if(mode==="bid" && v==="D") v="A";
@@ -4773,21 +4775,57 @@ function psTypeFor(rk, k, q){ const b=Math.floor(k/10), nH=Math.round(q/10);
   const arr=[]; for(let i=0;i<10;i++) arr.push(i<nH?"H":"L");
   for(let i=9;i>0;i--){ const j=Math.floor(adSeedFloat(rk+"|blk|"+b+"|"+i)*(i+1)); const t=arr[i]; arr[i]=arr[j]; arr[j]=t; }
   return arr[k%10]; }
+/* Deal my type for this round (once; a transaction on the counter, then claim pt/t/<me>). It also records my name under
+   pt/w/<me> so the instructor can list who is on the choose screen but hasn't chosen. A stalled dealing (a phone whose
+   connection dropped in the background) gives up after 6 s and the screen offers "Try again" instead of spinning forever. */
+let _psTypeErr={};
 async function psEnsureType(rk){
-  if(_psType[rk] || _psTypeBusy[rk] || diagOn()) return; _psTypeBusy[rk]=true;
+  if(_psType[rk] || _psTypeBusy[rk] || diagOn()) return; _psTypeBusy[rk]=true; _psTypeErr[rk]=false;
   const me=encodeKey(String(myId)), q=psCfg().V.q;
-  try{
+  const work=(async()=>{
     const s=await fb.ref(LIVE_ROOT(rk)+"/pt/t/"+me).once("value");
-    if(s && s.val()){ _psType[rk]=s.val(); }
-    else {
-      const r=await fb.ref(LIVE_ROOT(rk)+"/pt/n").transaction(n=>(n||0)+1);
-      if(r && r.committed){ const k=(r.snapshot.val()||1)-1, t=psTypeFor(rk,k,q);
-        const r2=await fb.ref(LIVE_ROOT(rk)+"/pt/t/"+me).transaction(cur=> cur==null ? t : undefined);
-        _psType[rk] = (r2 && r2.committed) ? t : ((r2&&r2.snapshot&&r2.snapshot.val())||t); }
-    }
-  }catch(e){}
+    if(s && s.val()) return s.val();
+    const r=await fb.ref(LIVE_ROOT(rk)+"/pt/n").transaction(n=>(n||0)+1);
+    if(!(r && r.committed)) return null;
+    const k=(r.snapshot.val()||1)-1, t=psTypeFor(rk,k,q);
+    const r2=await fb.ref(LIVE_ROOT(rk)+"/pt/t/"+me).transaction(cur=> cur==null ? t : undefined);
+    return (r2 && r2.committed) ? t : ((r2&&r2.snapshot&&r2.snapshot.val())||t); })();
+  let t=null;
+  try{ t=await Promise.race([work, new Promise(res=>setTimeout(()=>res("__timeout"),6000))]); }catch(e){ t=null; }
+  if(t==="__timeout"||!t){ _psTypeErr[rk]=true; work.then(v=>{ if(v && !_psType[rk]){ _psType[rk]=v; _psTypeErr[rk]=false; if(curKey===rk) render(); } }).catch(()=>{}); }
+  else { _psType[rk]=t; try{ fb.ref(LIVE_ROOT(rk)+"/pt/w/"+me).set({id:String(myId), name:myName||String(myId)}); }catch(e){} }
   _psTypeBusy[rk]=false; if(curKey===rk) render();
 }
+function psRetryType(rk){ _psTypeErr[rk]=false; _psTypeBusy[rk]=false; render(); psEnsureType(rk); }
+/* Instructor only: who has been dealt a type this round (live/<rk>/pt/w = {id,name}) — i.e. who reached the choose screen. */
+let _psDealtRk=null, psDealt={}, _psDealtSig="{}";
+function psDealtEnsure(rk){ if(_psDealtRk===rk) return; psDealtDetach(); _psDealtRk=rk; psDealt={}; _psDealtSig="{}";
+  try{ fb.ref(LIVE_ROOT(rk)+"/pt/w").on("value", s=>{ if(_psDealtRk!==rk) return; const v=(s&&s.val())||{}, sg=JSON.stringify(v); if(sg===_psDealtSig) return; psDealt=v; _psDealtSig=sg; teacherRenderSoon(); }, ()=>{}); }catch(e){} }
+function psDealtDetach(){ if(!_psDealtRk) return; try{ fb.ref(LIVE_ROOT(_psDealtRk)+"/pt/w").off(); }catch(e){} _psDealtRk=null; psDealt={}; _psDealtSig="{}"; }
+/* Done status for the console and the projector. Candidates: done (locked) / chose but not done / on the page but haven't
+   chosen (dealt a type, or picked Candidate at step 1, and not in a firm). Firms: a captain's offer marked done. */
+function psDoneStatus(){
+  const inFirm={}; psActiveFids().forEach(fid=>psMembers(psFirms[fid]).forEach(m=>{ inFirm[String(m.id).toLowerCase()]=1; }));
+  const cs=subs.filter(s=>s.pt==="C" && s.deg), chosen={}; cs.forEach(s=>{ chosen[String(s.studentId).toLowerCase()]=1; });
+  const here={}; [psDealt, psReady].forEach(m=>Object.values(m||{}).forEach(x=>{ if(x && x.id!=null) here[String(x.id).toLowerCase()]=x.name||String(x.id); }));
+  const notChosen=Object.keys(here).filter(id=>!chosen[id] && !inFirm[id]).map(id=>here[id]).sort();
+  const done=cs.filter(s=>s.lock), open=cs.filter(s=>!s.lock).map(s=>s.name||s.studentId).sort();
+  const fs=psActiveFids(), capSub=fid=>subs.filter(s=>s.pt==="F"&&s.fid===fid&&s.offer).sort((a,b)=>(b.ts||0)-(a.ts||0))[0];
+  const firmsDone=fs.filter(fid=>{ const c=capSub(fid); return c && c.lock; });
+  return {chosen:cs.length, done:done.length, open, notChosen, firms:fs.length, firmsDone:firmsDone.length, firmDone:fid=>{ const c=capSub(fid); return !!(c&&c.lock); }, firmNotDone:fs.filter(f=>firmsDone.indexOf(f)<0).map(f=>psFirmName(f))};
+}
+/* Moving on while some aren't done is allowed (a choice that isn't locked still counts) — just confirm first. */
+function psAdvance(step){
+  const st=psDoneStatus();
+  if(step==="recruit" && (st.open.length || st.notChosen.length)){
+    const parts=[]; if(st.open.length) parts.push(st.open.length+" chose but haven't pressed Done (their choice still counts)");
+    if(st.notChosen.length) parts.push(st.notChosen.length+" haven't chosen yet ("+st.notChosen.slice(0,6).join(", ")+(st.notChosen.length>6?"…":"")+")");
+    if(!confirm("Start step 3 · Recruiters decide?\n\n"+parts.join("\n")+"\n\nChoices lock when step 3 starts.")) return; }
+  psSetStep(step); }
+function psReveal(){
+  if(control && control.activeGame==="placement" && control.phase==="open"){ const st=psDoneStatus();
+    if(st.firms && st.firmsDone<st.firms && !confirm("Reveal results?\n\n"+(st.firms-st.firmsDone)+" firm"+(st.firms-st.firmsDone===1?" hasn't":"s haven't")+" pressed Done ("+st.firmNotDone.join(", ")+") — their current offers will be used.")) return; }
+  doReveal(); }
 
 /* ── firm actions ──
    Captains START a firm and name it (up to cfg.firms firms); others JOIN a named firm (up to cfg.firmMax members).
@@ -4866,9 +4904,9 @@ async function psSetStep(step){ const rk=curKey; await writeControl({ps:{rk, ste
 /* Recruiters write a participation sub (counts them as present) and the captain's sub carries the firm's offer. */
 function psDefaultOffer(mode){ return mode==="bid" ? {MBA:{t:"Ana",w:100}, Grad:{t:"Ana",w:100}} : {MBA:{t:"Ana"}, Grad:{t:"Ana"}}; }
 function psMyOffer(){ const rk=curKey; if(_psOffer[rk]) return _psOffer[rk]; const m=mySub(); return (m && m.offer) ? m.offer : null; }
-async function psSaveFirmSub(fid, cap, offer){
+async function psSaveFirmSub(fid, cap, offer, lock){
   const C=psCfg(), mf=psMyFirm(), payload={pt:"F", fid, firmName:psFirmName(fid), cap:!!cap, mode:C.mode, variant:C.v};
-  if(cap){ payload.offer=offer; payload.members=psMembers(mf&&mf.f).map(m=>m.name).join(", "); }
+  if(cap){ payload.offer=offer; payload.members=psMembers(mf&&mf.f).map(m=>m.name).join(", "); if(lock) payload.lock=true; }
   try{ await fb.ref(SUB_DOC(curKey,myId)).set(pairDoc(payload, true)); return true; }catch(e){ toast("Couldn't save — check your connection"); return false; }
 }
 function psEnsureParticipation(){
@@ -4888,6 +4926,9 @@ function psSetOffer(deg, patch){
   if(C.mode==="bid"){ const [lo,hi]=PS_BAND[o[deg].t]; o[deg].w=Math.min(hi, Math.max(lo, +o[deg].w||lo)); }
   _psOffer[rk]=o; psSaveFirmSub(mf.fid, true, o); render();
 }
+/* The captain's Done / Edit: marks the firm's offer as final (the instructor sees "firms done") or reopens it. */
+function psLockOffer(lock){ const mf=psMyFirm(); if(!mf || !mf.cap) return; const o=psMyOffer()||psDefaultOffer(psCfg().mode);
+  _psOffer[curKey]=o; psSaveFirmSub(mf.fid, true, o, lock).then(()=>render()); }
 
 /* ── the round's outcome, from subs only ── */
 let _psCache={};
@@ -4904,8 +4945,10 @@ function psRound(list){
   const members={}, names={}; firmSubs.forEach(s=>{ (members[s.fid]||(members[s.fid]=[])).push(s.name||s.studentId); });
   firmSubs.slice().sort((a,b)=>((a.cap?1:0)-(b.cap?1:0))||((a.ts||0)-(b.ts||0))).forEach(s=>{ if(s.firmName) names[s.fid]=s.firmName; });
   const res={};
-  const place=(s,fid)=>{ const o=offers[fid].offer[s.deg]; const t=o&&o.t==="Mgr"?"Mgr":"Ana", sal=psSal(V,mode,offers[fid].offer,s.deg);
+  const roleOf=(fid,deg)=>{ const o=offers[fid].offer[deg]; return o&&o.t==="Mgr"?"Mgr":"Ana"; };
+  const place=(s,fid)=>{ const t=roleOf(fid,s.deg), sal=psSal(V,mode,offers[fid].offer,s.deg);
     const prod=V.prod[s.type][s.deg][t]; res[s.studentId]={fid, track:t, salary:sal, pay:sal-psCost(V,s), prod, profit:prod-sal}; };
+  const split={};   // degree → the firms that share that degree's candidates (fixed: every firm; bid: the firms tied at the top)
   if(fids.length){
     const rnd=(parseRoundKey(rk)||{}).round||1, ord=s=>adSeedFloat(rk+"|o|"+s.studentId);
     if(mode==="fixed"){
@@ -4913,20 +4956,35 @@ function psRound(list){
       let k=rnd-1;
       [["MBA","H"],["MBA","L"],["Grad","H"],["Grad","L"]].forEach(([d,t])=>{
         cands.filter(s=>s.deg===d && s.type===t).sort((a,b)=>ord(a)-ord(b)).forEach(s=>{ place(s, fids[k%fids.length]); k++; }); });
+      split.MBA=fids.slice(); split.Grad=fids.slice();
     } else {
       ["MBA","Grad"].forEach(d=>{
-        const pool=cands.filter(s=>s.deg===d).sort((a,b)=>ord(a)-ord(b)); if(!pool.length) return;
+        const pool=cands.filter(s=>s.deg===d); if(!pool.length) return;
         const best=Math.max(...fids.map(f=>psSal(V,mode,offers[f].offer,d)));
         const top=fids.filter(f=>psSal(V,mode,offers[f].offer,d)===best);
-        const st=Math.floor(adSeedFloat(rk+"|top|"+d)*top.length);
-        pool.forEach((s,i)=>place(s, top[(st+i)%top.length])); });
+        // a tie at the top splits the pool type by type (H's in turn, then L's, one counter), so each firm's H and L counts
+        // differ from a rival's by at most one — the gap the profit-only dummies fill
+        let k=Math.floor(adSeedFloat(rk+"|top|"+d)*top.length);
+        ["H","L"].forEach(t=>pool.filter(s=>s.type===t).sort((a,b)=>ord(a)-ord(b)).forEach(s=>{ place(s, top[k%top.length]); k++; }));
+        split[d]=top; });
     }
   }
+  /* Profit-only DUMMIES: every firm that shares a degree's candidates is topped up to the same number of H and of L
+     (the most any of them got). A dummy produces, and is paid, like a real hire of that type in that firm's role. They
+     count toward firm profit (and so the leaderboard) and nothing else — not the class table, hires, hit rate or CSV. */
+  const dummies={}; fids.forEach(f=>{ dummies[f]=[]; });
+  ["MBA","Grad"].forEach(d=>{ const G=split[d]||[]; if(G.length<2) return;
+    ["H","L"].forEach(t=>{ const n=cands.filter(s=>s.deg===d && s.type===t).length; if(!n) return;
+      const tgt=Math.ceil(n/G.length);
+      G.forEach(fid=>{ const got=cands.filter(s=>s.deg===d && s.type===t && res[s.studentId] && res[s.studentId].fid===fid).length;
+        const r=roleOf(fid,d), sal=psSal(V,mode,offers[fid].offer,d), prod=V.prod[t][d][r];
+        for(let i=got;i<tgt;i++) dummies[fid].push({deg:d, type:t, track:r, salary:sal, prod, profit:prod-sal}); }); }); });
   const firms=fids.map(fid=>{ const hires=cands.filter(s=>res[s.studentId] && res[s.studentId].fid===fid);
-    const profit=hires.reduce((a,s)=>a+res[s.studentId].profit,0), mb=hires.filter(s=>s.deg==="MBA");
+    const realProfit=hires.reduce((a,s)=>a+res[s.studentId].profit,0), dm=dummies[fid]||[], dumProfit=dm.reduce((a,x)=>a+x.profit,0);
+    const profit=realProfit+dumProfit, mb=hires.filter(s=>s.deg==="MBA"), counted=hires.length+dm.length;
     const avg=k=> hires.length ? Math.round(hires.reduce((a,s)=>a+res[s.studentId][k],0)/hires.length) : null;
-    return {fid, offer:offers[fid].offer, members:members[fid]||[], hires, profit, nMBA:mb.length, nGrad:hires.length-mb.length,
-      hit: mb.length ? mb.filter(s=>s.type==="H").length/mb.length : null, paid:avg("salary"), made:avg("prod"), perHire: hires.length?Math.round(profit/hires.length):null}; });
+    return {fid, offer:offers[fid].offer, members:members[fid]||[], hires, dummies:dm, realProfit, dumProfit, profit, nMBA:mb.length, nGrad:hires.length-mb.length,
+      hit: mb.length ? mb.filter(s=>s.type==="H").length/mb.length : null, paid:avg("salary"), made:avg("prod"), perHire: counted?Math.round(profit/counted):null}; });
   const out={rk, mode, v, V, cands, firmSubs, offers, fids, res, firms, names};
   _psCache[ck]=out; return out;
 }
@@ -4952,8 +5010,8 @@ function psTypeCard(type, V, mode){
   card.append(Object.assign(el("div","tinylabel"),{textContent:"Your type this round"}));
   card.append(Object.assign(el("div"),{textContent:"Type "+type,style:"font-family:Fraunces,Georgia,serif;font-size:1.9rem;font-weight:650;color:"+(H?"#7c4fd6":"#11998a")}));
   const rows=[["Your MBA would cost", type==="H"?V.cH:V.cL]];
-  if(mode==="bid") rows.push(["Manager track pays", PS_BAND.Mgr.join("–")], ["Analyst track pays", PS_BAND.Ana.join("–")]);
-  else rows.push(["Manager track pays", V.salM], ["Analyst track pays", V.salA]);
+  if(mode==="bid") rows.push(["Manager role pays", PS_BAND.Mgr.join("–")], ["Analyst role pays", PS_BAND.Ana.join("–")]);
+  else rows.push(["Manager role pays", V.salM], ["Analyst role pays", V.salA]);
   rows.forEach(([k,v])=>{ const r=el("div"); r.style.cssText="display:flex;justify-content:space-between;gap:10px;font-size:.92rem;margin-top:3px";
     r.append(el("span","",k), Object.assign(el("span"),{textContent:String(v),style:"font-family:'IBM Plex Mono',monospace;font-weight:600"})); card.append(r); });
   return card;
@@ -4968,6 +5026,33 @@ function psProdTable(V, mode){
   h+= mode==="bid" ? "<tr><td style='text-align:left'>Pay band</td><td>"+PS_BAND.Mgr.join("–")+"</td><td>"+PS_BAND.Ana.join("–")+"</td></tr>"
                    : "<tr><td style='text-align:left'>Salary</td><td>"+V.salM+"</td><td>"+V.salA+"</td></tr>";
   t.innerHTML=h; const w=el("div","tablescroll"); w.append(t); return w;
+}
+/* "This round" banner — what the variant means, in plain words, on every candidate, recruiter and projector screen. Gold
+   and tagged NEW when the variant differs from the previous round of this meeting (with the old numbers alongside). */
+const PS_VAR_ICON={A:"🎓", B:"💻", D:"🧠", E:"📈"};
+function psPrevVariant(){
+  const p=parseRoundKey(curKey); if(!p || p.round<=1) return null;
+  const prk="S"+p.session+p.section+"-placement-"+(p.round-1);
+  const s=Object.values(allSubs).find(x=>x && x.roundKey===prk && x.variant);
+  return s && PS_VARIANTS[s.variant] ? s.variant : null;
+}
+function psVariantBanner(C){
+  const V=C.V, pv=psPrevVariant(), P=pv?PS_VARIANTS[pv]:null, changed=!!(pv && pv!==C.v);
+  const was=(now,then)=> (changed && then!==now) ? " (was "+then+")" : "";
+  const lines=[];
+  lines.push("MBA costs: H "+V.cH+" · L "+V.cL+was(V.cH+" · "+V.cL, P&&(P.cH+" · "+P.cL)));
+  const skill=V.prod.H.MBA.Mgr!==V.prod.H.Grad.Mgr || V.prod.L.MBA.Mgr!==V.prod.L.Grad.Mgr;
+  if(skill) lines.push("The MBA builds real skills: as a Manager, an MBA hire produces H "+V.prod.H.MBA.Mgr+" · L "+V.prod.L.MBA.Mgr+" (without an MBA: H "+V.prod.H.Grad.Mgr+" · L "+V.prod.L.Grad.Mgr+").");
+  else lines.push("The MBA adds no skill: a hire produces the same with or without it.");
+  if(C.mode==="fixed" && (V.salM!==200 || (changed && P && P.salM!==V.salM))) lines.push("Manager pays "+V.salM+was(String(V.salM), P&&String(P.salM))+" · Analyst pays "+V.salA+".");
+  if(V.q!==50 || (changed && P && P.q!==V.q)) lines.push(V.q+"% of candidates are type H this round"+was(V.q+"%", P&&(P.q+"%"))+".");
+  const b=el("div"); b.style.cssText="border-radius:14px;padding:12px 14px;margin-top:10px;border:"+(changed?"2px solid var(--gold)":"1px solid var(--line)")+";background:"+(changed?"color-mix(in srgb, var(--gold) 14%, var(--surface))":"var(--surface)");
+  const top=el("div"); top.style.cssText="display:flex;gap:8px;align-items:center;flex-wrap:wrap";
+  top.append(Object.assign(el("div"),{textContent:(PS_VAR_ICON[C.v]||"🎓")+" This round: "+V.name,style:"font-weight:700;font-size:1.05rem"}));
+  if(changed) top.append(Object.assign(el("span","badge"),{textContent:"NEW THIS ROUND",style:"background:var(--gold);color:#fff"}));
+  b.append(top);
+  lines.forEach(t=>b.append(Object.assign(el("div","sm"),{textContent:t,style:"margin-top:3px"})));
+  return b;
 }
 /* Last round's "placement report" in this meeting — what candidates and recruiters learn from. */
 function psLastReport(){
@@ -5001,22 +5086,24 @@ function psPatchLive(){
   document.querySelectorAll("[data-ps-live]").forEach(n=>{
     const k=n.dataset.psLive;
     if(k==="count") n.textContent=String(psCandCount());
-    else if(k==="firmsdone") n.textContent=String(subs.filter(s=>s.pt==="F" && s.offer).length);
+    else if(k==="firmsdone") n.textContent=String(psDoneStatus().firmsDone);
+    else if(k==="canddone") n.textContent=String(psDoneStatus().done);
     else if(k==="board") n.innerHTML=psBoardHTML(null, n.dataset.except||null, n.dataset.big==="1");
   });
 }
 function psLive(kind, attrs){ const s=el(kind==="board"?"div":"span"); s.dataset.psLive=kind; Object.assign(s.dataset, attrs||{});
   if(kind==="count") s.textContent=String(psCandCount());
-  else if(kind==="firmsdone") s.textContent=String(subs.filter(x=>x.pt==="F" && x.offer).length);
+  else if(kind==="firmsdone") s.textContent=String(psDoneStatus().firmsDone);
+  else if(kind==="canddone") s.textContent=String(psDoneStatus().done);
   else s.innerHTML=psBoardHTML(null, (attrs&&attrs.except)||null, attrs&&attrs.big==="1");
   return s; }
 /* Subs view signature for G12 (LIVE-UPDATE RENDERING RULE): my own record and, for a recruiter who isn't the captain,
    the captain's offer. Counts and the job board refresh in place (psPatchLive), so they never redraw a screen. */
 function psSubsSig(){
   const mf=psMyFirm(), m=mySub();
-  const mine = m ? [m.pt, m.deg||"", m.fid||"", m.cap?1:0, mf&&mf.cap ? "" : JSON.stringify(m.offer||"")].join(":") : "-";
+  const mine = m ? [m.pt, m.deg||"", m.fid||"", m.cap?1:0, m.lock?1:0, mf&&mf.cap ? "" : JSON.stringify(m.offer||"")].join(":") : "-";
   let firmOffer="";
-  if(mf && !mf.cap){ const cs=subs.filter(s=>s.pt==="F" && s.fid===mf.fid && s.offer).sort((a,b)=>(b.ts||0)-(a.ts||0))[0]; firmOffer=cs?JSON.stringify(cs.offer):""; }
+  if(mf && !mf.cap){ const cs=subs.filter(s=>s.pt==="F" && s.fid===mf.fid && s.offer).sort((a,b)=>(b.ts||0)-(a.ts||0))[0]; firmOffer=cs?JSON.stringify(cs.offer)+(cs.lock?"L":""):""; }
   return "PS#"+mine+"#"+firmOffer+"#"+(mf?mf.fid:"");
 }
 
@@ -5044,7 +5131,7 @@ function studentPlacement(c){
       c.append(el("p","lead","Wait for the round to start. Each round you'll get a private type (H or L) and choose Grad or MBA."));
       if(psSeatsLeft()>0){ const sw=el("button","linkbtn","Change to recruiter"); sw.type="button"; sw.style.marginTop="6px"; sw.onclick=psPickRecruiter; c.append(sw); }
     } else if(psRolePick[psCtx]!=="rec"){
-      c.append(h("Pick your role for today"));
+      c.append(h("Pick your side for today"));
       const seats=psSeatsLeft(), grid=el("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px";
       const card=(icon,title,txt,sub,on,fn)=>{ const b=el("button","card"); b.type="button";
         b.style.cssText="text-align:left;padding:16px;display:flex;flex-direction:column;gap:6px;cursor:"+(on?"pointer":"not-allowed")+";opacity:"+(on?1:.55)+";border:1.5px solid var(--line);background:var(--surface)";
@@ -5059,7 +5146,7 @@ function studentPlacement(c){
       c.append(Object.assign(el("div","sm mut"),{textContent:"If you don't pick, you'll play as a candidate.",style:"margin-top:10px"}));
     } else {
       const fs=psActiveFids(), full=fs.length>=C.firms;
-      const bk=el("button","linkbtn","← Back to roles"); bk.type="button"; bk.onclick=()=>{ psRolePick[psCtx]=null; render(); }; c.append(bk);
+      const bk=el("button","linkbtn","← Back"); bk.type="button"; bk.onclick=()=>{ psRolePick[psCtx]=null; render(); }; c.append(bk);
       c.append(h("Recruiters: start a firm or join one"));
       c.append(el("p","lead","Firms hire candidates every round and compete on profit. Start a firm and name it (you'll be its captain), or join a classmate's firm. Everyone not in a firm plays as a candidate."));
       if(!full){
@@ -5088,22 +5175,33 @@ function studentPlacement(c){
   // candidate
   if(step!=="choose"){
     const m=mySub();
-    if(m && m.pt==="C"){ c.append(h("Your choice is locked: "+m.deg)); c.append(el("p","lead","Recruiters are deciding now. Your result appears when your instructor reveals.")); c.append(psTypeCard(m.type, C.V, C.mode)); }
+    if(m && m.pt==="C"){ c.append(h("Your choice is locked: "+m.deg)); c.append(el("p","lead","Recruiters are deciding now. Your result appears when your instructor reveals.")); c.append(psVariantBanner(C), psTypeCard(m.type, C.V, C.mode)); }
     else { c.append(h("Choices are closed for this round")); c.append(el("p","lead","You'll be dealt a type when the next round starts.")); }
     return;
   }
   const t=_psType[rk] || ((mySub()||{}).type);
-  if(!t){ psEnsureType(rk); c.append(h("Dealing your type…")); c.append(el("p","sm mut","One moment.")); return; }
-  const cur=mySub(), deg=cur&&cur.pt==="C"?cur.deg:null;
-  c.append(h("Grad or MBA?"));
-  c.append(el("p","lead","Recruiters will see your degree, not your type. Choose before they start hiring — you can change it until then."));
+  if(!t){
+    if(_psTypeErr[rk]){ c.append(h("Couldn't deal your type"));
+      c.append(el("p","lead","Your phone lost its connection for a moment. Tap Try again — if it keeps failing, reload the page."));
+      const b=el("button","btn","Try again"); b.onclick=()=>psRetryType(rk); c.append(b); return; }
+    psEnsureType(rk); c.append(h("Dealing your type…")); c.append(el("p","sm mut","One moment.")); return; }
+  const cur=mySub(), deg=cur&&cur.pt==="C"?cur.deg:null, locked=!!(deg && cur.lock);
+  const pick=(d,lock)=>submit({pt:"C", type:t, deg:d, mode:C.mode, variant:C.v, lock:!!lock});
+  c.append(h(locked ? "✓ Done — you chose "+deg : "Grad or MBA?"));
+  c.append(el("p","lead", locked ? "Your choice is locked in. Recruiters see your degree, not your type." : "Recruiters will see your degree, not your type. Pick one, then press Done to lock it in."));
+  c.append(psVariantBanner(C));
   c.append(psTypeCard(t, C.V, C.mode));
   const row=el("div"); row.style.cssText="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;max-width:420px";
   ["Grad","MBA"].forEach(d=>{ const b=el("button", deg===d?"btn":"ghost-btn", d); b.style.cssText="padding:16px 8px;font-size:1.1rem";
     if(deg===d) b.setAttribute("aria-pressed","true");
-    b.onclick=()=>{ if(deg===d) return; submit({pt:"C", type:t, deg:d, mode:C.mode, variant:C.v}); };
+    if(locked) b.disabled=true; else b.onclick=()=>{ if(deg===d) return; pick(d,false); };
     row.append(b); });
   c.append(row);
+  const dr=el("div"); dr.style.cssText="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px;max-width:420px";
+  if(locked){ const ed=el("button","linkbtn","Edit my choice"); ed.type="button"; ed.onclick=()=>pick(deg,false); dr.append(Object.assign(el("span","sm mut"),{textContent:"Changed your mind? You can edit until recruiters start."}), ed); }
+  else if(deg){ const dn=el("button","btn","✓ Done — lock my choice"); dn.style.cssText="width:100%;padding:13px"; dn.onclick=()=>pick(deg,true); dr.append(dn); }
+  if(deg) c.append(dr);
+  c.append(Object.assign(el("div"),{style:"margin-top:12px"}), psProdTable(C.V, C.mode));
   c.append(Object.assign(el("div","note-box"),{innerHTML:"🤫 Don't tell anyone your type.",style:"margin-top:12px"}));
   const rep=psLastReport(); if(rep) c.append(rep);
 }
@@ -5120,13 +5218,16 @@ function studentRecruiter(c, mf, C, step){
   if(step==="choose"){
     c.append(h("Candidates are choosing"));
     const p=el("p","lead"); p.append(psLive("count"), document.createTextNode(" candidates have chosen so far. You'll see degrees, never types."));
-    c.append(p, psProdTable(C.V, C.mode));
+    c.append(p, psVariantBanner(C), psProdTable(C.V, C.mode));
     const rep=psLastReport(); if(rep) c.append(rep);
     return;
   }
-  const o = mf.cap ? (psMyOffer()||psDefaultOffer(C.mode)) : ((subs.filter(s=>s.pt==="F"&&s.fid===mf.fid&&s.offer).sort((a,b)=>(b.ts||0)-(a.ts||0))[0]||{}).offer);
+  const capSub=subs.filter(s=>s.pt==="F"&&s.fid===mf.fid&&s.offer).sort((a,b)=>(b.ts||0)-(a.ts||0))[0];
+  const o = mf.cap ? (psMyOffer()||psDefaultOffer(C.mode)) : (capSub||{}).offer;
+  const locked = mf.cap ? !!((mySub()||{}).lock) : !!(capSub && capSub.lock), can = mf.cap && !locked;
   const nM=subs.filter(s=>s.pt==="C"&&s.deg==="MBA").length, nG=subs.filter(s=>s.pt==="C"&&s.deg==="Grad").length;
-  c.append(h(mf.cap ? "Set your firm's offers" : "Your captain is setting the offers"));
+  c.append(h(locked ? "✓ "+(mf.cap?"Done — your firm's offers are in":"Locked in by your captain") : mf.cap ? "Set your firm's offers" : "Your captain is setting the offers"));
+  c.append(psVariantBanner(C));
   if(C.mode==="fixed"){
     const fs=psActiveFids().filter(f=>subs.some(s=>s.pt==="F"&&s.fid===f&&s.offer)).length || psActiveFids().length || 1;
     c.append(el("p","lead","CVs are dealt to firms in equal batches — about "+Math.round(nM/fs)+" MBA and "+Math.round(nG/fs)+" Grad CVs each. One choice per degree applies to every CV in your batch."));
@@ -5139,10 +5240,10 @@ function studentRecruiter(c, mf, C, step){
     line.append(Object.assign(el("div"),{innerHTML:"<b>"+d+" candidates →</b>"}));
     const ctr=el("div"); ctr.style.cssText="display:flex;gap:6px;align-items:center;flex-wrap:wrap";
     ["Mgr","Ana"].forEach(t=>{ const b=el("button", od.t===t?"btn":"ghost-btn", PS_TRK[t]); b.style.padding="7px 12px";
-      if(!mf.cap) b.disabled=true; else b.onclick=()=>psSetOffer(d,{t, w: t===od.t?od.w:PS_BAND[t][0]}); ctr.append(b); });
+      if(!can) b.disabled=true; else b.onclick=()=>psSetOffer(d,{t, w: t===od.t?od.w:PS_BAND[t][0]}); ctr.append(b); });
     if(C.mode==="bid"){
       const st=el("span"); st.style.cssText="display:inline-flex;align-items:center;gap:4px;margin-left:6px";
-      const mk=(lab,delta)=>{ const b=el("button","ghost-btn",lab); b.style.cssText="width:34px;padding:6px 0"; if(!mf.cap) b.disabled=true; else b.onclick=()=>psSetOffer(d,{w:(+od.w||PS_BAND[od.t][0])+delta}); return b; };
+      const mk=(lab,delta)=>{ const b=el("button","ghost-btn",lab); b.style.cssText="width:34px;padding:6px 0"; if(!can) b.disabled=true; else b.onclick=()=>psSetOffer(d,{w:(+od.w||PS_BAND[od.t][0])+delta}); return b; };
       st.append(mk("−",-10), Object.assign(el("span"),{textContent:String(od.w||PS_BAND[od.t][0]),style:"font-family:'IBM Plex Mono',monospace;font-weight:700;min-width:42px;text-align:center"}), mk("+",10));
       ctr.append(st);
     } else ctr.append(Object.assign(el("span","sm mut"),{textContent:"salary "+(od.t==="Mgr"?C.V.salM:C.V.salA)}));
@@ -5150,6 +5251,13 @@ function studentRecruiter(c, mf, C, step){
     if(C.mode==="bid") box.append(Object.assign(el("div","sm mut"),{textContent:PS_TRK[od.t]+" band: "+PS_BAND[od.t].join("–"),style:"margin-top:-8px"}));
   });
   c.append(box);
+  const dr=el("div"); dr.style.cssText="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:10px";
+  if(mf.cap){
+    if(locked){ const ed=el("button","linkbtn","Edit offers"); ed.type="button"; ed.onclick=()=>psLockOffer(false);
+      dr.append(Object.assign(el("span","sm mut"),{textContent:"Your instructor can see your firm is done. Need a change? You can edit until the reveal."}), ed); }
+    else { const dn=el("button","btn","✓ Done — submit our offers"); dn.style.cssText="width:100%;max-width:420px;padding:13px"; dn.onclick=()=>psLockOffer(true); dr.append(dn); }
+  } else dr.append(Object.assign(el("span","sm mut"),{textContent: locked ? "Your captain has pressed Done." : "Your captain presses Done when your firm has decided."}));
+  c.append(dr);
   if(C.mode==="bid"){ const rv=el("div","card"); rv.style.cssText="padding:12px;margin-top:10px";
     rv.append(Object.assign(el("div","tinylabel"),{textContent:"Live job board (rivals)",style:"margin-bottom:6px"}), psLive("board",{except:mf.fid})); c.append(rv); }
   c.append(Object.assign(el("div"),{style:"margin-top:10px"}), psProdTable(C.V, C.mode));
@@ -5161,7 +5269,7 @@ function psPresentBody(){
   const big=(t)=>Object.assign(el("div"),{textContent:t,style:"font-family:Fraunces,Georgia,serif;font-size:2rem;font-weight:650"});
   w.append(Object.assign(el("div","tinylabel"),{textContent:(C.mode==="bid"?"Bidding war":"Fixed salaries")+" · "+C.V.name}));
   if(step==="roles"){
-    w.append(big("Pick your role on your phone"));
+    w.append(big("Pick your side on your phone"));
     const fs=psActiveFids(), rc=psRoleCounts();
     const cn=el("div"); cn.style.cssText="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-end";
     [[rc.ready,"candidates ready"],[rc.recruiters,"recruiters in "+rc.firms+" firm"+(rc.firms===1?"":"s")]].concat(rc.notPicked!=null?[[rc.notPicked,"haven't picked yet"]]:[]).forEach(([n,l])=>{
@@ -5176,31 +5284,51 @@ function psPresentBody(){
     w.append(big("Candidates: Grad or MBA?"));
     const n=el("div"); n.style.cssText="font-family:'IBM Plex Mono',monospace;font-size:3.4rem;font-weight:700;line-height:1"; n.append(psLive("count"));
     w.append(n, el("div","sm mut","candidates have chosen"));
+    const st=psDoneStatus(), dl=el("div"); dl.style.cssText="font-size:1.15rem;font-weight:600";
+    dl.append(psLive("canddone"), document.createTextNode(" pressed Done"+(st.notChosen.length?" · "+st.notChosen.length+" still to choose":"")));
+    w.append(dl, psVariantBanner(C));
     const t=el("table","matrix"); t.style.maxWidth="420px";
     t.innerHTML="<tr><th style='text-align:left'></th><th>MBA cost</th></tr><tr><td style='text-align:left'>Type H</td><td>"+C.V.cH+"</td></tr><tr><td style='text-align:left'>Type L</td><td>"+C.V.cL+"</td></tr>"
       +(C.mode==="bid"?"<tr><td style='text-align:left'>Manager / Analyst pay</td><td>"+PS_BAND.Mgr.join("–")+" / "+PS_BAND.Ana.join("–")+"</td></tr>":"<tr><td style='text-align:left'>Manager / Analyst pay</td><td>"+C.V.salM+" / "+C.V.salA+"</td></tr>");
     w.append(t);
   } else {
-    if(C.mode==="bid"){ w.append(big("Live job board")); w.append(psLive("board",{big:"1"})); w.append(el("div","sm mut","Gold = top salary for that degree — it wins every candidate with that degree.")); }
-    else { w.append(big("Recruiters are deciding")); const n=el("div"); n.style.cssText="font-family:'IBM Plex Mono',monospace;font-size:3rem;font-weight:700"; n.append(psLive("firmsdone"), document.createTextNode(" / "+psActiveFids().length)); w.append(n, el("div","sm mut","firms have set their offers · choices stay hidden until the reveal")); }
+    const fd=el("div"); fd.style.cssText="font-family:'IBM Plex Mono',monospace;font-size:"+(C.mode==="bid"?"1.6rem":"3rem")+";font-weight:700"; fd.append(psLive("firmsdone"), document.createTextNode(" / "+psActiveFids().length+(C.mode==="bid"?" firms done":"")));
+    if(C.mode==="bid"){ w.append(big("Live job board")); w.append(psLive("board",{big:"1"})); w.append(el("div","sm mut","Gold = top salary for that degree — it wins every candidate with that degree."), fd); }
+    else { w.append(big("Recruiters are deciding")); w.append(fd, el("div","sm mut","firms have pressed Done · offers stay hidden until the reveal")); }
+    w.append(psVariantBanner(C));
   }
   return w;
 }
 function psConsoleCard(){
   const C=psCfg(), step=psStep(), open=isOpenNow(), card=el("div","card stage");
   card.append(el("div","eyebrow gold","Placement Season · "+(C.mode==="bid"?"bidding war":"fixed salaries")+" · "+C.V.name));
-  if(!open){ card.append(Object.assign(el("p","lead"),{textContent:"Open submissions to start. The first round opens with the firm sign-up step; later rounds go straight to candidates choosing (firms are kept for the whole meeting).",style:"margin-top:6px"})); }
-  const steps=[["roles","1 · Firms sign up"],["choose","2 · Candidates choose"],["recruit","3 · Recruiters decide"]];
+  if(!open){ card.append(Object.assign(el("p","lead"),{textContent:"Open submissions to start. The first round opens with step 1 · Pick sides (Recruiter or Candidate); later rounds go straight to candidates choosing (firms are kept for the whole meeting).",style:"margin-top:6px"})); }
+  const steps=[["roles","1 · Pick sides"],["choose","2 · Candidates choose"],["recruit","3 · Recruiters decide"]];
   const sr=el("div"); sr.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0";
-  steps.forEach(([k,l])=>{ const b=el("button", step===k&&open?"btn":"ghost-btn", l); b.onclick=()=>psSetStep(k); if(!open){ b.disabled=true; } sr.append(b); });
+  steps.forEach(([k,l])=>{ const b=el("button", step===k&&open?"btn":"ghost-btn", l); b.onclick=()=>psAdvance(k); if(!open){ b.disabled=true; } sr.append(b); });
   card.append(sr);
   if(open){
-    const tip={roles:"Everyone picks a role on their phone: Recruiter (start and name a firm, or join one) or Candidate. Anyone who doesn\'t pick plays as a candidate. When the firms look right, press 2 · Candidates choose.",
+    const tip={roles:"Everyone picks a side on their phone: Recruiter (start and name a firm, or join one) or Candidate. Anyone who doesn\'t pick plays as a candidate. When the firms look right, press 2 · Candidates choose.",
       choose:"Candidates are dealt a type and pick Grad or MBA. Recruiters wait. When most have chosen, press 3 · Recruiters decide — choices then lock.",
       recruit:"Captains set their firm's offers"+(C.mode==="bid"?" — the job board is live on every phone and on Present":"")+". Then press Reveal results."}[step];
     card.append(Object.assign(el("div","sm mut"),{textContent:tip}));
   }
   if(open && step==="roles") card.append(Object.assign(el("div"),{textContent:psCountsLine(psRoleCounts()),style:"font-weight:600;margin-top:8px"}));
+  if(open && step!=="roles"){
+    const st=psDoneStatus(), sb=el("div","card"); sb.style.cssText="padding:10px 12px;margin-top:10px";
+    const line=(lab,val,names,col)=>{ const r=el("div"); r.style.cssText="margin-top:4px";
+      r.append(Object.assign(el("span"),{textContent:lab+": ",style:"font-weight:600"}), Object.assign(el("span"),{textContent:val,style:"font-family:'IBM Plex Mono',monospace;font-weight:700"+(col?";color:"+col:"")}));
+      if(names&&names.length) r.append(Object.assign(el("div","sm mut"),{textContent:names.join(", ")}));
+      return r; };
+    sb.append(Object.assign(el("div","tinylabel"),{textContent:"Who's done"}));
+    sb.append(line("Candidates done", st.done+" of "+st.chosen+" who chose", null, st.chosen&&st.done===st.chosen?"var(--good)":""));
+    if(step==="choose"){
+      sb.append(line("Chose, not pressed Done", String(st.open.length), st.open));
+      sb.append(line("On the page, haven't chosen", String(st.notChosen.length), st.notChosen, st.notChosen.length?"var(--bad)":""));
+    }
+    if(step==="recruit") sb.append(line("Firms done", st.firmsDone+" of "+st.firms, st.firmNotDone.length?["Still deciding: "+st.firmNotDone.join(", ")]:null, st.firms&&st.firmsDone===st.firms?"var(--good)":""));
+    card.append(sb);
+  }
   // live counts (instructor only — types are private)
   const cs=subs.filter(s=>s.pt==="C"&&s.deg);
   const n=(t,d)=>cs.filter(s=>s.type===t&&s.deg===d).length;
@@ -5223,7 +5351,7 @@ function psConsoleCard(){
     const fsub=subs.filter(s=>s.pt==="F"&&s.fid===fid&&s.offer).sort((a,b)=>(b.ts||0)-(a.ts||0))[0];
     const b=el("div","card"); b.style.padding="10px 12px";
     const top=el("div"); top.style.cssText="display:flex;justify-content:space-between;gap:6px;align-items:baseline";
-    top.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(psFirmName(fid))+"</b> <span class='sm mut'>"+ms.length+"/"+C.max+"</span>"+(fsub?" <span class='sm' style='color:var(--good)'>✓ offer set</span>":"")}));
+    top.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(psFirmName(fid))+"</b> <span class='sm mut'>"+ms.length+"/"+C.max+"</span>"+(fsub?(fsub.lock?" <span class='sm' style='color:var(--good);font-weight:700'>✓ done</span>":" <span class='sm mut'>offer set · not done</span>"):"")}));
     const acts=el("div"); acts.style.cssText="display:flex;gap:8px;white-space:nowrap";
     const rn=el("button","linkbtn","Rename"); rn.type="button"; rn.onclick=()=>{ const nm=prompt("New name for "+psFirmName(fid)+":", psFirmName(fid)); if(nm!=null) psRenameFirm(fid, nm); };
     const rm=el("button","linkbtn","Remove firm"); rm.type="button"; rm.style.color="var(--bad)"; rm.onclick=()=>{ if(confirm("Remove "+psFirmName(fid)+"? Its recruiters become candidates.")) psRemoveFirm(fid); };
@@ -5236,7 +5364,7 @@ function psConsoleCard(){
       r.append(nm, x); b.append(r); });
     grid.append(b); });
   if(fs.length) card.append(grid);
-  else card.append(Object.assign(el("div","sm mut"),{textContent: isOpenNow()&&step==="roles" ? "No firms yet — ask for volunteers to start firms on their phones." : "No firms yet. They're started by students in step 1 · Firms sign up.",style:"margin-top:6px"}));
+  else card.append(Object.assign(el("div","sm mut"),{textContent: isOpenNow()&&step==="roles" ? "No firms yet — ask for volunteers to start firms on their phones." : "No firms yet. They're started by students in step 1 · Pick sides.",style:"margin-top:6px"}));
   card.append(Object.assign(el("div","sm mut"),{textContent:"★ = captain (taps for the firm; names it and can rename until step 2). Tap a name to make them captain; ✕ removes a recruiter (they become a candidate). Reset recruiters clears every firm — use it to swap recruiters between phases or sessions.",style:"margin-top:8px"}));
   return card;
 }
@@ -5244,23 +5372,28 @@ function psConsoleCard(){
 /* ── results ── */
 function psKpiPanel(R, f, lb){
   const box=el("div","card"); box.style.cssText="padding:14px;background:var(--accent-wash)";
-  const rank=lb.findIndex(x=>x.fid===f.fid)+1, cum=(lb.find(x=>x.fid===f.fid)||{}).cum;
+  const cum=(lb.find(x=>x.fid===f.fid)||{}).cum, rank=lb.filter(x=>x.cum>cum).length+1, tied=lb.filter(x=>x.cum===cum).length>1;
   box.append(Object.assign(el("div","tinylabel"),{textContent:"Cumulative profit · ranks the firms"}));
   box.append(Object.assign(el("div"),{textContent:psSigned(cum),style:"font-family:'IBM Plex Mono',monospace;font-size:2rem;font-weight:700;color:"+(cum>=0?"var(--good)":"var(--bad)")}));
-  box.append(Object.assign(el("div","sm mut"),{textContent:"Rank "+rank+" of "+lb.length+" · this round "+psSigned(f.profit)}));
+  const nd=(f.dummies||[]).length;
+  box.append(Object.assign(el("div","sm mut"),{textContent:"Rank "+rank+" of "+lb.length+(tied?" (tied)":"")+" · this round "+psSigned(f.profit)+(nd?" (includes "+nd+" dumm"+(nd===1?"y":"ies")+")":"")}));
   const g=el("div","stats"); g.style.marginTop="10px";
-  g.append(statTile("Hires this round", f.nMBA+" MBA · "+f.nGrad+" Grad"), statTile("MBA hit rate", f.hit==null?"—":pct(f.hit), "share of your MBA hires who were H"),
-    statTile("Profit per hire", psSigned(f.perHire)), statTile("Avg paid vs produced", f.paid==null?"—":f.paid+" vs "+f.made));
+  g.append(statTile("Hires this round", f.nMBA+" MBA · "+f.nGrad+" Grad", nd?"+ "+nd+" dumm"+(nd===1?"y":"ies")+" (profit only)":""), statTile("MBA hit rate", f.hit==null?"—":pct(f.hit), "share of your MBA hires who were H"),
+    statTile("Profit per hire", psSigned(f.perHire), nd?"dummies included":""), statTile("Avg paid vs produced", f.paid==null?"—":f.paid+" vs "+f.made));
   box.append(g);
-  if(!f.hires.length) box.append(el("div","sm mut","You hired nobody this round, so it adds 0."));
+  if(nd) box.append(Object.assign(el("div","sm mut"),{textContent:PS_DUMMY_NOTE,style:"margin-top:8px"}));
+  if(!f.hires.length && !nd) box.append(el("div","sm mut","You hired nobody this round, so it adds 0."));
   return box;
 }
 function psHiresTable(R, f){
   const t=el("table","matrix"); t.style.fontSize=".86rem";
-  let h="<tr><th style='text-align:left'>Hire</th><th>Degree</th><th>Type</th><th>Track</th><th>Paid</th><th>Produced</th><th>Profit</th></tr>";
+  let h="<tr><th style='text-align:left'>Hire</th><th>Degree</th><th>Type</th><th>Role</th><th>Paid</th><th>Produced</th><th>Profit</th></tr>";
+  const pc=v=>"<td style='color:"+(v>=0?"var(--good)":"var(--bad)")+";font-weight:700'>"+psSigned(v)+"</td>";
   f.hires.slice().sort((a,b)=>a.deg<b.deg?-1:a.deg>b.deg?1:0).forEach(s=>{ const r=R.res[s.studentId];
-    h+="<tr><td style='text-align:left'>"+esc(s.name||"")+"</td><td>"+s.deg+"</td><td>"+s.type+"</td><td>"+PS_TRK[r.track]+"</td><td>"+r.salary+"</td><td>"+r.prod+"</td><td style='color:"+(r.profit>=0?"var(--good)":"var(--bad)")+";font-weight:700'>"+psSigned(r.profit)+"</td></tr>"; });
-  if(!f.hires.length) h+="<tr><td colspan='7' class='mut'>No hires.</td></tr>";
+    h+="<tr><td style='text-align:left'>"+esc(s.name||"")+"</td><td>"+s.deg+"</td><td>"+s.type+"</td><td>"+PS_TRK[r.track]+"</td><td>"+r.salary+"</td><td>"+r.prod+"</td>"+pc(r.profit)+"</tr>"; });
+  (f.dummies||[]).forEach(x=>{
+    h+="<tr style='opacity:.62;font-style:italic'><td style='text-align:left'>Dummy <span class='sm'>(profit only)</span></td><td>"+x.deg+"</td><td>"+x.type+"</td><td>"+PS_TRK[x.track]+"</td><td>"+x.salary+"</td><td>"+x.prod+"</td>"+pc(x.profit)+"</tr>"; });
+  if(!f.hires.length && !(f.dummies||[]).length) h+="<tr><td colspan='7' class='mut'>No hires.</td></tr>";
   t.innerHTML=h; const w=el("div","tablescroll"); w.append(t); return w;
 }
 function analyzePlacement(list, teacher){
@@ -5276,7 +5409,7 @@ function analyzePlacement(list, teacher){
     const myS=list.find(s=>s.studentId===myId);
     if(R && myS && myS.pt==="C" && R.res[myId]){
       const r=R.res[myId], b=el("div","card stage"); b.style.background="color-mix(in srgb, var(--good) 10%, var(--surface))";
-      b.append(el("div","eyebrow","Your result"), Object.assign(el("h2"),{textContent:"Hired by "+psFirmName(r.fid,R)+" · "+PS_TRK[r.track]+" track",style:"font-size:1.6rem;margin:4px 0"}));
+      b.append(el("div","eyebrow","Your result"), Object.assign(el("h2"),{textContent:"Hired by "+psFirmName(r.fid,R)+" · "+PS_TRK[r.track]+" role",style:"font-size:1.6rem;margin:4px 0"}));
       const tb=el("table","matrix"); tb.style.maxWidth="380px";
       tb.innerHTML="<tr><td style='text-align:left'>Type</td><td>"+myS.type+"</td></tr><tr><td style='text-align:left'>Salary</td><td>"+r.salary+"</td></tr><tr><td style='text-align:left'>MBA cost</td><td>"+(myS.deg==="MBA"?"−"+psCost(V,myS):"0")+"</td></tr><tr><td style='text-align:left'><b>Your payoff</b></td><td><b>"+r.pay+"</b></td></tr><tr><td style='text-align:left'>Your total so far (this "+(mode==="bid"?"bidding war":"fixed-salary")+" phase)</td><td>"+psMyTotal(R)+"</td></tr>";
       b.append(tb); wrap.append(b);
@@ -5284,6 +5417,11 @@ function analyzePlacement(list, teacher){
       const R2=Rs.find(X=>X.rk===myS.roundKey), f=R2 && R2.firms.find(x=>x.fid===myS.fid);
       if(f){ const b=el("div","card stage"); b.append(el("div","eyebrow",psFirmName(f.fid,R2)+" · your firm"), psKpiPanel(R2, f, psLeaderboard(R2)));
         b.append(Object.assign(el("div","tinylabel"),{textContent:"Your hires, types revealed",style:"margin-top:12px"}), psHiresTable(R2, f)); wrap.append(b); }
+      else wrap.append(psNoResultCard("Your firm made no offer this round", "Only a captain's offer puts a firm in the round — "+psFirmName(myS.fid, R2)+" had none, so it hired nobody and adds 0."));
+    } else if(myS && myS.pt==="C"){
+      wrap.append(psNoResultCard("Nobody was hired this round", "No firm made an offer, so your "+(myS.deg||"")+" choice wasn't placed."));
+    } else if(haveIdentity()){
+      wrap.append(psNoResultCard("You didn't take part in this round", "No choice of yours was recorded in this round, so there's no personal result. The class results are below."));
     }
   }
   // class picture
@@ -5316,7 +5454,7 @@ function analyzePlacement(list, teacher){
       : d+"s: Manager pays if more than "+Math.round(thr*100)+"% are H"+(share==null?".":" — here "+pct(share)+", so "+(share>thr?"Manager":"Analyst")+" was the best reply.");
     v.innerHTML=esc(line("MBA",th,mu))+"<br>"+esc(line("Grad",thG,be));
   } else {
-    v.innerHTML=esc("With competition, each salary is pushed toward what that pool produces on its best track, up to the band's cap (Manager 250). Here MBAs produced "+(avgOf("MBA","prod")==null?"—":avgOf("MBA","prod"))+" and Grads "+(avgOf("Grad","prod")==null?"—":avgOf("Grad","prod"))+" on the tracks they were given; a firm that paid more lost money on those hires.");
+    v.innerHTML=esc("With competition, each salary is pushed toward what that pool produces in its best role, up to the band's cap (Manager 250). Here MBAs produced "+(avgOf("MBA","prod")==null?"—":avgOf("MBA","prod"))+" and Grads "+(avgOf("Grad","prod")==null?"—":avgOf("Grad","prod"))+" in the roles they were given; a firm that paid more lost money on those hires.");
   }
   card.append(v);
   card.append(Object.assign(el("div","note-box"),{textContent:V.lesson,style:"margin-top:10px"}));
@@ -5326,13 +5464,18 @@ function analyzePlacement(list, teacher){
   lbCard.append(el("div","eyebrow","Recruiter leaderboard · "+(mode==="bid"?"bidding war":"fixed salaries")+" · ranked on total profit"));
   const lt=el("table","matrix"); lt.style.marginTop="8px";
   let lh="<tr><th style='text-align:left'>Firm</th><th>MBA offer</th><th>Grad offer</th><th>Hires</th><th>MBA hit rate</th><th>This round</th><th>Total</th></tr>";
-  Rs.forEach(R=>psLeaderboard(R).forEach((f,i)=>{ lh+="<tr"+(i===0?" style='font-weight:700'":"")+"><td style='text-align:left'>"+(i+1)+". "+esc(psFirmName(f.fid,R))+secTag(R)+(teacher&&f.members.length?"<div class='submail'>"+esc(f.members.join(", "))+"</div>":"")+"</td><td>"+esc(psOfferTxt(R.V,R.mode,f.offer,"MBA"))+"</td><td>"+esc(psOfferTxt(R.V,R.mode,f.offer,"Grad"))+"</td><td>"+f.hires.length+"</td><td>"+(f.hit==null?"—":pct(f.hit))+"</td><td>"+psSigned(f.profit)+"</td><td>"+psSigned(f.cum)+"</td></tr>"; }));
+  Rs.forEach(R=>{ const lbR=psLeaderboard(R); lbR.forEach(f=>{ const rk=lbR.filter(x=>x.cum>f.cum).length+1; lh+="<tr"+(rk===1?" style='font-weight:700'":"")+"><td style='text-align:left'>"+rk+". "+esc(psFirmName(f.fid,R))+secTag(R)+(teacher&&f.members.length?"<div class='submail'>"+esc(f.members.join(", "))+"</div>":"")+"</td><td>"+esc(psOfferTxt(R.V,R.mode,f.offer,"MBA"))+"</td><td>"+esc(psOfferTxt(R.V,R.mode,f.offer,"Grad"))+"</td><td>"+f.hires.length+((f.dummies||[]).length?" <span class='sm mut'>+"+f.dummies.length+" dummy</span>":"")+"</td><td>"+(f.hit==null?"—":pct(f.hit))+"</td><td>"+psSigned(f.profit)+"</td><td>"+psSigned(f.cum)+"</td></tr>"; }); });
   lt.innerHTML=lh; const lw=el("div","tablescroll"); lw.append(lt); lbCard.append(lw);
   if(!Rs.some(R=>R.firms.length)) lbCard.append(el("div","sm mut","No firm set an offer in this round."));
+  if(Rs.some(R=>R.firms.some(f=>(f.dummies||[]).length))) lbCard.append(Object.assign(el("div","sm mut"),{textContent:PS_DUMMY_NOTE,style:"margin-top:8px"}));
   wrap.append(lbCard);
   if(teacher){ Rs.forEach(R=>R.firms.forEach(f=>{ const c=el("div","card stage"); c.append(el("div","eyebrow",psFirmName(f.fid,R)+secTag(R)+" · hires"), psHiresTable(R,f)); wrap.append(c); })); }
   return wrap;
 }
+function psNoResultCard(title, txt){
+  const b=el("div","card stage"); b.style.background="color-mix(in srgb, var(--gold) 10%, var(--surface))";
+  b.append(el("div","eyebrow","Your result"), Object.assign(el("h2"),{textContent:title,style:"font-size:1.35rem;margin:4px 0"}), el("p","lead",txt));
+  return b; }
 function psSubValue(s){
   if(s.pt==="F") return (s.firmName||psFirmName(s.fid))+(s.offer ? " (captain) · MBA → "+psOfferTxt(PS_VARIANTS[s.variant]||PS_VARIANTS.A, s.mode==="bid"?"bid":"fixed", s.offer,"MBA")+" · Grad → "+psOfferTxt(PS_VARIANTS[s.variant]||PS_VARIANTS.A, s.mode==="bid"?"bid":"fixed", s.offer,"Grad") : " (recruiter)");
   if(s.pt==="C"){ let out="Type "+(s.type||"?")+" · "+(s.deg||"?");
@@ -6066,6 +6209,7 @@ function roundActionBar(){
       revealBtn.onclick=()=>robotFight();
       lockIf(revealBtn, ["idle","captains","caplock","join","forming"].indexOf(rph)>=0, "Teams are still forming — the fight comes after robots are built."); }
   }
+  if(control.activeGame==="placement" && open){ revealBtn.onclick=()=>psReveal(); }
   if(control.activeGame==="placement" && open) lockIf(revealBtn, psStep()!=="recruit", "Start step 3 · Recruiters decide first — the reveal comes after recruiters have made their offers.");
   const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>openMeeting({round:control.round+1});
   lockIf(nextR, open, OPEN_LOCK("move to the next round (Reveal, then Next round)"));
@@ -6316,8 +6460,8 @@ function presentView(){
     // Placement Season: step through the round from the projector (firms → candidates → recruiters → reveal).
     if(g==="placement"){ const st=psStep();
       if(st==="roles"){ const b=el("button","btn","2 · Candidates choose ▶"); b.onclick=()=>psSetStep("choose"); ctr.append(b); }
-      else if(st==="choose"){ const b=el("button","btn","3 · Recruiters decide ▶"); b.onclick=()=>psSetStep("recruit"); ctr.append(b); }
-      else { const b=el("button","btn gold","Reveal results"); b.onclick=()=>doReveal(); ctr.append(b); } }
+      else if(st==="choose"){ const b=el("button","btn","3 · Recruiters decide ▶"); b.onclick=()=>psAdvance("recruit"); ctr.append(b); }
+      else { const b=el("button","btn gold","Reveal results"); b.onclick=()=>psReveal(); ctr.append(b); } }
     const close=el("button","btn neutral","Close submissions"); close.onclick=()=>writeControl({phase:"waiting"});
     ctr.append(close);
   } else if(revealed){
@@ -7406,8 +7550,8 @@ function paramEditor(){
     const grid=el("div","paramgrid"); grid.style.marginTop="10px"; grid.append(mk("Number of firms (2–8)","firms",cf.firms), mk("Max recruiters per firm","firmMax",cf.firmMax)); wrap.append(grid);
     const V=C.V, thr=psThreshold(V,"MBA");
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Variant "+C.v+": "+V.q+"% of candidates are type H; an MBA costs H "+V.cH+" and L "+V.cL+". "
-      +(C.mode==="bid" ? "Bidding war: each firm posts a track and a salary for MBAs and for Grads (Manager 200–250, Analyst 100–150); every candidate goes to the highest salary for their degree; no hiring limit."
-        : "Fixed salaries: Manager "+V.salM+", Analyst "+V.salA+"; CVs are dealt to firms in batches that match the class by degree and type, and each firm picks a track per degree. Putting MBAs on Manager pays "+(thr==="always"?"whatever their share of H":thr==="never"?"never":"when more than "+Math.round(thr*100)+"% of them are H")+".")
+      +(C.mode==="bid" ? "Bidding war: each firm posts a role and a salary for MBAs and for Grads (Manager 200–250, Analyst 100–150); every candidate goes to the highest salary for their degree; no hiring limit."
+        : "Fixed salaries: Manager "+V.salM+", Analyst "+V.salA+"; CVs are dealt to firms in batches that match the class by degree and type, and each firm picks a role per degree. Putting MBAs on Manager pays "+(thr==="always"?"whatever their share of H":thr==="never"?"never":"when more than "+Math.round(thr*100)+"% of them are H")+".")
       +" Flow: Open → 1 firms sign up (first round of a meeting only) → 2 candidates choose → 3 recruiters decide → Reveal → Next round. "+V.lesson,style:"margin-top:8px"})); }
   else if(g==="adfin"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played (announced to students)","rounds",cf.rounds)); wrap.append(grid);
