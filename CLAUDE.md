@@ -729,6 +729,13 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     firm card); Present shows the counts (`psLive("canddone"|"firmsdone")`, patched in place). Advancing is never blocked:
     `psAdvance("recruit")` and `psReveal()` (console step buttons, round-bar Reveal, Present buttons) **confirm** when someone
     isn't done ("their choice still counts").
+    **Stage tracker** (`psStepper`/`psStageBox`, `PS_STAGES`, `psStageIdx`): four boxes **1 Pick sides → 2 Candidates choose →
+    3 Recruiters decide → 4 Results** (4 = phase revealed) — done = green ✓, now = gold ▶ + NOW, later = grey dashed ○ (symbol +
+    colour, both themes); in rounds 2+ box 1 reads "Sides set (kept)". Students see it at the top of the G12 card and above
+    their results, with a tailored **"Now: … · Next: …"** line (`psNowNext`: candidate / recruiter / captain, locked or not).
+    The **projector** shows it big across the top — finished stages stay visible as ✓ boxes and are **not tappable** (going
+    back is console-only, via the step buttons, which carry the same ✓ / "· NOW" marks). It only changes with the step or
+    phase, which already redraw every screen — no new live-update source.
     **Dealing can't hang:** `psEnsureType` gives up after 6 s (`_psTypeErr`) → "Couldn't deal your type" + **Try again**
     (`psRetryType`); a late answer still lands.
   - **Data.** Firms are **meeting-level** (they persist across rounds): `live/<S1A-placement>/pf/<fid>` =

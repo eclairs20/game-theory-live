@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-10.001";
+const APP_VERSION = "2026-11-11.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1911,7 +1911,9 @@ function studentView(){
   }
   if(control.phase==="revealed"){
     if(!haveIdentity()){ const c=el("div","card stage"); c.append(el("div","eyebrow gold",GAMES[g].name)); const w=el("div"); w.style.marginTop="8px"; w.append(joinPanel()); c.append(w); return c; }
-    const wrap=el("div","stack"); wrap.append(identityBar(), analysisView(false)); return wrap;
+    const wrap=el("div","stack"); wrap.append(identityBar());
+    if(g==="placement"){ const sb=el("div","card"); sb.style.padding="10px 14px"; sb.append(psStageBox()); wrap.append(sb); }
+    wrap.append(analysisView(false)); return wrap;
   }
   const c=el("div","card stage");
   c.append(el("div","eyebrow gold",GAMES[g].name));
@@ -5107,11 +5109,54 @@ function psSubsSig(){
   return "PS#"+mine+"#"+firmOffer+"#"+(mf?mf.fid:"");
 }
 
+/* ── stage tracker: 1 Pick sides → 2 Candidates choose → 3 Recruiters decide → 4 Results ──
+   On every student screen (with a "Now / Next" line for that student), on the projector (big; finished stages stay as ✓,
+   not tappable) and as the style of the console's step buttons. Done = green ✓, now = gold ▶ + NOW, later = grey ○ — a
+   symbol per state as well as a colour. It changes only when the step or phase changes (both already redraw every screen). */
+const PS_STAGES=[["roles","Pick sides"],["choose","Candidates choose"],["recruit","Recruiters decide"],["results","Results"]];
+function psStageIdx(){ if(control && control.phase==="revealed") return 3; const i=PS_STAGES.findIndex(x=>x[0]===psStep()); return i<0?1:i; }
+function psStepper(big){
+  const cur=psStageIdx(), kept=(control&&control.round||1)>1 && cur>0;
+  const g=el("div"); g.style.cssText="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:"+(big?"10px":"6px")+";margin:"+(big?"0 0 4px":"10px 0 4px");
+  PS_STAGES.forEach(([k,lab],i)=>{
+    const st=i<cur?"done":i===cur?"now":"next", b=el("div");
+    const bg=st==="done"?"var(--good-wash)":st==="now"?"var(--gold-wash)":"transparent";
+    const bd=st==="done"?"1.5px solid var(--good)":st==="now"?"2px solid var(--gold)":"1.5px dashed var(--line)";
+    b.style.cssText="border-radius:12px;padding:"+(big?"10px 12px":"6px 7px")+";background:"+bg+";border:"+bd+";min-width:0;"+(st==="next"?"opacity:.75;":"");
+    const sym=st==="done"?"✓":st==="now"?"▶":"○", col=st==="done"?"var(--good)":st==="now"?"var(--gold)":"var(--muted)";
+    const top=el("div"); top.style.cssText="display:flex;align-items:center;gap:5px;flex-wrap:wrap";
+    top.append(Object.assign(el("span"),{textContent:sym+" "+(i+1),style:"font-weight:700;color:"+col+";font-family:'IBM Plex Mono',monospace;font-size:"+(big?"1.05rem":".8rem")}));
+    if(st==="now") top.append(Object.assign(el("span"),{textContent:"NOW",style:"background:var(--gold);color:#fff;border-radius:6px;padding:0 5px;font-size:"+(big?".72rem":".62rem")+";font-weight:700;letter-spacing:.04em"}));
+    b.append(top, Object.assign(el("div"),{textContent:(i===0&&kept)?"Sides set (kept)":lab,style:"font-weight:"+(st==="now"?700:600)+";font-size:"+(big?"1.02rem":".78rem")+";line-height:1.2;margin-top:2px;"+(st==="next"?"color:var(--muted)":"")}));
+    g.append(b); });
+  return g;
+}
+/* The student's "Now / Next" line under the tracker. */
+function psNowNext(){
+  const mf=psMyFirm(), m=mySub(), st=psStageIdx();
+  if(st===3) return ["Round over — here are the results.", "your instructor starts the next round."];
+  const step=PS_STAGES[st][0];
+  if(step==="roles") return mf ? ["your firm is set up — wait for the round to start.", "candidates choose Grad or MBA."] : ["pick your side: Recruiter or Candidate.", "candidates choose Grad or MBA."];
+  if(step==="choose"){
+    if(mf) return ["candidates are choosing.", "your captain sets your firm's offers."];
+    return (m && m.pt==="C" && m.lock) ? ["your choice is locked in.", "recruiters decide."] : ["pick Grad or MBA and press Done.", "recruiters decide."]; }
+  if(mf){ if(!mf.cap) return ["your captain sets the offers.", "results."]; return (m && m.lock) ? ["your offers are in.", "results, when your instructor reveals."] : ["set your offers and press Done.", "results."]; }
+  return (m && m.pt==="C") ? ["your choice is locked.", "results, when your instructor reveals."] : ["recruiters are deciding — choices are closed for this round.", "results."];
+}
+function psStageBox(){
+  const w=el("div"); w.append(psStepper(false));
+  const [now,next]=psNowNext(), l=el("div","sm"); l.style.cssText="margin:2px 0 4px";
+  if(psStageIdx()===3) l.innerHTML="<b>"+esc(now)+"</b> Next: "+esc(next);
+  else l.innerHTML="<b>Now:</b> "+esc(now)+" <span class='mut'>· <b>Next:</b> "+esc(next)+"</span>";
+  w.append(l); return w;
+}
+
 /* ── student screens ── */
 function studentPlacement(c){
   const C=psCfg(), step=psStep(), rk=curKey, mf=psMyFirm();
   const h=(t)=>Object.assign(el("h2"),{textContent:t,style:"font-size:1.45rem;margin:6px 0 4px"});
   c.append(Object.assign(el("div","sm mut"),{textContent:"Round "+control.round+" · "+(C.mode==="bid"?"bidding war":"fixed salaries")+" · "+C.V.name,style:"margin-top:2px"}));
+  c.append(psStageBox());
   if(step==="roles"){
     if(mf){
       c.append(h("You're a recruiter at "+psFirmName(mf.fid)));
@@ -5287,10 +5332,7 @@ function psPresentBody(){
     const st=psDoneStatus(), dl=el("div"); dl.style.cssText="font-size:1.15rem;font-weight:600";
     dl.append(psLive("canddone"), document.createTextNode(" pressed Done"+(st.notChosen.length?" · "+st.notChosen.length+" still to choose":"")));
     w.append(dl, psVariantBanner(C));
-    const t=el("table","matrix"); t.style.maxWidth="420px";
-    t.innerHTML="<tr><th style='text-align:left'></th><th>MBA cost</th></tr><tr><td style='text-align:left'>Type H</td><td>"+C.V.cH+"</td></tr><tr><td style='text-align:left'>Type L</td><td>"+C.V.cL+"</td></tr>"
-      +(C.mode==="bid"?"<tr><td style='text-align:left'>Manager / Analyst pay</td><td>"+PS_BAND.Mgr.join("–")+" / "+PS_BAND.Ana.join("–")+"</td></tr>":"<tr><td style='text-align:left'>Manager / Analyst pay</td><td>"+C.V.salM+" / "+C.V.salA+"</td></tr>");
-    w.append(t);
+    w.append(Object.assign(el("div"),{textContent:"Pay: Manager "+(C.mode==="bid"?PS_BAND.Mgr.join("–"):C.V.salM)+" · Analyst "+(C.mode==="bid"?PS_BAND.Ana.join("–"):C.V.salA),style:"font-weight:600"}));
   } else {
     const fd=el("div"); fd.style.cssText="font-family:'IBM Plex Mono',monospace;font-size:"+(C.mode==="bid"?"1.6rem":"3rem")+";font-weight:700"; fd.append(psLive("firmsdone"), document.createTextNode(" / "+psActiveFids().length+(C.mode==="bid"?" firms done":"")));
     if(C.mode==="bid"){ w.append(big("Live job board")); w.append(psLive("board",{big:"1"})); w.append(el("div","sm mut","Gold = top salary for that degree — it wins every candidate with that degree."), fd); }
@@ -5305,7 +5347,9 @@ function psConsoleCard(){
   if(!open){ card.append(Object.assign(el("p","lead"),{textContent:"Open submissions to start. The first round opens with step 1 · Pick sides (Recruiter or Candidate); later rounds go straight to candidates choosing (firms are kept for the whole meeting).",style:"margin-top:6px"})); }
   const steps=[["roles","1 · Pick sides"],["choose","2 · Candidates choose"],["recruit","3 · Recruiters decide"]];
   const sr=el("div"); sr.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0";
-  steps.forEach(([k,l])=>{ const b=el("button", step===k&&open?"btn":"ghost-btn", l); b.onclick=()=>psAdvance(k); if(!open){ b.disabled=true; } sr.append(b); });
+  const ci=open?psStageIdx():-1;
+  steps.forEach(([k,l],i)=>{ const b=el("button", step===k&&open?"btn":"ghost-btn", (i<ci?"✓ ":"")+l+(i===ci?" · NOW":"")); b.onclick=()=>psAdvance(k); if(!open){ b.disabled=true; }
+    if(i<ci){ b.style.borderColor="var(--good)"; b.style.color="var(--good)"; } sr.append(b); });
   card.append(sr);
   if(open){
     const tip={roles:"Everyone picks a side on their phone: Recruiter (start and name a firm, or join one) or Candidate. Anyone who doesn\'t pick plays as a candidate. When the firms look right, press 2 · Candidates choose.",
@@ -6436,6 +6480,7 @@ function presentView(){
 
   const body=el("div","present-body");
   if(g==="robot" && !revealed){ body.append(rbPresentBody()); }
+  if(g==="placement"){ const sw=el("div"); sw.style.cssText="flex:1 1 100%;min-width:0"; sw.append(psStepper(true)); body.append(sw); }
   if(g==="placement" && !revealed){ body.append(psPresentBody()); }
   const cnt=el("div","present-count");
   const statusTxt = open?"Submissions open" : revealed?"Results revealed" : "Submissions closed";
