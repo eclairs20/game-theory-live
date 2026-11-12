@@ -790,6 +790,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   videos" card. `videoLesson(vid)`: big `<video controls playsinline preload=auto>`, a buffered-% line ("✓ Fully loaded —
   plays without pauses"), Play/Pause · Full screen (`videoGoFull`, incl. iOS `webkitEnterFullscreen`) · Start over · Exit;
   keys Space / F.
+- **Direct link for slides:** `…/?class=<room>&video=<vid>` (`VIDEO_PARAM`, `applyVideoParam` from `onCtrl` once control has
+  loaded) opens that video's full-screen page straight away — instructor always; a student only if it's ticked on My page
+  (render()'s `lessonVisible` gate). The `video` param is then stripped from the address bar (`history.replaceState`), so
+  Exit + refresh lands on the console. An unknown id toasts "That video isn't set up in this course." **🔗 Copy link for
+  slides** (`copyVideoLink`/`videoLink`) sits on each Course config → Videos row and on the player (instructor only).
+  Full screen still needs one click on the page (browsers block auto-fullscreen).
 - **Never reset by a redraw:** ONE `<video>` (or Drive `<iframe>`) element per URL is kept in `_vid` and re-used by every render (moving it
   within one synchronous `replaceChildren` doesn't pause it), and shared-data redraws are skipped while a video is open
   (`onCtrl` returns for `isVideoMode()`, plus the existing lessonMode guards in `teacherRenderSoon`/`scheduleSubsRender`).

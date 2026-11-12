@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-12.003";
+const APP_VERSION = "2026-11-12.004";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -739,6 +739,21 @@ function allLessons(){ return HUB_LESSONS.concat(videoList().map(v=>({id:"video:
    Drive files play in Drive's own player (an iframe of /file/d/<ID>/preview): Drive blocks using the raw file in a <video>. */
 function driveId(url){ const u=String(url||""); if(!/(^|\.)google\.com\//.test(u.replace(/^https?:\/\//,"").split("/")[0]+"/")) return null;
   const m=u.match(/\/file\/d\/([A-Za-z0-9_-]{10,})/)||u.match(/[?&]id=([A-Za-z0-9_-]{10,})/); return m?m[1]:null; }
+/* Direct link to a video (for a slide): …/?class=<room>&video=<vid> opens that video's full-screen page once control has
+   loaded (instructor; or a student when the video is ticked on My page — render()'s lessonVisible gate). The param is
+   then dropped from the address bar, so Exit + refresh lands on the console, not back in the video. */
+const VIDEO_PARAM = (function(){ try{ const v=new URLSearchParams(location.search).get("video"); return v?v.replace(/[^a-z0-9-]/g,"").slice(0,60)||null:null; }catch(_){ return null; } })();
+let _vidParamDone=false;
+function videoLink(vid){ return location.origin+location.pathname+"?class="+encodeURIComponent(ROOM)+"&video="+encodeURIComponent(vid); }
+function copyVideoLink(vid){ const u=videoLink(vid);
+  try{ navigator.clipboard.writeText(u).then(()=>toast("Link copied — paste it into your slide"),()=>prompt("Copy this link:",u)); }catch(_){ prompt("Copy this link:",u); } }
+function applyVideoParam(){
+  if(!VIDEO_PARAM || _vidParamDone || !control) return false;
+  _vidParamDone=true;
+  try{ const u=new URL(location.href); u.searchParams.delete("video"); history.replaceState(null,"",u.toString()); }catch(_){}
+  if(!videoMap()[VIDEO_PARAM]){ toast("That video isn't set up in this course."); return false; }
+  lessonMode="video:"+VIDEO_PARAM; cfgMode=false; rollMode=false; presentMode=false; return true;
+}
 const isVideoMode = () => typeof lessonMode==="string" && lessonMode.startsWith("video:");
 function launchLesson(id){ if(String(id).startsWith("video:")){ lessonMode=id; render(); return; } if(id==="pareto"){ paretoInit("dilemma"); lessonMode="pareto"; render(); } if(id==="trees"){ treeInit("seq"); lessonMode="trees"; render(); } }
 /* Canonical game order (the GAMES key order) so meeting lists never look randomly shuffled. */
@@ -1147,6 +1162,7 @@ function onCtrl(snap){
   const sig=control?[control.activeGame,control.phase,control.round,control.session,control.section].join("|"):"";
   if(sig!==_ctrlSig){ studentTab=null; _ctrlSig=sig; }
   recompute();
+  if(applyVideoParam()){ render(); return; }   // opened from a slide's direct video link
   const cs=studentCtrlSig(); if(cs!==null && cs===_drawn.ctrl) return;   // e.g. a roll-call tick: nothing this student sees
   if(lessonMode && (isTeacher() || isVideoMode())) return;   // an interactive lesson / video shows nothing from control
   render();
@@ -7290,13 +7306,14 @@ function videoLesson(vid){
   const box=el("div"); box.style.cssText="width:100%;max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:8px";
   box.append(_vid.el, _vid.st); wrap.append(box);
   const ctr=el("div","lesson-ctr");
-  if(_vid.drive){ const full=el("button","btn gold","⛶ Full screen"); full.onclick=videoGoFull; ctr.append(full,exit); wrap.append(ctr);
+  const linkB = isTeacher() ? Object.assign(el("button","ghost-btn","🔗 Copy link for slides"),{onclick:()=>copyVideoLink(vid)}) : null;
+  if(_vid.drive){ const full=el("button","btn gold","⛶ Full screen"); full.onclick=videoGoFull; ctr.append(full); if(linkB) ctr.append(linkB); ctr.append(exit); wrap.append(ctr);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Subtitles are part of the picture, so they show in full screen and on every device. Key: F = full screen.",style:"text-align:center"}));
     return wrap; }
   const play=el("button","btn gold","▶ Play / ❚❚ Pause"); play.onclick=()=>{ const ve=_vid.el; if(ve.paused) ve.play().catch(()=>{}); else ve.pause(); };
   const full=el("button","ghost-btn","⛶ Full screen"); full.onclick=videoGoFull;
   const rs=el("button","ghost-btn","↺ Start over"); rs.onclick=()=>{ _vid.el.currentTime=0; };
-  ctr.append(play,full,rs,exit); wrap.append(ctr);
+  ctr.append(play,full,rs); if(linkB) ctr.append(linkB); ctr.append(exit); wrap.append(ctr);
   wrap.append(Object.assign(el("div","sm mut"),{textContent:"Subtitles are part of the picture, so they show in full screen and on every device. Keys: Space = play/pause · F = full screen.",style:"text-align:center"}));
   return wrap;
 }
@@ -7314,7 +7331,8 @@ function videosCard(){
   s.append(Object.assign(el("div","sm mut"),{innerHTML:"Clips you play in class (e.g. the ferry dilemma). The file stays in your Google Drive (or Firebase Storage), not on this public site. "+
     "<b>Google Drive:</b> upload the MP4 (subtitles already burned in) → Share → General access <b>“Anyone with the link”</b> → Copy link → paste it below. "+
     "(A Firebase Storage download link also works and plays in the portal's own player.) "+
-    "It then appears under <b>Videos</b> in Choose exercise, and you can tick it for students on the Student page.",style:"margin:-4px 0 8px"}));
+    "It then appears under <b>Videos</b> in Choose exercise, and you can tick it for students on the Student page. "+
+    "<b>🔗 Copy link for slides</b> gives a link that opens the video straight away — put it on a slide (Insert → Link).",style:"margin:-4px 0 8px"}));
   const vids=videoList();
   if(vids.length){
     const list=el("div","stack"); list.style.gap="6px";
@@ -7324,9 +7342,10 @@ function videosCard(){
         Object.assign(el("div","sm mut mono"),{textContent:String(v.url).replace(/[?].*$/,"").slice(0,70)+"…",style:"overflow:hidden;text-overflow:ellipsis;white-space:nowrap"}));
       if(driveId(v.url)) l.append(Object.assign(el("div","sm mut"),{textContent:"Google Drive · plays in Drive's player"}));
       const pb=el("button","btn neutral","▶ Play"); pb.onclick=()=>{ cfgMode=false; lessonMode="video:"+v.id; render(); };
+      const lb=el("button","ghost-btn","🔗 Copy link for slides"); lb.title=videoLink(v.id); lb.onclick=()=>copyVideoLink(v.id);
       const rb=el("button","ghost-btn","Remove"); rb.onclick=()=>{ if(!confirm("Remove “"+(v.title||"Video")+"” from this course? (The file stays in Firebase Storage.)")) return;
         const m=Object.assign({}, videoMap()); delete m[v.id]; writeControl({videos:m}); };
-      r.append(l,pb,rb); list.append(r); });
+      r.append(l,pb,lb,rb); list.append(r); });
     s.append(list);
   }
   const ti=el("input","input"); ti.placeholder="Title, e.g. The ferry dilemma (The Dark Knight)"; ti.value=_vidNew.title; ti.oninput=()=>{ _vidNew.title=ti.value; };
