@@ -773,17 +773,24 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   projector, in fullscreen and on iPhones, with no caption track to fail. Example:
   `ffmpeg -i in.mkv -vf "scale=-2:720,subtitles=in.srt:force_style='FontSize=24,Outline=2'" -c:v libx264 -crf 23 -preset slow -c:a aac -b:a 128k -movflags +faststart out.mp4`
 - **Hosting:** NOT in this public repo/Pages site (the ferry clip is *The Dark Knight* — copyrighted; a takedown could
-  hit the whole portal). Files live in **Firebase Storage** (bucket `game-theory-live.firebasestorage.app`, needs the
-  project on the Blaze plan) and the instructor pastes each file's **download URL (with access token)** in **Course
-  config → Videos** (`videosCard`). Stored per course in `control.videos = {<vid>:{title,url,ts}}` — so the link isn't in
-  the public source; no rules change (control is instructor-writable).
+  hit the whole portal). **Google Drive** (chosen; free): upload the subtitled MP4, Share → "Anyone with the link", paste
+  the link in **Course config → Videos** (`videosCard`). `driveId(url)` pulls the file id from `/file/d/<ID>/…` or
+  `?id=<ID>` on a google.com host (folder links are refused), and the player embeds **Drive's own player**
+  (`<iframe src=…/file/d/<ID>/preview>`) — Drive blocks using the raw file in a `<video>`. Our Play/Pause/Start over can't
+  reach into that cross-origin player, so a Drive video shows only **Full screen** (`requestFullscreen` on the iframe) +
+  Exit, and a note to leave Drive's own (auto-generated) CC off. Any other https link (e.g. a Firebase Storage download
+  URL — needs the Blaze plan) plays in the portal's own `<video>` player. Stored per course in
+  `control.videos = {<vid>:{title,url,ts}}` — the link isn't in the public source; no rules change.
+- **The ferry clip** (4:33): subtitles were made with Whisper large-v3 (word timings) and corrected by hand against the
+  film; the picture (1280×534) is padded to 1280×720 and the subtitles sit in the bottom black bar (never over the
+  picture), the Joker's loudspeaker lines in italics.
 - **Playing:** the console's Choose exercise lists them under a **Videos** divider (tiles **V1…**); each is a lesson id
   `"video:<vid>"` (`lessonMode`, `isVideoMode()`), so the Student page tick (`hub.lessonKeys`, list from `allLessons()` =
   `HUB_LESSONS` + videos) and `lessonVisible` gate work unchanged; students open ticked videos from My page's "Lessons &
   videos" card. `videoLesson(vid)`: big `<video controls playsinline preload=auto>`, a buffered-% line ("✓ Fully loaded —
   plays without pauses"), Play/Pause · Full screen (`videoGoFull`, incl. iOS `webkitEnterFullscreen`) · Start over · Exit;
   keys Space / F.
-- **Never reset by a redraw:** ONE `<video>` element per URL is kept in `_vid` and re-used by every render (moving it
+- **Never reset by a redraw:** ONE `<video>` (or Drive `<iframe>`) element per URL is kept in `_vid` and re-used by every render (moving it
   within one synchronous `replaceChildren` doesn't pause it), and shared-data redraws are skipped while a video is open
   (`onCtrl` returns for `isVideoMode()`, plus the existing lessonMode guards in `teacherRenderSoon`/`scheduleSubsRender`).
   Verified: playback continues through 40 shared writes and a forced `render()`, instructor and student.

@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-12.002";
+const APP_VERSION = "2026-11-12.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -735,6 +735,10 @@ const HUB_PRACTICE = [ {id:"quatro", name:"Quatro Uno"}, {id:"redblack", name:"R
 function videoMap(){ return (control&&control.videos)||{}; }
 function videoList(){ const m=videoMap(); return Object.keys(m).map(k=>Object.assign({id:k},m[k])).filter(v=>v&&v.url).sort((a,b)=>(a.ts||0)-(b.ts||0)); }
 function allLessons(){ return HUB_LESSONS.concat(videoList().map(v=>({id:"video:"+v.id, name:"🎬 "+(v.title||"Video")}))); }
+/* A Google Drive share link ("…/file/d/<ID>/view?usp=sharing", "open?id=<ID>", "uc?id=<ID>") → the file id, else null.
+   Drive files play in Drive's own player (an iframe of /file/d/<ID>/preview): Drive blocks using the raw file in a <video>. */
+function driveId(url){ const u=String(url||""); if(!/(^|\.)google\.com\//.test(u.replace(/^https?:\/\//,"").split("/")[0]+"/")) return null;
+  const m=u.match(/\/file\/d\/([A-Za-z0-9_-]{10,})/)||u.match(/[?&]id=([A-Za-z0-9_-]{10,})/); return m?m[1]:null; }
 const isVideoMode = () => typeof lessonMode==="string" && lessonMode.startsWith("video:");
 function launchLesson(id){ if(String(id).startsWith("video:")){ lessonMode=id; render(); return; } if(id==="pareto"){ paretoInit("dilemma"); lessonMode="pareto"; render(); } if(id==="trees"){ treeInit("seq"); lessonMode="trees"; render(); } }
 /* Canonical game order (the GAMES key order) so meeting lists never look randomly shuffled. */
@@ -7242,6 +7246,7 @@ function diagView(){
    Shared-data redraws are also suppressed while a video is open (onCtrl / teacherRenderSoon / subs guards). */
 let _vid=null;
 function videoGoFull(){ const ve=_vid&&_vid.el; if(!ve) return;
+  if(_vid.drive){ try{ (ve.requestFullscreen||ve.webkitRequestFullscreen).call(ve); }catch(_){ toast("Use the full-screen button inside the player."); } return; }
   try{ if(ve.requestFullscreen) ve.requestFullscreen(); else if(ve.webkitEnterFullscreen) ve.webkitEnterFullscreen(); else if(ve.webkitRequestFullscreen) ve.webkitRequestFullscreen(); }catch(_){} }
 function videoLesson(vid){
   const v=videoMap()[vid];
@@ -7252,8 +7257,20 @@ function videoLesson(vid){
   const exit=el("button","ghost-btn","Exit video"); exit.onclick=()=>{ if(_vid&&_vid.el) try{ _vid.el.pause(); }catch(_){} lessonMode=null; render(); };
   if(!v||!v.url){ wrap.append(Object.assign(el("div","note-box"),{textContent:"This video has been removed or hasn't been set up yet.",style:"max-width:640px;margin:0 auto"}));
     const r=el("div","lesson-ctr"); r.append(exit); wrap.append(r); return wrap; }
+  const dId=driveId(v.url);
   if(!_vid || _vid.url!==v.url){
-    if(_vid&&_vid.el) try{ _vid.el.pause(); _vid.el.removeAttribute("src"); _vid.el.load(); }catch(_){}
+    if(_vid&&_vid.el&&!_vid.drive) try{ _vid.el.pause(); _vid.el.removeAttribute("src"); _vid.el.load(); }catch(_){}
+  }
+  if(dId && (!_vid || _vid.url!==v.url)){
+    const fr=document.createElement("iframe");
+    fr.src="https://drive.google.com/file/d/"+dId+"/preview"; fr.title=v.title||"Video";
+    fr.setAttribute("allow","autoplay; fullscreen; encrypted-media"); fr.setAttribute("allowfullscreen","");
+    fr.style.cssText="display:block;width:100%;aspect-ratio:16/9;max-height:calc(100vh - 260px);border:0;background:#000;border-radius:12px";
+    const st=el("div","sm mut"); st.style.cssText="text-align:center;min-height:1.3em";
+    st.textContent="Playing in Google Drive's player — press ▶ in the picture to start. Leave Drive's CC button off: the subtitles are already in the video.";
+    _vid={url:v.url, el:fr, st, err:false, drive:true};
+  }
+  if(!dId && (!_vid || _vid.url!==v.url)){
     const ve=document.createElement("video");
     ve.controls=true; ve.playsInline=true; ve.setAttribute("playsinline",""); ve.setAttribute("webkit-playsinline",""); ve.preload="auto";
     ve.setAttribute("controlsList","nodownload"); ve.oncontextmenu=e=>e.preventDefault();
@@ -7273,6 +7290,9 @@ function videoLesson(vid){
   const box=el("div"); box.style.cssText="width:100%;max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:8px";
   box.append(_vid.el, _vid.st); wrap.append(box);
   const ctr=el("div","lesson-ctr");
+  if(_vid.drive){ const full=el("button","btn gold","⛶ Full screen"); full.onclick=videoGoFull; ctr.append(full,exit); wrap.append(ctr);
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Subtitles are part of the picture, so they show in full screen and on every device. Key: F = full screen.",style:"text-align:center"}));
+    return wrap; }
   const play=el("button","btn gold","▶ Play / ❚❚ Pause"); play.onclick=()=>{ const ve=_vid.el; if(ve.paused) ve.play().catch(()=>{}); else ve.pause(); };
   const full=el("button","ghost-btn","⛶ Full screen"); full.onclick=videoGoFull;
   const rs=el("button","ghost-btn","↺ Start over"); rs.onclick=()=>{ _vid.el.currentTime=0; };
@@ -7283,7 +7303,7 @@ function videoLesson(vid){
 document.addEventListener("keydown",e=>{
   if(!isVideoMode() || !_vid || !_vid.el) return;
   const t=e.target; if(t && (t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="BUTTON"||t===_vid.el)) return;
-  if(e.key===" "){ e.preventDefault(); if(_vid.el.paused) _vid.el.play().catch(()=>{}); else _vid.el.pause(); }
+  if(e.key===" " && !_vid.drive){ e.preventDefault(); if(_vid.el.paused) _vid.el.play().catch(()=>{}); else _vid.el.pause(); }
   else if(e.key==="f"||e.key==="F"){ e.preventDefault(); videoGoFull(); }
 });
 /* Course config → Videos: add (title + Firebase Storage download URL), play, remove. control.videos. */
@@ -7291,8 +7311,9 @@ const _vidNew={title:"",url:""};
 function videosCard(){
   const s=el("div","rail-sec");
   s.append(Object.assign(el("h3"),{textContent:"Videos"}));
-  s.append(Object.assign(el("div","sm mut"),{innerHTML:"Clips you play in class (e.g. the ferry dilemma). The file is hosted in <b>Firebase Storage</b>, not on this public site. "+
-    "To add one: Firebase console → <b>Storage</b> → upload the MP4 (subtitles already burned in) → click the file → under <b>Access token</b> copy the link → paste it below. "+
+  s.append(Object.assign(el("div","sm mut"),{innerHTML:"Clips you play in class (e.g. the ferry dilemma). The file stays in your Google Drive (or Firebase Storage), not on this public site. "+
+    "<b>Google Drive:</b> upload the MP4 (subtitles already burned in) → Share → General access <b>“Anyone with the link”</b> → Copy link → paste it below. "+
+    "(A Firebase Storage download link also works and plays in the portal's own player.) "+
     "It then appears under <b>Videos</b> in Choose exercise, and you can tick it for students on the Student page.",style:"margin:-4px 0 8px"}));
   const vids=videoList();
   if(vids.length){
@@ -7301,6 +7322,7 @@ function videosCard(){
       const l=el("div"); l.style.cssText="min-width:0;flex:1";
       l.append(Object.assign(el("div"),{innerHTML:"<b>V"+(i+1)+" · "+esc(v.title||"Video")+"</b>"}),
         Object.assign(el("div","sm mut mono"),{textContent:String(v.url).replace(/[?].*$/,"").slice(0,70)+"…",style:"overflow:hidden;text-overflow:ellipsis;white-space:nowrap"}));
+      if(driveId(v.url)) l.append(Object.assign(el("div","sm mut"),{textContent:"Google Drive · plays in Drive's player"}));
       const pb=el("button","btn neutral","▶ Play"); pb.onclick=()=>{ cfgMode=false; lessonMode="video:"+v.id; render(); };
       const rb=el("button","ghost-btn","Remove"); rb.onclick=()=>{ if(!confirm("Remove “"+(v.title||"Video")+"” from this course? (The file stays in Firebase Storage.)")) return;
         const m=Object.assign({}, videoMap()); delete m[v.id]; writeControl({videos:m}); };
@@ -7308,12 +7330,13 @@ function videosCard(){
     s.append(list);
   }
   const ti=el("input","input"); ti.placeholder="Title, e.g. The ferry dilemma (The Dark Knight)"; ti.value=_vidNew.title; ti.oninput=()=>{ _vidNew.title=ti.value; };
-  const ui=el("input","input mono"); ui.placeholder="https://firebasestorage.googleapis.com/v0/b/…?alt=media&token=…"; ui.value=_vidNew.url; ui.oninput=()=>{ _vidNew.url=ui.value.trim(); };
+  const ui=el("input","input mono"); ui.placeholder="https://drive.google.com/file/d/…/view?usp=sharing"; ui.value=_vidNew.url; ui.oninput=()=>{ _vidNew.url=ui.value.trim(); };
   ti.style.marginTop="10px"; ui.style.marginTop="6px"; ui.style.fontSize=".78rem";
   const add=el("button","btn wide","Add video"); add.style.marginTop="6px";
   add.onclick=()=>{ const title=_vidNew.title.trim(), url=_vidNew.url.trim();
     if(!title){ toast("Give the video a title."); return; }
-    if(!/^https:\/\/\S+$/.test(url)){ toast("Paste the full https:// download link."); return; }
+    if(!/^https:\/\/\S+$/.test(url)){ toast("Paste the full https:// link."); return; }
+    if(/google\.com/.test(url) && !driveId(url)){ toast("That doesn't look like a Drive file link — use Share → Copy link on the video file."); return; }
     let id=title.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40)||"video";
     const m=Object.assign({}, videoMap()); let k=id, n=2; while(m[k]) k=id+"-"+(n++);
     m[k]={title:title.slice(0,80), url, ts:Date.now()};
