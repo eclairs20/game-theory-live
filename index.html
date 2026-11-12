@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-12.001";
+const APP_VERSION = "2026-11-12.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -726,7 +726,17 @@ const HUB_LESSONS = [ {id:"pareto", name:"Pareto optimality"}, {id:"trees", name
 /* Games that have a practice bot (the two-player card games). The instructor ticks which
    of these students may practise; label uses a short name. */
 const HUB_PRACTICE = [ {id:"quatro", name:"Quatro Uno"}, {id:"redblack", name:"Red vs Black"} ];
-function launchLesson(id){ if(id==="pareto"){ paretoInit("dilemma"); lessonMode="pareto"; render(); } if(id==="trees"){ treeInit("seq"); lessonMode="trees"; render(); } }
+/* Class VIDEOS (e.g. the Dark Knight ferry clip). The files are NOT in this public repo/site — they're
+   hosted in Firebase Storage (Prof. Sonia's project) and the instructor pastes each download URL in
+   Course config → Videos. Stored in control.videos = {<vid>:{title,url,ts}}, so no link sits in the public
+   source. Subtitles are BURNED INTO the picture before upload, so they always show (projector, fullscreen,
+   iPhone) — no separate caption track to fail. Each video is also a lesson id "video:<vid>": the console
+   launches it from Choose exercise (V1…), and the Student page tick / lessonVisible gate work unchanged. */
+function videoMap(){ return (control&&control.videos)||{}; }
+function videoList(){ const m=videoMap(); return Object.keys(m).map(k=>Object.assign({id:k},m[k])).filter(v=>v&&v.url).sort((a,b)=>(a.ts||0)-(b.ts||0)); }
+function allLessons(){ return HUB_LESSONS.concat(videoList().map(v=>({id:"video:"+v.id, name:"🎬 "+(v.title||"Video")}))); }
+const isVideoMode = () => typeof lessonMode==="string" && lessonMode.startsWith("video:");
+function launchLesson(id){ if(String(id).startsWith("video:")){ lessonMode=id; render(); return; } if(id==="pareto"){ paretoInit("dilemma"); lessonMode="pareto"; render(); } if(id==="trees"){ treeInit("seq"); lessonMode="trees"; render(); } }
 /* Canonical game order (the GAMES key order) so meeting lists never look randomly shuffled. */
 const GAME_ORDER = Object.keys(GAMES);
 /* Deterministic meeting order: grouped by game (GAMES key order), then session, section, round — so
@@ -1134,7 +1144,7 @@ function onCtrl(snap){
   if(sig!==_ctrlSig){ studentTab=null; _ctrlSig=sig; }
   recompute();
   const cs=studentCtrlSig(); if(cs!==null && cs===_drawn.ctrl) return;   // e.g. a roll-call tick: nothing this student sees
-  if(lessonMode && isTeacher()) return;   // an interactive lesson shows nothing from control
+  if(lessonMode && (isTeacher() || isVideoMode())) return;   // an interactive lesson / video shows nothing from control
   render();
 }
 /* What a STUDENT's screen takes from `control`: everything except roll-call ticks (control.attend), which
@@ -1599,6 +1609,7 @@ function render(){
   if(lessonMode && !isTeacher() && !(hubOn() && lessonVisible(lessonMode))) lessonMode=null;
   if(lessonMode==="pareto"){ app.replaceChildren(paretoLesson()); return; }
   if(lessonMode==="trees"){ app.replaceChildren(treesLesson()); return; }
+  if(isVideoMode()){ app.replaceChildren(videoLesson(lessonMode.slice(6))); return; }
   // Instructor manual roll-call page (full-screen).
   if(rollMode && !isTeacher()) rollMode=false;
   if(rollMode){ app.replaceChildren(rollCall()); return; }
@@ -1888,10 +1899,10 @@ function practiceMatch(game){
   return c;
 }
 function hubLessons(){
-  const shown=HUB_LESSONS.filter(L=>hubLessonKeys()[L.id]);
+  const shown=allLessons().filter(L=>hubLessonKeys()[L.id]);
   if(!shown.length) return null;   // instructor hasn't ticked any lesson → hide the card
   const card=el("div","card stage");
-  card.append(el("div","eyebrow gold","Interactive lessons"));
+  card.append(el("div","eyebrow gold",shown.some(L=>L.id.startsWith("video:"))?"Lessons & videos":"Interactive lessons"));
   card.append(Object.assign(el("p","lead"),{textContent:"Explore a concept at your own pace — a hands-on visual, no submissions.",style:"margin:6px 0 10px"}));
   const row=el("div","row"); row.style.gap="10px"; row.style.flexWrap="wrap";
   shown.forEach(L=>{ const il=el("button","btn neutral",L.name); il.onclick=()=>launchLesson(L.id); row.append(il); });
@@ -7092,6 +7103,15 @@ function teacherConsole(){
   const il2tx=el("div"); il2tx.append(el("div","n","Game trees → normal form"),el("div","d","Count information sets, subgames and pure strategies, then build the matrix cell by cell.")); il2.append(il2tx);
   il2.onclick=()=>{ treeInit("seq"); lessonMode="trees"; render(); };
   gp.append(il2);
+  const vids=videoList();
+  if(vids.length){
+    gp.append(Object.assign(el("div","gp-div"),{textContent:"Videos"}));
+    vids.forEach((v,i)=>{ const vb=el("button","gp il");
+      vb.append(Object.assign(el("span","ic"),{textContent:"V"+(i+1)}));
+      const vt=el("div"); vt.append(el("div","n",v.title||"Video"),el("div","d","Plays full-screen, subtitles always on.")); vb.append(vt);
+      vb.onclick=()=>{ lessonMode="video:"+v.id; render(); };
+      gp.append(vb); });
+  }
   s1.append(gp); c.append(s1);
   // Course, roster, schedule, data export and the Student-page config live on the full-screen
   // "Course config" page (top-bar ⚙); Log out is a top-bar button (#logoutBtn).
@@ -7217,6 +7237,90 @@ function diagView(){
   wrap.append(body);
   return wrap;
 }
+/* ── Video player ── ONE <video> element per URL, kept in _vid and re-used by every redraw: moving it within
+   the same synchronous replaceChildren doesn't pause it (HTML spec), so a stray redraw can't reset the clip.
+   Shared-data redraws are also suppressed while a video is open (onCtrl / teacherRenderSoon / subs guards). */
+let _vid=null;
+function videoGoFull(){ const ve=_vid&&_vid.el; if(!ve) return;
+  try{ if(ve.requestFullscreen) ve.requestFullscreen(); else if(ve.webkitEnterFullscreen) ve.webkitEnterFullscreen(); else if(ve.webkitRequestFullscreen) ve.webkitRequestFullscreen(); }catch(_){} }
+function videoLesson(vid){
+  const v=videoMap()[vid];
+  const wrap=el("div","lesson");
+  const head=el("div","lesson-head");
+  head.append(el("div","lesson-eyebrow","Video"), el("div","lesson-title", v?(v.title||"Video"):"Video not available"));
+  wrap.append(head);
+  const exit=el("button","ghost-btn","Exit video"); exit.onclick=()=>{ if(_vid&&_vid.el) try{ _vid.el.pause(); }catch(_){} lessonMode=null; render(); };
+  if(!v||!v.url){ wrap.append(Object.assign(el("div","note-box"),{textContent:"This video has been removed or hasn't been set up yet.",style:"max-width:640px;margin:0 auto"}));
+    const r=el("div","lesson-ctr"); r.append(exit); wrap.append(r); return wrap; }
+  if(!_vid || _vid.url!==v.url){
+    if(_vid&&_vid.el) try{ _vid.el.pause(); _vid.el.removeAttribute("src"); _vid.el.load(); }catch(_){}
+    const ve=document.createElement("video");
+    ve.controls=true; ve.playsInline=true; ve.setAttribute("playsinline",""); ve.setAttribute("webkit-playsinline",""); ve.preload="auto";
+    ve.setAttribute("controlsList","nodownload"); ve.oncontextmenu=e=>e.preventDefault();
+    ve.style.cssText="display:block;width:100%;max-height:calc(100vh - 260px);background:#000;border-radius:12px";
+    const st=el("div","sm mut"); st.style.cssText="text-align:center;min-height:1.3em";
+    const upd=()=>{ if(_vid&&_vid.err) return; const d=ve.duration; let b=0;
+      try{ for(let i=0;i<ve.buffered.length;i++) if(ve.buffered.start(i)<=ve.currentTime+0.5) b=Math.max(b,ve.buffered.end(i)); }catch(_){}
+      if(!d||!isFinite(d)){ st.textContent="Loading…"; return; }
+      const pct=Math.min(100,Math.round(100*b/d)), mm=t=>Math.floor(t/60)+":"+String(Math.floor(t%60)).padStart(2,"0");
+      st.textContent=(pct>=99?"✓ Fully loaded — plays without pauses":"Loaded "+pct+"% — it keeps loading while you wait")+" · "+mm(d); };
+    ["loadedmetadata","progress","canplaythrough","timeupdate"].forEach(e=>ve.addEventListener(e,upd));
+    ve.addEventListener("error",()=>{ _vid.err=true; st.style.color="var(--bad)";
+      st.textContent="⚠ The video couldn't load. Check your connection, or the link in Course config → Videos."; });
+    ve.src=v.url;
+    _vid={url:v.url, el:ve, st, err:false};
+  }
+  const box=el("div"); box.style.cssText="width:100%;max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:8px";
+  box.append(_vid.el, _vid.st); wrap.append(box);
+  const ctr=el("div","lesson-ctr");
+  const play=el("button","btn gold","▶ Play / ❚❚ Pause"); play.onclick=()=>{ const ve=_vid.el; if(ve.paused) ve.play().catch(()=>{}); else ve.pause(); };
+  const full=el("button","ghost-btn","⛶ Full screen"); full.onclick=videoGoFull;
+  const rs=el("button","ghost-btn","↺ Start over"); rs.onclick=()=>{ _vid.el.currentTime=0; };
+  ctr.append(play,full,rs,exit); wrap.append(ctr);
+  wrap.append(Object.assign(el("div","sm mut"),{textContent:"Subtitles are part of the picture, so they show in full screen and on every device. Keys: Space = play/pause · F = full screen.",style:"text-align:center"}));
+  return wrap;
+}
+document.addEventListener("keydown",e=>{
+  if(!isVideoMode() || !_vid || !_vid.el) return;
+  const t=e.target; if(t && (t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="BUTTON"||t===_vid.el)) return;
+  if(e.key===" "){ e.preventDefault(); if(_vid.el.paused) _vid.el.play().catch(()=>{}); else _vid.el.pause(); }
+  else if(e.key==="f"||e.key==="F"){ e.preventDefault(); videoGoFull(); }
+});
+/* Course config → Videos: add (title + Firebase Storage download URL), play, remove. control.videos. */
+const _vidNew={title:"",url:""};
+function videosCard(){
+  const s=el("div","rail-sec");
+  s.append(Object.assign(el("h3"),{textContent:"Videos"}));
+  s.append(Object.assign(el("div","sm mut"),{innerHTML:"Clips you play in class (e.g. the ferry dilemma). The file is hosted in <b>Firebase Storage</b>, not on this public site. "+
+    "To add one: Firebase console → <b>Storage</b> → upload the MP4 (subtitles already burned in) → click the file → under <b>Access token</b> copy the link → paste it below. "+
+    "It then appears under <b>Videos</b> in Choose exercise, and you can tick it for students on the Student page.",style:"margin:-4px 0 8px"}));
+  const vids=videoList();
+  if(vids.length){
+    const list=el("div","stack"); list.style.gap="6px";
+    vids.forEach((v,i)=>{ const r=el("div","row"); r.style.cssText="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:10px";
+      const l=el("div"); l.style.cssText="min-width:0;flex:1";
+      l.append(Object.assign(el("div"),{innerHTML:"<b>V"+(i+1)+" · "+esc(v.title||"Video")+"</b>"}),
+        Object.assign(el("div","sm mut mono"),{textContent:String(v.url).replace(/[?].*$/,"").slice(0,70)+"…",style:"overflow:hidden;text-overflow:ellipsis;white-space:nowrap"}));
+      const pb=el("button","btn neutral","▶ Play"); pb.onclick=()=>{ cfgMode=false; lessonMode="video:"+v.id; render(); };
+      const rb=el("button","ghost-btn","Remove"); rb.onclick=()=>{ if(!confirm("Remove “"+(v.title||"Video")+"” from this course? (The file stays in Firebase Storage.)")) return;
+        const m=Object.assign({}, videoMap()); delete m[v.id]; writeControl({videos:m}); };
+      r.append(l,pb,rb); list.append(r); });
+    s.append(list);
+  }
+  const ti=el("input","input"); ti.placeholder="Title, e.g. The ferry dilemma (The Dark Knight)"; ti.value=_vidNew.title; ti.oninput=()=>{ _vidNew.title=ti.value; };
+  const ui=el("input","input mono"); ui.placeholder="https://firebasestorage.googleapis.com/v0/b/…?alt=media&token=…"; ui.value=_vidNew.url; ui.oninput=()=>{ _vidNew.url=ui.value.trim(); };
+  ti.style.marginTop="10px"; ui.style.marginTop="6px"; ui.style.fontSize=".78rem";
+  const add=el("button","btn wide","Add video"); add.style.marginTop="6px";
+  add.onclick=()=>{ const title=_vidNew.title.trim(), url=_vidNew.url.trim();
+    if(!title){ toast("Give the video a title."); return; }
+    if(!/^https:\/\/\S+$/.test(url)){ toast("Paste the full https:// download link."); return; }
+    let id=title.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,40)||"video";
+    const m=Object.assign({}, videoMap()); let k=id, n=2; while(m[k]) k=id+"-"+(n++);
+    m[k]={title:title.slice(0,80), url, ts:Date.now()};
+    writeControl({videos:m}).then(ok=>{ if(ok){ _vidNew.title=""; _vidNew.url=""; toast("Added — find it under Videos in Choose exercise."); render(); } }); };
+  s.append(ti,ui,add);
+  return s;
+}
 function courseConfig(){
   const wrap=el("div","stack"); wrap.style.maxWidth="1000px"; wrap.style.margin="0 auto";
   const head=el("div","card stage");
@@ -7238,6 +7342,7 @@ function courseConfig(){
   sRost.append(rosterEditor()); grid.append(sRost);
 
   grid.append(studentPageCard());
+  grid.append(videosCard());
 
   const sView=el("div","rail-sec");
   sView.append(Object.assign(el("h3"),{textContent:"View as student (read-only)"}));
@@ -7307,14 +7412,14 @@ function studentPageCard(){
       sHub.append(pwrap);
     }
     // Interactive lessons — tick the specific lessons students may open.
-    sHub.append(toggle("lessons","Interactive lessons"));
+    sHub.append(toggle("lessons","Interactive lessons & videos"));
     if(hc.lessons){
       const lwrap=el("div"); lwrap.style.margin="6px 0 2px";
       const list=el("div","res-list");
-      HUB_LESSONS.forEach(L=>{ const on=!!(hc.lessonKeys&&hc.lessonKeys[L.id]);
+      allLessons().forEach(L=>{ const on=!!(hc.lessonKeys&&hc.lessonKeys[L.id]);
         list.append(chip(on, L.name, ()=>setHubMap("lessonKeys",L.id,!on))); });
       lwrap.append(list);
-      lwrap.append(Object.assign(el("div","sm mut"),{textContent:"Only ticked lessons show on My page.",style:"margin-top:6px"}));
+      lwrap.append(Object.assign(el("div","sm mut"),{textContent:"Only ticked lessons and videos show on My page.",style:"margin-top:6px"}));
       sHub.append(lwrap);
     }
     // My attendance — let students see their own roll-call record on My page.

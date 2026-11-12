@@ -767,6 +767,27 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     redraw. Verified with ~20 writes/s: every candidate toggle, Done/Edit, captain stepper and Done/Edit tap registered and
     the rival board updated live.
 
+## Videos (V1…) — class clips with burned-in subtitles
+- **Why not PowerPoint/YouTube:** embedded subtitles didn't reliably show. Each clip is re-encoded once with ffmpeg to
+  **H.264/AAC MP4, 720p, `+faststart`, subtitles BURNED INTO the picture** (`-vf subtitles=x.srt`) — so they show on the
+  projector, in fullscreen and on iPhones, with no caption track to fail. Example:
+  `ffmpeg -i in.mkv -vf "scale=-2:720,subtitles=in.srt:force_style='FontSize=24,Outline=2'" -c:v libx264 -crf 23 -preset slow -c:a aac -b:a 128k -movflags +faststart out.mp4`
+- **Hosting:** NOT in this public repo/Pages site (the ferry clip is *The Dark Knight* — copyrighted; a takedown could
+  hit the whole portal). Files live in **Firebase Storage** (bucket `game-theory-live.firebasestorage.app`, needs the
+  project on the Blaze plan) and the instructor pastes each file's **download URL (with access token)** in **Course
+  config → Videos** (`videosCard`). Stored per course in `control.videos = {<vid>:{title,url,ts}}` — so the link isn't in
+  the public source; no rules change (control is instructor-writable).
+- **Playing:** the console's Choose exercise lists them under a **Videos** divider (tiles **V1…**); each is a lesson id
+  `"video:<vid>"` (`lessonMode`, `isVideoMode()`), so the Student page tick (`hub.lessonKeys`, list from `allLessons()` =
+  `HUB_LESSONS` + videos) and `lessonVisible` gate work unchanged; students open ticked videos from My page's "Lessons &
+  videos" card. `videoLesson(vid)`: big `<video controls playsinline preload=auto>`, a buffered-% line ("✓ Fully loaded —
+  plays without pauses"), Play/Pause · Full screen (`videoGoFull`, incl. iOS `webkitEnterFullscreen`) · Start over · Exit;
+  keys Space / F.
+- **Never reset by a redraw:** ONE `<video>` element per URL is kept in `_vid` and re-used by every render (moving it
+  within one synchronous `replaceChildren` doesn't pause it), and shared-data redraws are skipped while a video is open
+  (`onCtrl` returns for `isVideoMode()`, plus the existing lessonMode guards in `teacherRenderSoon`/`scheduleSubsRender`).
+  Verified: playback continues through 40 shared writes and a forced `render()`, instructor and student.
+
 ## Interactive lessons (no submissions)
 - **Pareto optimality** (`paretoLesson`, local `lessonMode="pareto"` + `PZ` state) — an
   instructor-launched, full-screen **payoff-matrix checker** (a teaching visual, not a game;
