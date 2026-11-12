@@ -679,14 +679,17 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - `placement` — **Placement Season** (**G12**) — **signalling** (Spence). Candidates are dealt a private type
   (**H** / **L**, high/low productivity) and choose **Grad** or **MBA**; recruiter **firms** (teams of students, one
   **captain** taps) see only the degree and choose an offer **per degree** (Player 2's S₂ᴹᴮᴬ / S₂ᴳʳᵃᵈ). Self-contained
-  `ps*` block. Config `{ mode:"fixed"|"bid", variant:"A"|"B"|"D"|"E", firms:5, firmMax:4 }` (`psCfg()`).
+  `ps*` block. Config `{ mode:"fixed"|"bid", variant:"A"|"B"|"C"|"D", firms:5, firmMax:4 }` (`psCfg()`).
   - **Wording:** the job a firm offers a degree is a **role** (Manager / Analyst) everywhere in the UI ("track" survives only
     in code: `PS_TRK`, `res.track`); step 1 is **"Pick your side"** (Recruiter or Candidate), button "1 · Pick sides".
   - **Variants** (`PS_VARIANTS`; productivity `prod[type][deg][track]`, recruiter payoff = productivity − salary):
+    in **class order** (re-lettered 12 Nov; the sandbox's older records used A/B/D/E and were deleted):
     **A** Classic MBA (50% H, MBA cost H 40 / L 160; Manager 200 / Analyst 100; productivity H 300/150, L 100/100 —
-    the MBA adds no skill), **B** Online MBA (costs 10/40), **D** MBA builds skills (Manager 300; MBA-trained H 400 /
-    L 350 as managers), **E** Strong batch (80% H). Each has a `lesson` line. D is fixed-mode only (300 is outside
-    the pay band). A **"This round" banner** (`psVariantBanner`) on candidate (choose + locked), recruiter (choose + recruit)
+    the MBA adds no skill → separating), **B** MBA builds skills (Manager 300; MBA-trained H 400 / L 350 as managers →
+    unique pooling on MBA, belief-free: Manager is dominant after an MBA, Analyst after a Grad), **C** Strong batch (80% H →
+    separating + pooling on Grad that holds for any off-path μ), **D** Online MBA (costs 10/40 → pooling on Grad with
+    off-path μ ≤ ⅔, μ = 0 cleanest, + the hybrid σ = ½, r = 0.4). Each has a `lesson` line. **B is fixed-mode only** (300 is
+    outside the pay band; `psCfg` falls back to A in bid mode and the chip is disabled). A **"This round" banner** (`psVariantBanner`) on candidate (choose + locked), recruiter (choose + recruit)
     and Present screens spells the variant out (MBA costs; "the MBA builds real skills: as a Manager an MBA hire produces H 400 ·
     L 350 (without: 300 · 100)" vs "adds no skill"; Manager pay in fixed mode; % H when ≠ 50) — gold and tagged **NEW THIS
     ROUND**, with the old numbers "(was …)", when it differs from the previous round of the meeting (`psPrevVariant`, from that

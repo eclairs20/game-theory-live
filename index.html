@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-11.001";
+const APP_VERSION = "2026-11-12.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -620,7 +620,7 @@ const DEFAULT_CONFIG = {
   adfin:{ rounds:6 },                  // Advertising Game (Finite): a fixed, announced number of rounds
   robot:{ capMin:5, joinMin:5, buildMin:10, teamMin:4, teamMax:6, teams:15, rounds:100, disc:5, house:true },   // Axelrod Tournament: captains / join / build timers (min), min / max team size, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
   bayes:{ pOdd:25, rounds:20 },          // Bayesian Game: % chance each round is Odd-Even (else the Matching Game); rounds per match
-  placement:{ mode:"fixed", variant:"A", firms:5, firmMax:4 },   // Placement Season: "fixed" salaries (role per degree, dealt batches) or "bid" (role + salary in pay bands, shared pool); variant A/B/D/E; firms and max recruiters per firm
+  placement:{ mode:"fixed", variant:"A", firms:5, firmMax:4 },   // Placement Season: "fixed" salaries (role per degree, dealt batches) or "bid" (role + salary in pay bands, shared pool); variant A Classic / B MBA builds skills / C Strong batch / D Online MBA; firms and max recruiters per firm
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -4691,19 +4691,19 @@ const PS_TRK={Mgr:"Manager", Ana:"Analyst"};   // the ROLE a firm offers a degre
 const PS_DUMMY_NOTE="For profit, every firm that splits a group of candidates gets the same number of H and of L — dummies fill any gap. Dummies count toward profit only, nothing else.";
 const PS_BAND={Mgr:[200,250], Ana:[100,150]};
 const PS_BASE_PROD={H:{Grad:{Mgr:300,Ana:150}, MBA:{Mgr:300,Ana:150}}, L:{Grad:{Mgr:100,Ana:100}, MBA:{Mgr:100,Ana:100}}};
-const PS_VARIANTS={
+const PS_VARIANTS={   // class order: A separating → B pooling on MBA (skills, belief-free) → C strong batch → D online (off-path beliefs)
   A:{name:"Classic MBA", q:50, cH:40, cL:160, salM:200, salA:100, prod:PS_BASE_PROD,
      lesson:"A costly signal sorts the types even though it adds no skill: worth it for H (MBA → Manager), not for L. The trap — nobody does an MBA because recruiters ignore it — is the other equilibrium."},
-  B:{name:"Online MBA", q:50, cH:10, cL:40, salM:200, salA:100, prod:PS_BASE_PROD,
-     lesson:"When the degree is cheap for everyone, L copies it, so an MBA stops telling recruiters anything: a credential everyone can afford signals nothing."},
-  D:{name:"MBA builds skills", q:50, cH:40, cL:160, salM:300, salA:100,
+  B:{name:"MBA builds skills", q:50, cH:40, cL:160, salM:300, salA:100,
      prod:{H:{Grad:{Mgr:300,Ana:150}, MBA:{Mgr:400,Ana:150}}, L:{Grad:{Mgr:100,Ana:100}, MBA:{Mgr:350,Ana:100}}},
      lesson:"When the MBA itself raises productivity, everyone does it and recruiters put every MBA on Manager: human capital, not signalling — pooling on MBA, and efficient."},
-  E:{name:"Strong batch", q:80, cH:40, cL:160, salM:200, salA:100, prod:PS_BASE_PROD,
-     lesson:"With 80% H the batch already clears the recruiters' bar: a Grad can get the Manager role without paying for a signal. Separating is still an equilibrium — which one the class lands in is a coordination question."}
+  C:{name:"Strong batch", q:80, cH:40, cL:160, salM:200, salA:100, prod:PS_BASE_PROD,
+     lesson:"With 80% H the batch already clears the recruiters' bar: a Grad can get the Manager role without paying for a signal. Separating is still an equilibrium, and pooling on Grad holds whatever recruiters believe about an MBA (even the best reply to an MBA pays less than 200) — which one the class lands in is a coordination question."},
+  D:{name:"Online MBA", q:50, cH:10, cL:40, salM:200, salA:100, prod:PS_BASE_PROD,
+     lesson:"When the degree is cheap for everyone, L copies it, so an MBA stops telling recruiters anything: a credential everyone can afford signals nothing. The equilibrium is pooling on Grad, held up by an off-path belief (μ = 0: an MBA is read as L; any μ ≤ ⅔ works)."}
 };
 function psCfg(){ const c=cfg("placement"); const mode=c.mode==="bid"?"bid":"fixed";
-  let v=PS_VARIANTS[c.variant]?c.variant:"A"; if(mode==="bid" && v==="D") v="A";
+  let v=PS_VARIANTS[c.variant]?c.variant:"A"; if(mode==="bid" && v==="B") v="A";
   return {mode, v, V:PS_VARIANTS[v], firms:Math.max(2,Math.min(8,Math.round(+c.firms||5))), max:Math.max(1,Math.min(8,Math.round(+c.firmMax||4)))}; }
 /* A firm's display name: from the round's records (R.names, so history keeps the name used then), else the live
    firm, else a fallback. Captains name their firm when they start it. */
@@ -5031,7 +5031,7 @@ function psProdTable(V, mode){
 }
 /* "This round" banner — what the variant means, in plain words, on every candidate, recruiter and projector screen. Gold
    and tagged NEW when the variant differs from the previous round of this meeting (with the old numbers alongside). */
-const PS_VAR_ICON={A:"🎓", B:"💻", D:"🧠", E:"📈"};
+const PS_VAR_ICON={A:"🎓", B:"🧠", C:"📈", D:"💻"};
 function psPrevVariant(){
   const p=parseRoundKey(curKey); if(!p || p.round<=1) return null;
   const prk="S"+p.session+p.section+"-placement-"+(p.round-1);
@@ -7589,7 +7589,7 @@ function paramEditor(){
     const vr=el("div","row"); vr.style.cssText="gap:8px;flex-wrap:wrap;margin-top:4px";
     Object.keys(PS_VARIANTS).forEach(k=>{ const V=PS_VARIANTS[k]; const b=el("button","ghost-btn"+(C.v===k?" hold-on":""),k+" · "+V.name);
       b.title="H share "+V.q+"% · MBA cost H "+V.cH+" / L "+V.cL+" · Manager "+V.salM+" / Analyst "+V.salA;
-      if(C.mode==="bid" && k==="D"){ b.disabled=true; b.title="D pays managers 300, outside the bidding war's pay band — use fixed salaries"; }
+      if(C.mode==="bid" && k==="B"){ b.disabled=true; b.title="B pays managers 300, outside the bidding war's pay band — use fixed salaries"; }
       b.onclick=()=>{ if(C.v!==k) setK("variant",k); }; vr.append(b); });
     wrap.append(vr);
     const grid=el("div","paramgrid"); grid.style.marginTop="10px"; grid.append(mk("Number of firms (2–8)","firms",cf.firms), mk("Max recruiters per firm","firmMax",cf.firmMax)); wrap.append(grid);
@@ -7597,7 +7597,7 @@ function paramEditor(){
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Variant "+C.v+": "+V.q+"% of candidates are type H; an MBA costs H "+V.cH+" and L "+V.cL+". "
       +(C.mode==="bid" ? "Bidding war: each firm posts a role and a salary for MBAs and for Grads (Manager 200–250, Analyst 100–150); every candidate goes to the highest salary for their degree; no hiring limit."
         : "Fixed salaries: Manager "+V.salM+", Analyst "+V.salA+"; CVs are dealt to firms in batches that match the class by degree and type, and each firm picks a role per degree. Putting MBAs on Manager pays "+(thr==="always"?"whatever their share of H":thr==="never"?"never":"when more than "+Math.round(thr*100)+"% of them are H")+".")
-      +" Flow: Open → 1 firms sign up (first round of a meeting only) → 2 candidates choose → 3 recruiters decide → Reveal → Next round. "+V.lesson,style:"margin-top:8px"})); }
+      +" Flow: Open → 1 pick sides (first round of a meeting only) → 2 candidates choose → 3 recruiters decide → Reveal → Next round. Suggested order: A → B → C → D. "+V.lesson,style:"margin-top:8px"})); }
   else if(g==="adfin"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played (announced to students)","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Same High/Low advertising game as G8, but every pair plays exactly this many rounds and students are told so (\"Round 3 of "+rpFinRounds()+"\", with the final round flagged). Backward induction predicts High in every round; compare the class's play near the end with G8.",style:"margin-top:6px"})); }
