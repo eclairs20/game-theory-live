@@ -577,7 +577,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-13.006";
+const APP_VERSION = "2026-11-13.007";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1037,7 +1037,8 @@ async function openMeeting(patch){
   // Placement Season: a new round starts with candidates choosing — or with firm sign-up when this meeting has no firms yet.
   if(control.activeGame==="placement"){
     const rk="S"+(p.session!=null?p.session:curSession())+curMSection()+"-placement-"+(p.round!=null?p.round:(control.round||1));
-    if(!(control.ps && control.ps.rk===rk)) p.ps={rk, step: (psCtx===psBase(rk) && psActiveFids().length) ? "choose" : "roles"};
+    if(!(control.ps && control.ps.rk===rk && control.ps.mode)){ const R0=psCfgRaw();
+      p.ps={rk, step: (control.ps && control.ps.rk===rk) ? (control.ps.step||"choose") : ((psCtx===psBase(rk) && psActiveFids().length) ? "choose" : "roles"), mode:R0.mode, variant:R0.v}; }
   }
   return await writeControl(p);
 }
@@ -1647,10 +1648,16 @@ function render(){
   } else if(!HAS_CLASS_PARAM && !isTeacher() && authUser && !routed && myCourses().length>1){
     // Signed-in student on the bare link, enrolled in more than one course → let them choose.
     next = coursePicker();
-  } else if(isTeacher()){
-    next = teacherConsole();
   } else {
-    next = studentRoot();
+    try{ next = isTeacher() ? teacherConsole() : studentRoot(); }
+    catch(e){ try{ console.error(e); }catch(_){}
+      // never leave the previous screen frozen ("Dealing your type…" forever): say so and offer a reload
+      next=el("div","card stage center"); next.style.padding="clamp(24px,5vw,48px)";
+      next.append(Object.assign(el("h2"),{textContent:"Something went wrong on this screen",style:"font-size:1.4rem;margin:0 0 8px"}));
+      next.append(el("p","lead","Your answers are saved. Reload the page; if it keeps happening, tell your instructor."));
+      const b=el("button","btn","Reload"); b.onclick=()=>{ try{ location.reload(); }catch(_){} }; next.append(b);
+      next.append(Object.assign(el("div","sm mut"),{textContent:String(e&&e.message||e).slice(0,160),style:"margin-top:12px;font-family:IBM Plex Mono,monospace"}));
+    }
   }
   // If the student/instructor is actively typing in a field and the structural view
   // hasn't changed (only a live count did), don't replace the DOM — that would blow
@@ -4734,7 +4741,13 @@ const PS_VARIANTS={   // class order: A separating → B pooling on MBA (skills,
   D:{name:"Online MBA", q:50, cH:10, cL:40, salM:200, salA:100, prod:PS_BASE_PROD,
      lesson:"When the degree is cheap for everyone, L copies it, so an MBA stops telling recruiters anything: a credential everyone can afford signals nothing. The equilibrium is pooling on Grad, held up by an off-path belief (μ = 0: an MBA is read as L; any μ ≤ ⅔ works)."}
 };
-function psCfg(){ const c=cfg("placement"); const mode=c.mode==="bid"?"bid":"fixed";
+/* psCfg() = the settings of the round IN PLAY: the mode/variant stamped into control.ps when that round opened, so
+   changing Parameters mid-meeting only affects the NEXT round (a mid-round switch once left one bidding round with
+   fixed-format offers, and the outcome code crashed). psCfgRaw() = what Parameters is set to (applies to the next round). */
+function psCfgRaw(){ return psCfgOf(cfg("placement")); }
+function psCfg(){ const c=cfg("placement"), p=psCtl();
+  return psCfgOf((p && p.mode) ? Object.assign({}, c, {mode:p.mode, variant:p.variant}) : c); }
+function psCfgOf(c){ const mode=c.mode==="bid"?"bid":"fixed";
   let v=PS_VARIANTS[c.variant]?c.variant:"A"; if(mode==="bid" && v==="B") v="A";
   return {mode, v, V:PS_VARIANTS[v], firms:Math.max(2,Math.min(8,Math.round(+c.firms||5))), max:Math.max(1,Math.min(8,Math.round(+c.firmMax||3)))}; }
 /* A firm's display name: from the round's records (R.names, so history keeps the name used then), else the live
@@ -4743,7 +4756,9 @@ function psFirmName(fid, R){ return (R && R.names && R.names[fid]) || (psFirms[f
 function psBase(rk){ const p=parseRoundKey(rk||curKey); return p ? "S"+p.session+p.section+"-placement" : null; }
 function psCtl(){ const p=control&&control.ps; return (p && p.rk===curKey) ? p : null; }
 function psStep(){ const p=psCtl(); return p ? (p.step||"choose") : "choose"; }
-function psSal(V,mode,o,deg){ const of=o&&o[deg]; if(!of) return null; return mode==="bid" ? +of.w : (of.t==="Mgr"?V.salM:V.salA); }
+function psSal(V,mode,o,deg){ const of=o&&o[deg]; if(!of) return null;
+  if(mode!=="bid") return of.t==="Mgr"?V.salM:V.salA;
+  const w=(of.w==null||of.w==="") ? NaN : +of.w; return isFinite(w) ? w : PS_BAND[of.t==="Mgr"?"Mgr":"Ana"][0]; }
 function psCost(V,s){ return s.deg==="MBA" ? (s.type==="H"?V.cH:V.cL) : 0; }
 /* Manager-vs-Analyst threshold on the share of H among holders of a degree, for fixed salaries. Returns a number in
    (0,1), or "always" / "never". */
@@ -4933,7 +4948,8 @@ async function psCopyPrevFirms(){
   const up={}; Object.keys(P.firms).forEach(fid=>{ const f=P.firms[fid]; up["pf/"+fid]=Object.assign({}, f, {ts:f.ts||srvNow()}); Object.keys(f.members).forEach(k=>{ up["pr/"+k]=fid; }); });
   try{ await fb.ref(LIVE_ROOT(psCtx)).update(up); toast("Copied "+Object.keys(P.firms).length+" firms from the last meeting"); }catch(e){ toast("Couldn't copy the firms"); }
 }
-async function psSetStep(step){ const rk=curKey; await writeControl({ps:{rk, step}}); }
+async function psSetStep(step){ const rk=curKey, o=psCtl()||{}, R0=psCfgRaw();
+  await writeControl({ps:{rk, step, mode:o.mode||R0.mode, variant:o.variant||R0.v}}); }
 
 /* Recruiters write a participation sub (counts them as present) and the captain's sub carries the firm's offer. */
 function psDefaultOffer(mode){ return mode==="bid" ? {MBA:{t:"Ana",w:100}, Grad:{t:"Ana",w:100}} : {MBA:{t:"Ana"}, Grad:{t:"Ana"}}; }
@@ -4972,8 +4988,8 @@ function psRound(list){
   const rk=list.length?list[0].roundKey:""; const ck=rk+"#"+sig; if(_psCache[ck]) return _psCache[ck];
   const cands=list.filter(s=>s.pt==="C" && (s.deg==="MBA"||s.deg==="Grad") && (s.type==="H"||s.type==="L"));
   const firmSubs=list.filter(s=>s.pt==="F");
-  const ref=list.find(s=>s.variant) || {};
-  const mode=ref.mode==="bid"?"bid":"fixed", v=PS_VARIANTS[ref.variant]?ref.variant:"A", V=PS_VARIANTS[v];
+  const most=k=>{ const n={}; list.forEach(s=>{ if(s[k]) n[s[k]]=(n[s[k]]||0)+(s.pt==="C"?2:1); }); return Object.keys(n).sort((a,b)=>n[b]-n[a])[0]; };
+  const mode=most("mode")==="bid"?"bid":"fixed", v0=most("variant"), v=PS_VARIANTS[v0]?v0:"A", V=PS_VARIANTS[v];
   const offers={}; firmSubs.filter(s=>s.offer).sort((a,b)=>(a.ts||0)-(b.ts||0)).forEach(s=>{ offers[s.fid]={offer:s.offer, by:s.name, members:s.members||""}; });
   const fids=Object.keys(offers).sort((a,b)=>{ const ta=(firmSubs.find(s=>s.fid===a&&s.cap)||{}).ts||0, tb=(firmSubs.find(s=>s.fid===b&&s.cap)||{}).ts||0; return a<b?-1:a>b?1:ta-tb; });
   const members={}, names={}; firmSubs.forEach(s=>{ (members[s.fid]||(members[s.fid]=[])).push(s.name||s.studentId); });
@@ -4994,8 +5010,9 @@ function psRound(list){
     } else {
       ["MBA","Grad"].forEach(d=>{
         const pool=cands.filter(s=>s.deg===d); if(!pool.length) return;
-        const best=Math.max(...fids.map(f=>psSal(V,mode,offers[f].offer,d)));
-        const top=fids.filter(f=>psSal(V,mode,offers[f].offer,d)===best);
+        const vals=fids.map(f=>psSal(V,mode,offers[f].offer,d)).filter(x=>x!=null); if(!vals.length) return;   // nobody offered for this degree
+        const best=Math.max(...vals);
+        const top=fids.filter(f=>psSal(V,mode,offers[f].offer,d)===best); if(!top.length) return;
         // a tie at the top splits the pool type by type (H's in turn, then L's, one counter), so each firm's H and L counts
         // differ from a rival's by at most one — the gap the profit-only dummies fill
         let k=Math.floor(adSeedFloat(rk+"|top|"+d)*top.length);
@@ -5093,6 +5110,7 @@ function psVariantBanner(C){
    The class hasn't met separating/pooling, μ or β yet, so nothing here uses theory words: it shows what each choice
    PAID each type, what hires PRODUCED vs what they were PAID, and asks one question for each side. Separation then
    shows up in the data on its own (the round-by-round table). */
+function psSafe(fn){ try{ return fn(); }catch(e){ try{ console.error("placement:", e); }catch(_){} return null; } }
 function psCellPay(R){ const o={};
   ["H","L"].forEach(t=>["MBA","Grad"].forEach(d=>{ const a=R.cands.filter(s=>s.type===t&&s.deg===d&&R.res[s.studentId]);
     o[t+d]={n:a.length, pay:a.length?Math.round(a.reduce((x,s)=>x+R.res[s.studentId].pay,0)/a.length):null}; }));
@@ -5473,7 +5491,7 @@ function studentPlacement(c){
   if(deg) c.append(dr);
   c.append(Object.assign(el("div"),{style:"margin-top:12px"}), psProdTable(C.V, C.mode));
   c.append(Object.assign(el("div","note-box"),{innerHTML:"🤫 Don't tell anyone your type.",style:"margin-top:12px"}));
-  const rep=psLastReport("C"); if(rep) c.append(rep);
+  const rep=psSafe(()=>psLastReport("C")); if(rep) c.append(rep);
 }
 function psFirmBox(fid, showCap){
   const f=psFirms[fid]||{}, ms=psMembers(f);
@@ -5489,7 +5507,7 @@ function studentRecruiter(c, mf, C, step){
     c.append(h("Candidates are choosing"));
     const p=el("p","lead"); p.append(psLive("count"), document.createTextNode(" candidates have chosen so far. You'll see degrees, never types."));
     c.append(p, psVariantBanner(C), psProdTable(C.V, C.mode));
-    const rep=psLastReport("F"); if(rep) c.append(rep);
+    const rep=psSafe(()=>psLastReport("F")); if(rep) c.append(rep);
     return;
   }
   const capSub=subs.filter(s=>s.pt==="F"&&s.fid===mf.fid&&s.offer).sort((a,b)=>(b.ts||0)-(a.ts||0))[0];
@@ -5694,7 +5712,7 @@ function analyzePlacement(list, teacher){
     }
   }
   // round debrief (plain language) — one per meeting shown
-  Rs.forEach(R=>wrap.append(psDebriefCard(R, secTag(R))));
+  Rs.forEach(R=>{ const d=psSafe(()=>psDebriefCard(R, secTag(R))); if(d) wrap.append(d); });
   // class picture
   const cands=Rs.flatMap(R=>R.cands), res=Object.assign({}, ...Rs.map(R=>R.res));
   const n=(t,d)=>cands.filter(s=>s.type===t&&s.deg===d).length;
@@ -5732,7 +5750,7 @@ function analyzePlacement(list, teacher){
   if(teacher) card.append(Object.assign(el("div","note-box"),{innerHTML:"<b>For you (theory — not shown to students):</b> "+esc(V.lesson),style:"margin-top:10px"}));
   wrap.append(card);
   // round-by-round comparison for this meeting (no names)
-  const MR=psMeetingRounds(Rs.map(R=>R.rk)); if(MR.length>=2) wrap.append(psRoundsCard(MR));
+  const MR=psMeetingRounds(Rs.map(R=>R.rk)); if(MR.length>=2){ const rc=psSafe(()=>psRoundsCard(MR)); if(rc) wrap.append(rc); }
   // leaderboard
   const lbCard=el("div","card stage");
   lbCard.append(el("div","eyebrow","Recruiter leaderboard · "+(mode==="bid"?"bidding war":"fixed salaries")+" · ranked on total profit"));
@@ -5743,7 +5761,7 @@ function analyzePlacement(list, teacher){
   if(!Rs.some(R=>R.firms.length)) lbCard.append(el("div","sm mut","No firm set an offer in this round."));
   if(Rs.some(R=>R.firms.some(f=>(f.dummies||[]).length))) lbCard.append(Object.assign(el("div","sm mut"),{textContent:PS_DUMMY_NOTE,style:"margin-top:8px"}));
   wrap.append(lbCard);
-  if(teacher){ Rs.forEach(R=>wrap.append(psCandidateTable(R)));
+  if(teacher){ Rs.forEach(R=>{ const t=psSafe(()=>psCandidateTable(R)); if(t) wrap.append(t); });
     Rs.forEach(R=>R.firms.forEach(f=>{ const c=el("div","card stage"); c.append(el("div","eyebrow",psFirmName(f.fid,R)+secTag(R)+" · hires"), psHiresTable(R,f)); wrap.append(c); })); }
   return wrap;
 }
@@ -7954,8 +7972,13 @@ function paramEditor(){
     const {p}=bgCfg(), pr=bgPredict(p);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Pairs: Player 1 and Player 2 (random, fixed for the match). Each round Nature draws Odd-Even with this chance, otherwise the Matching Game; only Player 2 is told which. Odd-Even: Player 1 wins on an even total, Player 2 on an odd total. Matching Game: both score 1 if they show the same number. Theory at "+Math.round(p*100)+"%: "+(pr.regime==="low"?"Player 1 sticks to one number; Player 2 matches Player 1 in the Matching Game and counters in Odd-Even (P1 earns "+fmt(pr.u1,2)+", P2 1.0 a round); everyone playing 50/50 is a worse mixed BNE (0.5 each).":pr.regime==="high"?"Player 1 mixes 50/50 (no pure BNE); everyone earns 0.5 a round.":"the tipping point — Player 1 earns 0.5 whatever they do.")+" To compare, play another round at a different chance (e.g. 75%) — each round's results are kept separately.",style:"margin-top:6px"})); }
   else if(g==="placement"){
-    const C=psCfg();
+    const C=psCfgRaw(), L=psCfg(), lp=psCtl(), started=!!(lp && lp.mode), MD=m=>m==="bid"?"Bidding war":"Fixed salaries";
     const setK=(k,v)=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc[k]=v; const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
+    if(started){ const diff=L.mode!==C.mode || L.v!==C.v, rd=(parseRoundKey(curKey)||{}).round||control.round;
+      const nb=el("div","note-box"+(diff?"":" teal")); nb.style.margin="0 0 8px";
+      nb.innerHTML="Round "+rd+" runs <b>"+MD(L.mode)+" · "+L.v+" "+esc(L.V.name)+"</b> — fixed for this round."+
+        (diff ? " <b style='color:var(--gold)'>Next round will use "+MD(C.mode)+" · "+C.v+" "+esc(C.V.name)+".</b>" : " A change below starts with the next round.");
+      wrap.append(nb); }
     wrap.append(Object.assign(el("div","tinylabel"),{textContent:"Recruiting mode"}));
     const mr=el("div","row"); mr.style.cssText="gap:8px;flex-wrap:wrap;margin-top:4px";
     [["fixed","Fixed salaries"],["bid","Bidding war"]].forEach(([k,l])=>{ const b=el("button","ghost-btn"+(C.mode===k?" hold-on":""),l); b.onclick=()=>{ if(C.mode!==k) setK("mode",k); }; mr.append(b); });

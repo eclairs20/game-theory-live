@@ -708,7 +708,18 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     firm's role. Dummies count toward **firm profit / leaderboard / profit per hire only** — never the class table, μ/β, the
     Hires count, MBA hit rate, any candidate's result or the CSV. Shown greyed as "Dummy (profit only)" rows in the hires
     table, "+1 dummy" in the KPI panel and leaderboard, with the note. Tied firms share a rank ("Rank 1 of 2 (tied)").
-  - **Flow** (`control.ps = {rk, step}`, `psStep()`): Open → **roles** (first round of a meeting only, when it has
+  - **Settings are fixed per round** (`control.ps = {rk, step, mode, variant}`): `openMeeting` stamps the Parameters' mode +
+    variant into `control.ps` when a round opens (`psSetStep` keeps the stamp), and `psCfg()` returns the stamped settings for
+    the round in play — `psCfgRaw()` is what Parameters is set to. So changing mode/variant after Reveal (or between Close and
+    Reopen) only applies from the **next** round; the Parameters card says "Round N runs … — fixed for this round. Next round
+    will use …". Why: 13 Nov, Section B — the instructor switched bidding → fixed after round 2; three captains then saved
+    round-2 offers in fixed format (no salary), the bidding outcome got NaN salaries, an empty top-offer list, and crashed;
+    every round-3 screen that shows last round's report froze on "Dealing your type…". Hardening: `psSal` (bid) treats a
+    missing salary as the band floor; `psRound` takes the round's mode/variant from the majority of its records and skips a
+    degree nobody offered for; `psLastReport`/`psDebriefCard`/`psRoundsCard`/`psCandidateTable` run through `psSafe`; and
+    `render()` catches a crash while building any screen and shows "Something went wrong on this screen — Reload" instead of
+    leaving the old screen frozen.
+  - **Flow** (`control.ps`, `psStep()`): Open → **roles** (first round of a meeting only, when it has
     no firms: every student first sees a **role picker** — 🏢 **Recruiter** (seats left shown; greyed when full) or 🎓
     **Candidate** (writes a ready mark `live/<base>/pc/<enc(id)>` = `{id,name,ts}`, `psPickCandidate`; "Change to recruiter" /
     "I'll be a candidate instead" switch back; **not picking = candidate**). Console and **Present** show live counts
