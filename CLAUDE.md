@@ -679,7 +679,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - `placement` — **Placement Season** (**G12**) — **signalling** (Spence). Candidates are dealt a private type
   (**H** / **L**, high/low productivity) and choose **Grad** or **MBA**; recruiter **firms** (teams of students, one
   **captain** taps) see only the degree and choose an offer **per degree** (Player 2's S₂ᴹᴮᴬ / S₂ᴳʳᵃᵈ). Self-contained
-  `ps*` block. Config `{ mode:"fixed"|"bid", variant:"A"|"B"|"C"|"D", firms:5, firmMax:4 }` (`psCfg()`).
+  `ps*` block. Config `{ mode:"fixed"|"bid", variant:"A"|"B"|"C"|"D", firms:5, firmMax:3 }` (`psCfg()`; max 3 recruiters per firm by default since 13 Nov).
   - **Wording:** the job a firm offers a degree is a **role** (Manager / Analyst) everywhere in the UI ("track" survives only
     in code: `PS_TRK`, `res.track`); step 1 is **"Choose role"** (Recruiter or Candidate; "Choose your role for today"), button "1 · Choose role".
   - **Variants** (`PS_VARIANTS`; productivity `prod[type][deg][track]`, recruiter payoff = productivity − salary):
@@ -761,6 +761,21 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     mode states the Manager threshold per degree (`psThreshold`, 2/3 for A) and whether Manager was the best reply;
     bid mode compares salary with what each pool produced; the variant's lesson; the leaderboard. CSV/`subValue`:
     `psSubValue`.
+  - **Round debrief — plain language, no theory words** (the class meets the game BEFORE separating/pooling, μ or β are
+    taught; the point is that separation shows up in the data by itself). `psDebriefCard(R)` tops every results view
+    (projector, phones, console): **"Who came out ahead?"** = average payoff by type × degree (`psCellPay`; gold = the better
+    choice for that type) + "Took the MBA: H x of y · L x of y"; **"What hires produced vs what they were paid"** per degree
+    with the margin (`psProdPaid`); and **one question each for recruiters and candidates** (`psPointers`, rule-based: a
+    degree paid ≥20 more than it produced → "Who is likely to turn up with a Grad degree?"; bid mode with salary ≈ output →
+    "the bidding pushed salaries up to what hires produce"; H no better with an MBA → "What would recruiters have to do for the
+    MBA to pay off for an H?"; L gained from the MBA → "Will recruiters keep paying MBAs that much?"; MBA paid for H, not L →
+    "Would anyone do better by switching?"). The next round's **"Last round's placement report"** (`psLastReport(role)`, "C"
+    candidates / "F" recruiters) repeats the payoff line + that side's question. Students/projector see "Share who are H"
+    instead of μ/β, and the variant's `lesson` (theory) shows on the console only, labelled "For you (theory — not shown to
+    students)". **Round by round** (`psRoundsCard` over `psMeetingRounds`, from round 2): per round H/L who took the MBA,
+    avg payoff H/L, MBA/Grad produced/paid, firms' total profit, plus a trend chart of H vs L taking the MBA (no names, so it
+    shows on the projector too). **Console only:** `psCandidateTable(R)` — every candidate's type, degree, firm, role,
+    salary, MBA cost, payoff and running total for the mode, sorted by payoff.
   - **Live-update rule:** `psSubsSig` = my own record incl. its `lock` (+ the captain's offer and lock for a teammate; the
     captain draws from the local `_psOffer` draft); the firms listener has `psViewSig` (`_drawn.ps`). Live counts, done
     counts and the job board are **patched in place** (`psPatchLive`, `[data-ps-live]`) on every subs change — never a full

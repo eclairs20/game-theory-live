@@ -577,7 +577,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-13.003";
+const APP_VERSION = "2026-11-13.004";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -621,7 +621,7 @@ const DEFAULT_CONFIG = {
   adfin:{ rounds:6 },                  // Advertising Game (Finite): a fixed, announced number of rounds
   robot:{ capMin:5, joinMin:5, buildMin:10, teamMin:4, teamMax:6, teams:15, rounds:100, disc:5, house:true },   // Axelrod Tournament: captains / join / build timers (min), min / max team size, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
   bayes:{ pOdd:25, rounds:20 },          // Bayesian Game: % chance each round is Odd-Even (else the Matching Game); rounds per match
-  placement:{ mode:"fixed", variant:"A", firms:5, firmMax:4 },   // Placement Season: "fixed" salaries (role per degree, dealt batches) or "bid" (role + salary in pay bands, shared pool); variant A Classic / B MBA builds skills / C Strong batch / D Online MBA; firms and max recruiters per firm
+  placement:{ mode:"fixed", variant:"A", firms:5, firmMax:3 },   // Placement Season: "fixed" salaries (role per degree, dealt batches) or "bid" (role + salary in pay bands, shared pool); variant A Classic / B MBA builds skills / C Strong batch / D Online MBA; firms and max recruiters per firm
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -4736,7 +4736,7 @@ const PS_VARIANTS={   // class order: A separating → B pooling on MBA (skills,
 };
 function psCfg(){ const c=cfg("placement"); const mode=c.mode==="bid"?"bid":"fixed";
   let v=PS_VARIANTS[c.variant]?c.variant:"A"; if(mode==="bid" && v==="B") v="A";
-  return {mode, v, V:PS_VARIANTS[v], firms:Math.max(2,Math.min(8,Math.round(+c.firms||5))), max:Math.max(1,Math.min(8,Math.round(+c.firmMax||4)))}; }
+  return {mode, v, V:PS_VARIANTS[v], firms:Math.max(2,Math.min(8,Math.round(+c.firms||5))), max:Math.max(1,Math.min(8,Math.round(+c.firmMax||3)))}; }
 /* A firm's display name: from the round's records (R.names, so history keeps the name used then), else the live
    firm, else a fallback. Captains name their firm when they start it. */
 function psFirmName(fid, R){ return (R && R.names && R.names[fid]) || (psFirms[fid] && psFirms[fid].name) || ("Firm "+String(fid||"").slice(-3).toUpperCase()); }
@@ -5089,7 +5089,120 @@ function psVariantBanner(C){
   return b;
 }
 /* Last round's "placement report" in this meeting — what candidates and recruiters learn from. */
-function psLastReport(){
+/* ── Round debrief (plain language) ──
+   The class hasn't met separating/pooling, μ or β yet, so nothing here uses theory words: it shows what each choice
+   PAID each type, what hires PRODUCED vs what they were PAID, and asks one question for each side. Separation then
+   shows up in the data on its own (the round-by-round table). */
+function psCellPay(R){ const o={};
+  ["H","L"].forEach(t=>["MBA","Grad"].forEach(d=>{ const a=R.cands.filter(s=>s.type===t&&s.deg===d&&R.res[s.studentId]);
+    o[t+d]={n:a.length, pay:a.length?Math.round(a.reduce((x,s)=>x+R.res[s.studentId].pay,0)/a.length):null}; }));
+  return o; }
+function psProdPaid(R){ const o={};
+  ["MBA","Grad"].forEach(d=>{ const a=R.cands.filter(s=>s.deg===d&&R.res[s.studentId]);
+    o[d]=a.length?{n:a.length, h:a.filter(s=>s.type==="H").length, prod:Math.round(a.reduce((x,s)=>x+R.res[s.studentId].prod,0)/a.length),
+      sal:Math.round(a.reduce((x,s)=>x+R.res[s.studentId].salary,0)/a.length)}:null; });
+  return o; }
+function psPointers(R){
+  const c=psCellPay(R), pp=psProdPaid(R), an=d=>d==="MBA"?"an MBA":"a Grad degree";
+  let rec=null;
+  for(const d of ["Grad","MBA"]){ const q=pp[d]; if(q && q.sal-q.prod>=20){ rec="Your "+d+" hires produced "+q.prod+" on average but were paid "+q.sal+". Who is likely to turn up with "+an(d)+"?"; break; } }
+  if(!rec && R.mode==="bid") for(const d of ["MBA","Grad"]){ const q=pp[d]; if(q && Math.abs(q.sal-q.prod)<20){ rec="Your "+d+" hires produced "+q.prod+" and were paid "+q.sal+" — the bidding pushed salaries up to what hires produce. Where could a firm still find a margin?"; break; } }
+  if(!rec) for(const d of ["MBA","Grad"]){ const q=pp[d]; if(q){ rec="Your "+d+" hires produced "+q.prod+" and were paid "+q.sal+". Would you change either offer next round?"; break; } }
+  const hM=c.HMBA.pay, hG=c.HGrad.pay, lM=c.LMBA.pay, lG=c.LGrad.pay;
+  let cand;
+  if(hM!=null && hG!=null && hM<=hG) cand="H candidates did no better with an MBA ("+hM+") than without ("+hG+"). What would recruiters have to do for the MBA to pay off for an H?";
+  else if(lM!=null && lG!=null && lM>lG) cand="L candidates who bought the MBA came out ahead ("+lM+" vs "+lG+" without). Will recruiters keep paying MBAs that much?";
+  else if(hM!=null && (hG==null||hM>hG) && lG!=null && (lM==null||lG>lM))
+    cand="The MBA paid off for H ("+hM+" with"+(hG==null?"":" vs "+hG+" without")+")"+(lM==null?" — and no L took it.":", not for L ("+lM+" with vs "+lG+" without).")+" Would anyone do better by switching?";
+  else cand="Which choice paid best for your type this round? Would you make the same choice again?";
+  return {rec, cand, c, pp};
+}
+/* The debrief card shown at the top of the results (projector, phones, console). */
+function psDebriefCard(R, tag){
+  const P=psPointers(R), c=P.c, pp=P.pp, rd=(parseRoundKey(R.rk)||{}).round||"";
+  const card=el("div","card stage"); card.style.background="color-mix(in srgb, var(--gold) 7%, var(--surface))";
+  card.append(el("div","eyebrow gold","Round "+rd+(tag||"")+" debrief"));
+  const g=el("div"); g.style.cssText="display:flex;gap:22px;flex-wrap:wrap;margin-top:8px;align-items:flex-start";
+  // who came out ahead
+  const w=el("div"); w.style.cssText="flex:1 1 300px;min-width:0";
+  w.append(Object.assign(el("h3"),{textContent:"Who came out ahead?",style:"font-size:1.15rem;margin:0 0 4px"}), el("div","sm mut","Average payoff (salary − MBA cost); number of people in brackets. Gold = the better choice for that type."));
+  const cell=(t,d)=>{ const x=c[t+d], y=c[t+(d==="MBA"?"Grad":"MBA")]; const best=x.pay!=null && (y.pay==null || x.pay>y.pay);
+    return "<td style='font-size:1.25rem;"+(best?"background:color-mix(in srgb, var(--gold) 22%, transparent);font-weight:700":"")+"'>"+(x.pay==null?"<span class='mut'>—</span>":x.pay+" <span class='sm mut'>("+x.n+")</span>")+"</td>"; };
+  const t=el("table","matrix"); t.style.cssText="margin-top:8px;max-width:440px";
+  t.innerHTML="<tr><th></th><th>With an MBA</th><th>Without (Grad)</th></tr>"+["H","L"].map(ty=>"<tr><td style='text-align:left;font-weight:700'>Type "+ty+"</td>"+cell(ty,"MBA")+cell(ty,"Grad")+"</tr>").join("");
+  w.append(t);
+  const took=ty=>{ const a=R.cands.filter(s=>s.type===ty), m=a.filter(s=>s.deg==="MBA").length; return a.length? m+" of "+a.length : "—"; };
+  w.append(Object.assign(el("div"),{innerHTML:"Took the MBA: <b>H "+took("H")+"</b> · <b>L "+took("L")+"</b>",style:"margin-top:8px"}));
+  g.append(w);
+  // produced vs paid
+  const f=el("div"); f.style.cssText="flex:1 1 300px;min-width:0";
+  f.append(Object.assign(el("h3"),{textContent:"What hires produced vs what they were paid",style:"font-size:1.15rem;margin:0 0 4px"}), el("div","sm mut","Averages per hire, in the role they were given."));
+  const t2=el("table","matrix"); t2.style.cssText="margin-top:8px;max-width:440px";
+  t2.innerHTML="<tr><th style='text-align:left'>Hires with</th><th>Produced</th><th>Paid</th><th>Margin</th></tr>"+["MBA","Grad"].map(d=>{ const q=pp[d]; if(!q) return "<tr><td style='text-align:left'>"+d+"</td><td colspan='3' class='mut'>nobody</td></tr>";
+    const m=q.prod-q.sal; return "<tr><td style='text-align:left;font-weight:700'>"+d+" <span class='sm mut'>("+q.n+")</span></td><td>"+q.prod+"</td><td>"+q.sal+"</td><td style='font-weight:700;color:"+(m<0?"var(--bad)":m>0?"var(--good)":"inherit")+"'>"+(m>0?"+":"")+m+"</td></tr>"; }).join("");
+  f.append(t2); g.append(f);
+  card.append(g);
+  // the two questions
+  const qs=el("div"); qs.style.cssText="display:flex;gap:12px;flex-wrap:wrap;margin-top:14px";
+  [["🏢 Recruiters",P.rec],["🎓 Candidates",P.cand]].forEach(([who,txt])=>{ if(!txt) return; const b=el("div","note-box teal"); b.style.cssText="flex:1 1 300px;margin:0";
+    b.innerHTML="<b>"+who+":</b> "+esc(txt); qs.append(b); });
+  card.append(qs);
+  return card;
+}
+/* All rounds of the meeting(s) behind these round keys, oldest first (one meeting = session + section). */
+function psMeetingRounds(rks){
+  const bases=[...new Set(rks.map(rk=>{ const p=parseRoundKey(rk); return p ? p.session+"|"+p.section+"|"+p.round : null; }).filter(Boolean))];
+  const want={}; bases.forEach(b=>{ const [se,sc,r]=b.split("|"); const k=se+"|"+sc; want[k]=Math.max(want[k]||0, +r); });
+  const byRk={}; Object.values(allSubs).forEach(s=>{ if(!s||s.game!=="placement") return; const q=parseRoundKey(s.roundKey); if(!q) return;
+    const k=q.session+"|"+q.section; if(want[k]!=null && q.round<=want[k]) (byRk[s.roundKey]||(byRk[s.roundKey]=[])).push(s); });
+  return Object.keys(byRk).map(k=>psRound(byRk[k])).filter(R=>R.cands.length)
+    .sort((a,b)=>{ const pa=parseRoundKey(a.rk), pb=parseRoundKey(b.rk); return (pa.section<pb.section?-1:pa.section>pb.section?1:0) || pa.round-pb.round; });
+}
+/* Round-by-round comparison (no names → fine on the projector) + a trend chart of who takes the MBA. */
+function psRoundsCard(Rs){
+  const card=el("div","card stage");
+  card.append(el("div","eyebrow","Round by round · this class"));
+  const multiSec=new Set(Rs.map(R=>(parseRoundKey(R.rk)||{}).section)).size>1;
+  const lbl=R=>{ const p=parseRoundKey(R.rk)||{}; return "Round "+p.round+(multiSec?" ("+p.section+")":""); };
+  const pc=(a,b)=>b?Math.round(100*a/b)+"%":"—";
+  let h="<tr><th style='text-align:left'>Round</th><th style='text-align:left'>Setup</th><th>H who took the MBA</th><th>L who took the MBA</th><th>Avg payoff H</th><th>Avg payoff L</th><th>MBA hires: produced / paid</th><th>Grad hires: produced / paid</th><th>Firms' total profit</th></tr>";
+  Rs.forEach(R=>{ const H=R.cands.filter(s=>s.type==="H"), L=R.cands.filter(s=>s.type==="L");
+    const hm=H.filter(s=>s.deg==="MBA").length, lm=L.filter(s=>s.deg==="MBA").length, pp=psProdPaid(R);
+    const av=a=>{ const b=a.filter(s=>R.res[s.studentId]); return b.length?Math.round(b.reduce((x,s)=>x+R.res[s.studentId].pay,0)/b.length):"—"; };
+    const pq=d=>pp[d]?pp[d].prod+" / "+pp[d].sal:"—", prof=R.firms.reduce((x,f)=>x+f.realProfit,0);
+    h+="<tr><td style='text-align:left;font-weight:700'>"+lbl(R)+"</td><td style='text-align:left'>"+esc(R.V.name)+" · "+(R.mode==="bid"?"bidding":"fixed")+"</td><td>"+hm+" of "+H.length+" <span class='sm mut'>("+pc(hm,H.length)+")</span></td><td>"+lm+" of "+L.length+" <span class='sm mut'>("+pc(lm,L.length)+")</span></td><td>"+av(H)+"</td><td>"+av(L)+"</td><td>"+pq("MBA")+"</td><td>"+pq("Grad")+"</td><td style='font-weight:700;color:"+(prof<0?"var(--bad)":"inherit")+"'>"+prof+"</td></tr>"; });
+  const t=el("table","matrix"); t.style.marginTop="8px"; t.innerHTML=h; const tw=el("div","tablescroll"); tw.append(t); card.append(tw);
+  if(Rs.length>=2 && !multiSec){
+    const W=560,Hh=200,pl=40,pr=110,pt=12,pb=26, n=Rs.length;
+    const X=i=>pl+(W-pl-pr)*(n===1?0.5:i/(n-1)), Y=v=>pt+(Hh-pt-pb)*(1-v);
+    const svg=svgEl("svg",{viewBox:"0 0 "+W+" "+Hh,role:"img"}); svg.setAttribute("style","width:100%;max-width:640px;display:block;margin-top:12px");
+    [0,0.5,1].forEach(v=>{ svg.append(svgEl("line",{x1:pl,x2:W-pr,y1:Y(v),y2:Y(v),stroke:"var(--line)","stroke-width":1}));
+      svg.append(svgEl("text",{x:pl-6,y:Y(v)+4,"text-anchor":"end",fill:"var(--muted)","font-size":"11","font-family":"IBM Plex Mono"},Math.round(v*100)+"%")); });
+    Rs.forEach((R,i)=>svg.append(svgEl("text",{x:X(i),y:Hh-6,"text-anchor":"middle",fill:"var(--muted)","font-size":"11"},"R"+((parseRoundKey(R.rk)||{}).round))));
+    [["H","var(--good)","H taking the MBA"],["L","var(--bad)","L taking the MBA"]].forEach(([ty,col,name])=>{
+      const pts=Rs.map((R,i)=>{ const a=R.cands.filter(s=>s.type===ty); return a.length?[X(i),Y(a.filter(s=>s.deg==="MBA").length/a.length)]:null; }).filter(Boolean);
+      if(!pts.length) return;
+      svg.append(svgEl("polyline",{points:pts.map(p=>p.join(",")).join(" "),fill:"none",stroke:col,"stroke-width":3,"stroke-linejoin":"round"}));
+      pts.forEach(p=>svg.append(svgEl("circle",{cx:p[0],cy:p[1],r:4,fill:col})));
+      const last=pts[pts.length-1]; svg.append(svgEl("text",{x:last[0]+8,y:last[1]+4,fill:col,"font-size":"12","font-weight":"700"},name)); });
+    card.append(svg);
+    card.append(el("div","sm mut","Share of each type who took the MBA, round by round."));
+  }
+  return card;
+}
+/* Instructor-only: every candidate's own result this round (never on the projector — it has names). */
+function psCandidateTable(R){
+  const card=el("div","card stage");
+  card.append(el("div","eyebrow","Candidates · round "+((parseRoundKey(R.rk)||{}).round)+" · individual payoffs (console only)"));
+  const tot={}; psRoundsUpTo(R.rk, R.mode).forEach(X=>Object.entries(X.res).forEach(([id,r])=>{ tot[id]=(tot[id]||0)+r.pay; }));
+  const rows=R.cands.slice().sort((a,b)=>((R.res[b.studentId]||{}).pay??-1e9)-((R.res[a.studentId]||{}).pay??-1e9));
+  let h="<tr><th style='text-align:left'>Candidate</th><th>Type</th><th>Degree</th><th style='text-align:left'>Hired by</th><th>Role</th><th>Salary</th><th>MBA cost</th><th>Payoff</th><th>Total ("+(R.mode==="bid"?"bidding":"fixed")+" rounds)</th></tr>";
+  rows.forEach(s=>{ const r=R.res[s.studentId];
+    h+="<tr><td style='text-align:left'>"+esc(s.name||s.studentId)+"</td><td>"+s.type+"</td><td>"+s.deg+"</td><td style='text-align:left'>"+(r?esc(psFirmName(r.fid,R)):"<span class='mut'>not hired</span>")+"</td><td>"+(r?PS_TRK[r.track]:"—")+"</td><td>"+(r?r.salary:"—")+"</td><td>"+(s.deg==="MBA"?"−"+psCost(R.V,s):"0")+"</td><td style='font-weight:700'>"+(r?r.pay:"—")+"</td><td>"+(tot[s.studentId]??"—")+"</td></tr>"; });
+  const t=el("table","matrix"); t.style.cssText="margin-top:8px;font-size:.88rem"; t.innerHTML=h; const tw=el("div","tablescroll"); tw.append(t); card.append(tw);
+  return card;
+}
+function psLastReport(role){
   const p=parseRoundKey(curKey); if(!p || p.round<=1) return null;
   const prk="S"+p.session+p.section+"-placement-"+(p.round-1);
   const R=psRound(Object.values(allSubs).filter(s=>s&&s.roundKey===prk)); if(!R.cands.length) return null;
@@ -5097,7 +5210,10 @@ function psLastReport(){
   const by=d=>{ const a=R.cands.filter(s=>s.deg===d && R.res[s.studentId]); if(!a.length) return null;
     const m=a.filter(s=>R.res[s.studentId].track==="Mgr").length; const w=Math.round(a.reduce((x,s)=>x+R.res[s.studentId].salary,0)/a.length);
     return d+"s: "+a.length+" placed · "+Math.round(100*m/a.length)+"% on Manager · avg salary "+w; };
-  box.innerHTML="<b>Last round's placement report.</b><br>"+[by("MBA"),by("Grad")].filter(Boolean).map(esc).join("<br>");
+  const P=psPointers(R), c=P.c, f=x=>x.pay==null?"—":x.pay;
+  const pays="Average payoff last round — H: with an MBA "+f(c.HMBA)+", without "+f(c.HGrad)+" · L: with an MBA "+f(c.LMBA)+", without "+f(c.LGrad);
+  const q=role==="F"?P.rec:P.cand;
+  box.innerHTML="<b>Last round's placement report.</b><br>"+[by("MBA"),by("Grad"),pays].filter(Boolean).map(esc).join("<br>")+(q?"<div style='margin-top:6px'><b>Think about:</b> "+esc(q)+"</div>":"");
   return box;
 }
 /* Live job board (bid mode): drawn into [data-ps-live="board"] and refreshed in place, never by a full redraw. */
@@ -5284,7 +5400,7 @@ function studentPlacement(c){
   if(deg) c.append(dr);
   c.append(Object.assign(el("div"),{style:"margin-top:12px"}), psProdTable(C.V, C.mode));
   c.append(Object.assign(el("div","note-box"),{innerHTML:"🤫 Don't tell anyone your type.",style:"margin-top:12px"}));
-  const rep=psLastReport(); if(rep) c.append(rep);
+  const rep=psLastReport("C"); if(rep) c.append(rep);
 }
 function psFirmBox(fid, showCap){
   const f=psFirms[fid]||{}, ms=psMembers(f);
@@ -5300,7 +5416,7 @@ function studentRecruiter(c, mf, C, step){
     c.append(h("Candidates are choosing"));
     const p=el("p","lead"); p.append(psLive("count"), document.createTextNode(" candidates have chosen so far. You'll see degrees, never types."));
     c.append(p, psVariantBanner(C), psProdTable(C.V, C.mode));
-    const rep=psLastReport(); if(rep) c.append(rep);
+    const rep=psLastReport("F"); if(rep) c.append(rep);
     return;
   }
   const capSub=subs.filter(s=>s.pt==="F"&&s.fid===mf.fid&&s.offer).sort((a,b)=>(b.ts||0)-(a.ts||0))[0];
@@ -5504,6 +5620,8 @@ function analyzePlacement(list, teacher){
       wrap.append(psNoResultCard("You didn't take part in this round", "No choice of yours was recorded in this round, so there's no personal result. The class results are below."));
     }
   }
+  // round debrief (plain language) — one per meeting shown
+  Rs.forEach(R=>wrap.append(psDebriefCard(R, secTag(R))));
   // class picture
   const cands=Rs.flatMap(R=>R.cands), res=Object.assign({}, ...Rs.map(R=>R.res));
   const n=(t,d)=>cands.filter(s=>s.type===t&&s.deg===d).length;
@@ -5524,7 +5642,8 @@ function analyzePlacement(list, teacher){
   card.append(st);
   const t=el("table","matrix"); t.style.cssText="max-width:520px;margin-top:12px";
   t.innerHTML="<tr><th style='text-align:left'>Candidates</th><th>MBA</th><th>Grad</th></tr><tr><td style='text-align:left'>Type H</td><td>"+n("H","MBA")+"</td><td>"+n("H","Grad")+"</td></tr><tr><td style='text-align:left'>Type L</td><td>"+n("L","MBA")+"</td><td>"+n("L","Grad")+"</td></tr>"
-    +"<tr><td style='text-align:left'>Share H (the recruiters' belief)</td><td>μ = "+(mu==null?"—":pct(mu))+"</td><td>β = "+(be==null?"—":pct(be))+"</td></tr>";
+    +(teacher ? "<tr><td style='text-align:left'>Share H (the recruiters' belief)</td><td>μ = "+(mu==null?"—":pct(mu))+"</td><td>β = "+(be==null?"—":pct(be))+"</td></tr>"
+              : "<tr><td style='text-align:left'>Share who are H</td><td>"+(mu==null?"—":pct(mu))+"</td><td>"+(be==null?"—":pct(be))+"</td></tr>");
   const tw=el("div","tablescroll"); tw.append(t); card.append(tw);
   // verdict
   const v=el("div","note-box teal"); v.style.marginTop="12px";
@@ -5537,8 +5656,10 @@ function analyzePlacement(list, teacher){
     v.innerHTML=esc("With competition, each salary is pushed toward what that pool produces in its best role, up to the band's cap (Manager 250). Here MBAs produced "+(avgOf("MBA","prod")==null?"—":avgOf("MBA","prod"))+" and Grads "+(avgOf("Grad","prod")==null?"—":avgOf("Grad","prod"))+" in the roles they were given; a firm that paid more lost money on those hires.");
   }
   card.append(v);
-  card.append(Object.assign(el("div","note-box"),{textContent:V.lesson,style:"margin-top:10px"}));
+  if(teacher) card.append(Object.assign(el("div","note-box"),{innerHTML:"<b>For you (theory — not shown to students):</b> "+esc(V.lesson),style:"margin-top:10px"}));
   wrap.append(card);
+  // round-by-round comparison for this meeting (no names)
+  const MR=psMeetingRounds(Rs.map(R=>R.rk)); if(MR.length>=2) wrap.append(psRoundsCard(MR));
   // leaderboard
   const lbCard=el("div","card stage");
   lbCard.append(el("div","eyebrow","Recruiter leaderboard · "+(mode==="bid"?"bidding war":"fixed salaries")+" · ranked on total profit"));
@@ -5549,7 +5670,8 @@ function analyzePlacement(list, teacher){
   if(!Rs.some(R=>R.firms.length)) lbCard.append(el("div","sm mut","No firm set an offer in this round."));
   if(Rs.some(R=>R.firms.some(f=>(f.dummies||[]).length))) lbCard.append(Object.assign(el("div","sm mut"),{textContent:PS_DUMMY_NOTE,style:"margin-top:8px"}));
   wrap.append(lbCard);
-  if(teacher){ Rs.forEach(R=>R.firms.forEach(f=>{ const c=el("div","card stage"); c.append(el("div","eyebrow",psFirmName(f.fid,R)+secTag(R)+" · hires"), psHiresTable(R,f)); wrap.append(c); })); }
+  if(teacher){ Rs.forEach(R=>wrap.append(psCandidateTable(R)));
+    Rs.forEach(R=>R.firms.forEach(f=>{ const c=el("div","card stage"); c.append(el("div","eyebrow",psFirmName(f.fid,R)+secTag(R)+" · hires"), psHiresTable(R,f)); wrap.append(c); })); }
   return wrap;
 }
 function psNoResultCard(title, txt){
