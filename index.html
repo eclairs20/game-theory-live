@@ -577,7 +577,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-13.005";
+const APP_VERSION = "2026-11-13.006";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -5109,41 +5109,98 @@ function psPointers(R){
   if(!rec && R.mode==="bid") for(const d of ["MBA","Grad"]){ const q=pp[d]; if(q && Math.abs(q.sal-q.prod)<20){ rec="Your "+d+" hires produced "+q.prod+" and were paid "+q.sal+" — the bidding pushed salaries up to what hires produce. Where could a firm still find a margin?"; break; } }
   if(!rec) for(const d of ["MBA","Grad"]){ const q=pp[d]; if(q){ rec="Your "+d+" hires produced "+q.prod+" and were paid "+q.sal+". Would you change either offer next round?"; break; } }
   const hM=c.HMBA.pay, hG=c.HGrad.pay, lM=c.LMBA.pay, lG=c.LGrad.pay;
-  let cand;
-  if(hM!=null && hG!=null && hM<=hG) cand="H candidates did no better with an MBA ("+hM+") than without ("+hG+"). What would recruiters have to do for the MBA to pay off for an H?";
+  let cand, lossD=["Grad","MBA"].find(d=>pp[d] && pp[d].sal-pp[d].prod>=20);
+  if(lossD) cand="Firms lost "+(pp[lossD].sal-pp[lossD].prod)+" on every "+lossD+" hire they paid "+pp[lossD].sal+". If they stop doing that next round, which choice will pay best for your type?";
+  else if(hM!=null && hG!=null && hM<=hG) cand="H candidates did no better with an MBA ("+hM+") than without ("+hG+"). What would recruiters have to do for the MBA to pay off for an H?";
   else if(lM!=null && lG!=null && lM>lG) cand="L candidates who bought the MBA came out ahead ("+lM+" vs "+lG+" without). Will recruiters keep paying MBAs that much?";
   else if(hM!=null && (hG==null||hM>hG) && lG!=null && (lM==null||lG>lM))
     cand="The MBA paid off for H ("+hM+" with"+(hG==null?"":" vs "+hG+" without")+")"+(lM==null?" — and no L took it.":", not for L ("+lM+" with vs "+lG+" without).")+" Would anyone do better by switching?";
   else cand="Which choice paid best for your type this round? Would you make the same choice again?";
   return {rec, cand, c, pp};
 }
-/* The debrief card shown at the top of the results (projector, phones, console). */
+/* ── "What you made vs what you could have made" — per person, from this round's actual offers ──
+   Candidate: their payoff vs the payoff the OTHER degree would have paid them, with every firm's offers unchanged
+   (bid: the top offer for that degree; fixed: the average over firms, since CVs are dealt). Recruiter firm: its real
+   profit vs the best it could have made WITH THE SAME HIRES — each degree's hires in the better role at the lowest
+   salary allowed (bid: the band's floor; fixed: that role's salary), or not hiring them (0). */
+function psMadeC(R, s){ const r=R.res[s.studentId]; return r ? r.pay : -psCost(R.V, s); }
+function psAltC(R, s){
+  const d2=s.deg==="MBA"?"Grad":"MBA", V=R.V, cost=d2==="MBA"?(s.type==="H"?V.cH:V.cL):0;
+  const offs=R.fids.map(f=>{ const o=R.offers[f]&&R.offers[f].offer; const w=psSal(V,R.mode,o,d2); return w==null?null:{w, t:(o[d2].t==="Mgr"?"Mgr":"Ana")}; }).filter(Boolean);
+  if(!offs.length) return {deg:d2, pay:-cost, sal:null};
+  if(R.mode==="bid"){ const b=offs.reduce((a,x)=>x.w>a.w?x:a); return {deg:d2, pay:b.w-cost, sal:b.w, track:b.t}; }
+  const w=Math.round(offs.reduce((a,x)=>a+x.w,0)/offs.length); return {deg:d2, pay:w-cost, sal:w, avg:true};
+}
+function psFirmAlt(R, f){
+  const V=R.V, sal=t=> R.mode==="bid" ? PS_BAND[t][0] : (t==="Mgr"?V.salM:V.salA);
+  let could=0; const how=[];
+  ["MBA","Grad"].forEach(d=>{ const hs=f.hires.filter(s=>s.deg===d); if(!hs.length) return;
+    const opt=t=>hs.reduce((a,s)=>a+V.prod[s.type][d][t]-sal(t),0);
+    const m=opt("Mgr"), a=opt("Ana"), best=Math.max(m,a,0);
+    could+=best;
+    how.push(best===0 ? "not hiring the "+hs.length+" "+d+"s (0)" : hs.length+" "+d+"s as "+(m>=a?"Manager":"Analyst")+" at "+sal(m>=a?"Mgr":"Ana")+" ("+(best>0?"+":"")+best+")"); });
+  return {made:f.realProfit, could, how:how.join(" · ")};
+}
+let psDebriefNames=true;   // instructor's projector/console: show students' names in the named cases (toggle on the card)
+/* The debrief card at the top of the results. Instructor (console + projector): named cases — whose choice cost them
+   the most and who got it right, every firm's made vs could-have-made — plus one question each. A student's phone:
+   only their own made vs could-have-made and their side's question (no one else's name). */
 function psDebriefCard(R, tag){
-  const P=psPointers(R), c=P.c, pp=P.pp, rd=(parseRoundKey(R.rk)||{}).round||"";
+  const P=psPointers(R), rd=(parseRoundKey(R.rk)||{}).round||"", inst=isTeacher();
   const card=el("div","card stage"); card.style.background="color-mix(in srgb, var(--gold) 7%, var(--surface))";
-  card.append(el("div","eyebrow gold","Round "+rd+(tag||"")+" debrief"));
-  const g=el("div"); g.style.cssText="display:flex;gap:22px;flex-wrap:wrap;margin-top:8px;align-items:flex-start";
-  // who came out ahead
-  const w=el("div"); w.style.cssText="flex:1 1 300px;min-width:0";
-  w.append(Object.assign(el("h3"),{textContent:"Who came out ahead?",style:"font-size:1.15rem;margin:0 0 4px"}), el("div","sm mut","Average payoff (salary − MBA cost); number of people in brackets. Gold = the better choice for that type."));
-  const cell=(t,d)=>{ const x=c[t+d], y=c[t+(d==="MBA"?"Grad":"MBA")]; const best=x.pay!=null && (y.pay==null || x.pay>y.pay);
-    return "<td style='font-size:1.25rem;"+(best?"background:color-mix(in srgb, var(--gold) 22%, transparent);font-weight:700":"")+"'>"+(x.pay==null?"<span class='mut'>—</span>":x.pay+" <span class='sm mut'>("+x.n+")</span>")+"</td>"; };
-  const t=el("table","matrix"); t.style.cssText="margin-top:8px;max-width:440px";
-  t.innerHTML="<tr><th></th><th>With an MBA</th><th>Without (Grad)</th></tr>"+["H","L"].map(ty=>"<tr><td style='text-align:left;font-weight:700'>Type "+ty+"</td>"+cell(ty,"MBA")+cell(ty,"Grad")+"</tr>").join("");
-  w.append(t);
-  const took=ty=>{ const a=R.cands.filter(s=>s.type===ty), m=a.filter(s=>s.deg==="MBA").length; return a.length? m+" of "+a.length : "—"; };
-  w.append(Object.assign(el("div"),{innerHTML:"Took the MBA: <b>H "+took("H")+"</b> · <b>L "+took("L")+"</b>",style:"margin-top:8px"}));
-  g.append(w);
-  // produced vs paid
-  const f=el("div"); f.style.cssText="flex:1 1 300px;min-width:0";
-  f.append(Object.assign(el("h3"),{textContent:"What hires produced vs what they were paid",style:"font-size:1.15rem;margin:0 0 4px"}), el("div","sm mut","Averages per hire, in the role they were given."));
-  const t2=el("table","matrix"); t2.style.cssText="margin-top:8px;max-width:440px";
-  t2.innerHTML="<tr><th style='text-align:left'>Hires with</th><th>Produced</th><th>Paid</th><th>Margin</th></tr>"+["MBA","Grad"].map(d=>{ const q=pp[d]; if(!q) return "<tr><td style='text-align:left'>"+d+"</td><td colspan='3' class='mut'>nobody</td></tr>";
-    const m=q.prod-q.sal; return "<tr><td style='text-align:left;font-weight:700'>"+d+" <span class='sm mut'>("+q.n+")</span></td><td>"+q.prod+"</td><td>"+q.sal+"</td><td style='font-weight:700;color:"+(m<0?"var(--bad)":m>0?"var(--good)":"inherit")+"'>"+(m>0?"+":"")+m+"</td></tr>"; }).join("");
-  f.append(t2); g.append(f);
-  card.append(g);
-  // the two questions
-  const qs=el("div"); qs.style.cssText="display:flex;gap:12px;flex-wrap:wrap;margin-top:14px";
+  const top=el("div"); top.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap";
+  top.append(el("div","eyebrow gold","Round "+rd+(tag||"")+" debrief · what you made vs what you could have made"));
+  if(inst){ const tg=el("button","linkbtn",psDebriefNames?"Hide names":"Show names"); tg.type="button"; tg.onclick=()=>{ psDebriefNames=!psDebriefNames; render(); }; top.append(tg); }
+  card.append(top);
+  const fmt=v=>(v>0?"+":"")+v, DL=d=>d==="MBA"?"with an MBA":"as a Grad";
+  if(!inst){
+    // ── a student's own view ──
+    const me=R.cands.find(s=>s.studentId===myId), myF=R.firms.find(f=>f.members.includes(myName)||f.hires&&false);
+    const mySubF=subs.concat(Object.values(allSubs)).find(s=>s&&s.roundKey===R.rk&&s.studentId===myId&&s.pt==="F");
+    const fm=mySubF && R.firms.find(f=>f.fid===mySubF.fid);
+    const box=el("div"); box.style.cssText="margin-top:8px;font-size:1.05rem;line-height:1.5";
+    if(me){ const made=psMadeC(R,me), alt=psAltC(R,me);
+      box.innerHTML="You ("+me.type+") went <b>"+(me.deg==="MBA"?"MBA":"Grad")+"</b> and made <b>"+made+"</b>. "+
+        (alt.sal==null ? "Nobody offered anything "+DL(alt.deg)+"." : (alt.avg?"On average "+DL(alt.deg):DL(alt.deg).charAt(0).toUpperCase()+DL(alt.deg).slice(1))+" you would have made <b>"+alt.pay+"</b>"+(alt.pay>made?" — <b style='color:var(--bad)'>"+(alt.pay-made)+" more</b>.":alt.pay<made?" — your choice was the better one.":" — the same."));
+    } else if(fm){ const A=psFirmAlt(R,fm);
+      box.innerHTML="Your firm <b>"+esc(psFirmName(fm.fid,R))+"</b> made <b>"+fmt(A.made)+"</b>. With the same hires the best it could have made was <b>"+fmt(A.could)+"</b> — "+esc(A.how)+"."+(R.mode==="bid"?" <span class='sm mut'>(Assumes you'd still have won them.)</span>":"");
+    } else box.innerHTML="<span class='mut'>You didn't take part in this round.</span>";
+    card.append(box);
+    const q=me?P.cand:fm?P.rec:null; if(q){ const b=el("div","note-box teal"); b.style.marginTop="12px"; b.innerHTML="<b>Think about:</b> "+esc(q); card.append(b); }
+    return card;
+  }
+  // ── instructor / projector: named cases ──
+  const nm=s=>esc(s.name||s.studentId);
+  const names=list=>{ if(!psDebriefNames) return "<span class='mut'>"+list.length+" "+(list.length===1?"person":"people")+"</span>";
+    const sh=list.slice(0,6).map(nm).join(", "); return sh+(list.length>6?" <span class='mut'>and "+(list.length-6)+" more</span>":""); };
+  const groups={}; R.cands.forEach(s=>{ const made=psMadeC(R,s), alt=psAltC(R,s), k=s.type+"|"+s.deg+"|"+made+"|"+alt.pay;
+    (groups[k]||(groups[k]={type:s.type,deg:s.deg,made,alt,list:[]})).list.push(s); });
+  const PP=psProdPaid(R), lossy=d=>PP[d] && PP[d].sal-PP[d].prod>=20 ? PP[d].sal-PP[d].prod : 0;
+  const warn=d=> lossy(d) ? "<div class='sm' style='margin-top:3px;color:var(--gold)'>⚠ That "+d+" pay came from offers that lost firms "+lossy(d)+" per hire — don't count on it next round.</div>" : "";
+  const G=Object.values(groups), miss=G.filter(g=>g.alt.sal!=null && g.alt.pay>g.made).sort((a,b)=>(b.alt.pay-b.made)-(a.alt.pay-a.made)), right=G.filter(g=>!(g.alt.sal!=null && g.alt.pay>g.made)).sort((a,b)=>b.list.length-a.list.length);
+  const g=el("div"); g.style.cssText="display:flex;gap:22px;flex-wrap:wrap;margin-top:10px;align-items:flex-start";
+  const cbox=el("div"); cbox.style.cssText="flex:1 1 380px;min-width:0";
+  cbox.append(Object.assign(el("h3"),{textContent:"🎓 Candidates",style:"font-size:1.15rem;margin:0 0 6px"}));
+  let ch="";
+  miss.slice(0,4).forEach(x=>{ ch+="<div style='padding:8px 10px;margin-bottom:8px;border-left:4px solid var(--bad);background:color-mix(in srgb, var(--bad) 8%, transparent);border-radius:6px'>"+
+    "<b>"+x.type+" "+DL(x.deg)+"</b> made <b>"+x.made+"</b> — "+DL(x.alt.deg)+" "+(x.alt.avg?"about ":"")+"<b>"+x.alt.pay+"</b>. <b style='color:var(--bad)'>Left "+(x.alt.pay-x.made)+" on the table</b>"+warn(x.alt.deg)+"<div style='margin-top:3px'>"+names(x.list)+"</div></div>"; });
+  right.slice(0,2).forEach(x=>{ ch+="<div style='padding:8px 10px;margin-bottom:8px;border-left:4px solid var(--good);background:color-mix(in srgb, var(--good) 8%, transparent);border-radius:6px'>"+
+    "<b>"+x.type+" "+DL(x.deg)+"</b> made <b>"+x.made+"</b> — "+(x.alt.sal==null?"no offer "+DL(x.alt.deg):DL(x.alt.deg)+" only "+x.alt.pay)+". <b style='color:var(--good)'>Best choice</b>"+warn(x.deg)+"<div style='margin-top:3px'>"+names(x.list)+"</div></div>"; });
+  if(!ch) ch="<div class='mut'>No candidates this round.</div>";
+  cbox.append(Object.assign(el("div"),{innerHTML:ch}));
+  const fbox=el("div"); fbox.style.cssText="flex:1 1 380px;min-width:0";
+  fbox.append(Object.assign(el("h3"),{textContent:"🏢 Recruiters",style:"font-size:1.15rem;margin:0 0 6px"}));
+  const FA=R.firms.map(f=>({f, A:psFirmAlt(R,f)})).sort((a,b)=>(b.A.could-b.A.made)-(a.A.could-a.A.made));
+  let fh="";
+  FA.forEach(({f,A})=>{ const gap=A.could-A.made, bad=gap>0;
+    fh+="<div style='padding:8px 10px;margin-bottom:8px;border-left:4px solid "+(bad?"var(--bad)":"var(--good)")+";background:color-mix(in srgb, "+(bad?"var(--bad)":"var(--good)")+" 8%, transparent);border-radius:6px'>"+
+      "<b>"+esc(psFirmName(f.fid,R))+"</b> made <b>"+fmt(A.made)+"</b>"+(f.hires.length?"":" (hired nobody)")+" — could have made <b>"+fmt(A.could)+"</b>"+(bad?" <b style='color:var(--bad)'>(missed "+gap+")</b>":" <b style='color:var(--good)'>(best possible)</b>")+
+      (A.how?"<div class='sm' style='margin-top:3px'>Best with the same hires: "+esc(A.how)+"</div>":"")+"</div>"; });
+  if(!fh) fh="<div class='mut'>No firm made an offer.</div>";
+  else if(R.mode==="bid") fh+="<div class='sm mut'>Could-have-made keeps each firm's hires and pays them the lowest salary in the band for the better role.</div>";
+  fbox.append(Object.assign(el("div"),{innerHTML:fh}));
+  g.append(cbox, fbox); card.append(g);
+  const qs=el("div"); qs.style.cssText="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px";
   [["🏢 Recruiters",P.rec],["🎓 Candidates",P.cand]].forEach(([who,txt])=>{ if(!txt) return; const b=el("div","note-box teal"); b.style.cssText="flex:1 1 300px;margin:0";
     b.innerHTML="<b>"+who+":</b> "+esc(txt); qs.append(b); });
   card.append(qs);
@@ -5210,10 +5267,12 @@ function psLastReport(role){
   const by=d=>{ const a=R.cands.filter(s=>s.deg===d && R.res[s.studentId]); if(!a.length) return null;
     const m=a.filter(s=>R.res[s.studentId].track==="Mgr").length; const w=Math.round(a.reduce((x,s)=>x+R.res[s.studentId].salary,0)/a.length);
     return d+"s: "+a.length+" placed · "+Math.round(100*m/a.length)+"% on Manager · avg salary "+w; };
-  const P=psPointers(R), c=P.c, f=x=>x.pay==null?"—":x.pay;
-  const pays="Average payoff last round — H: with an MBA "+f(c.HMBA)+", without "+f(c.HGrad)+" · L: with an MBA "+f(c.LMBA)+", without "+f(c.LGrad);
-  const q=role==="F"?P.rec:P.cand;
-  box.innerHTML="<b>Last round's placement report.</b><br>"+[by("MBA"),by("Grad"),pays].filter(Boolean).map(esc).join("<br>")+(q?"<div style='margin-top:6px'><b>Think about:</b> "+esc(q)+"</div>":"");
+  const P=psPointers(R), q=role==="F"?P.rec:P.cand, fm=v=>(v>0?"+":"")+v;
+  let mine=null; const me=R.cands.find(s=>s.studentId===myId);
+  const myF=Object.values(allSubs).find(s=>s&&s.roundKey===prk&&s.studentId===myId&&s.pt==="F"), ff=myF&&R.firms.find(f=>f.fid===myF.fid);
+  if(me){ const made=psMadeC(R,me), alt=psAltC(R,me); mine="You ("+me.type+", "+me.deg+") made "+made+(alt.sal==null?".":"; "+(alt.deg==="MBA"?"with an MBA":"as a Grad")+" you'd have made "+alt.pay+".")+" Your type is re-dealt this round."; }
+  else if(ff){ const A=psFirmAlt(R,ff); mine="Your firm made "+fm(A.made)+"; with the same hires it could have made "+fm(A.could)+" ("+A.how+")."; }
+  box.innerHTML="<b>Last round's placement report.</b><br>"+[by("MBA"),by("Grad"),mine].filter(Boolean).map(esc).join("<br>")+(q?"<div style='margin-top:6px'><b>Think about:</b> "+esc(q)+"</div>":"");
   return box;
 }
 /* Live job board (bid mode): drawn into [data-ps-live="board"] and refreshed in place, never by a full redraw. */

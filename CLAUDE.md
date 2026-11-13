@@ -761,21 +761,28 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     mode states the Manager threshold per degree (`psThreshold`, 2/3 for A) and whether Manager was the best reply;
     bid mode compares salary with what each pool produced; the variant's lesson; the leaderboard. CSV/`subValue`:
     `psSubValue`.
-  - **Round debrief — plain language, no theory words** (the class meets the game BEFORE separating/pooling, μ or β are
-    taught; the point is that separation shows up in the data by itself). `psDebriefCard(R)` tops every results view
-    (projector, phones, console): **"Who came out ahead?"** = average payoff by type × degree (`psCellPay`; gold = the better
-    choice for that type) + "Took the MBA: H x of y · L x of y"; **"What hires produced vs what they were paid"** per degree
-    with the margin (`psProdPaid`); and **one question each for recruiters and candidates** (`psPointers`, rule-based: a
-    degree paid ≥20 more than it produced → "Who is likely to turn up with a Grad degree?"; bid mode with salary ≈ output →
-    "the bidding pushed salaries up to what hires produce"; H no better with an MBA → "What would recruiters have to do for the
-    MBA to pay off for an H?"; L gained from the MBA → "Will recruiters keep paying MBAs that much?"; MBA paid for H, not L →
-    "Would anyone do better by switching?"). The next round's **"Last round's placement report"** (`psLastReport(role)`, "C"
-    candidates / "F" recruiters) repeats the payoff line + that side's question. Students/projector see "Share who are H"
-    instead of μ/β, and the variant's `lesson` (theory) shows on the console only, labelled "For you (theory — not shown to
-    students)". **Round by round** (`psRoundsCard` over `psMeetingRounds`, from round 2): per round H/L who took the MBA,
-    avg payoff H/L, MBA/Grad produced/paid, firms' total profit, plus a trend chart of H vs L taking the MBA (no names, so it
-    shows on the projector too). **Console only:** `psCandidateTable(R)` — every candidate's type, degree, firm, role,
-    salary, MBA cost, payoff and running total for the mode, sorted by payoff.
+  - **Round debrief — "what you made vs what you could have made"** (plain language; the class meets the game BEFORE
+    separating/pooling, μ or β are taught, so separation should show up in the data by itself; averages were dropped as
+    misleading). Counterfactuals use the round's ACTUAL offers: a candidate's payoff with the other degree (`psAltC`: bid =
+    the top offer for that degree; fixed = the average over firms, since CVs are dealt) vs what they made (`psMadeC`); a firm's
+    real profit vs the best it could have made **with the same hires** (`psFirmAlt`: each degree's hires in the better role at
+    the band floor (bid) or that role's salary (fixed), or not hiring them = 0; bid notes "assumes you'd still have won them").
+    `psDebriefCard(R)` tops every results view. **Instructor console + projector:** named cases — candidate groups (type ×
+    degree × payoff) who "left N on the table" (red) and who made the "Best choice" (green), up to 6 names + "and N more";
+    every firm's made vs could-have-made (firm names) with the best move; a **Hide names / Show names** link
+    (`psDebriefNames`, local); and a ⚠ "That Grad pay came from offers that lost firms N per hire — don't count on it next
+    round" on any case whose payoff came from a loss-making offer (so "H as a Grad made 250" doesn't pull H's out of the MBA).
+    **A student's phone:** only their own line ("You (H) went MBA and made 210. As a Grad you would have made 250 — 40 more")
+    or their firm's, plus their side's question — never other students' names. Questions (`psPointers`): recruiters — a degree
+    paid ≥20 more than it produced → "Who is likely to turn up with a Grad degree?", bid with salary ≈ output → "the bidding
+    pushed salaries up…"; candidates — **forward-looking** first: "Firms lost 94 on every Grad hire they paid 250. If they stop
+    doing that next round, which choice will pay best for your type?", else H no better with an MBA / L gained from it / "Would
+    anyone do better by switching?". Next round's **"Last round's placement report"** (`psLastReport(role)`) shows the
+    student's own made-vs-could line (type re-dealt) or the firm's, plus that side's question. Students/projector see "Share
+    who are H" instead of μ/β; the variant's theory `lesson` is console-only. **Round by round** (`psRoundsCard` over
+    `psMeetingRounds`, from round 2, no names): H/L who took the MBA, avg payoff H/L, MBA/Grad produced/paid, firms' total
+    profit + a trend chart of H vs L taking the MBA. **Console only:** `psCandidateTable(R)` — every candidate's type, degree,
+    firm, role, salary, MBA cost, payoff and running total, sorted by payoff.
   - **Live-update rule:** `psSubsSig` = my own record incl. its `lock` (+ the captain's offer and lock for a teammate; the
     captain draws from the local `_psOffer` draft); the firms listener has `psViewSig` (`_drawn.ps`). Live counts, done
     counts and the job board are **patched in place** (`psPatchLive`, `[data-ps-live]`) on every subs change — never a full
