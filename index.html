@@ -577,7 +577,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-13.002";
+const APP_VERSION = "2026-11-13.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -5107,9 +5107,13 @@ function psBoardHTML(R, exceptFid, big){
   let h="";
   ["MBA","Grad"].forEach(d=>{
     const vals=fs.map(f=>offers[f]?psSal(C.V,C.mode,offers[f],d):null).filter(x=>x!=null), best=vals.length?Math.max(...vals):null;
-    h+="<div style='flex:1 1 220px;min-width:0'><div class='tinylabel'>"+d+" offers</div>";
-    fs.forEach(f=>{ if(f===exceptFid) return; const o=offers[f]; const w=o?psSal(C.V,C.mode,o,d):null;
-      h+="<div style='display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:"+(big?"1.15rem":".9rem")+"'><span>"+esc(psFirmName(f))+"</span><span style='font-family:IBM Plex Mono,monospace;font-weight:700;"+(w!=null&&w===best?"color:var(--gold)":"")+"'>"+(o?esc(psOfferTxt(C.V,C.mode,o,d)):"—")+"</span></div>"; });
+    h+="<div style='flex:1 1 260px;min-width:0'><div style='font-weight:800;font-size:"+(big?"1.6rem":"1.1rem")+";margin-bottom:6px;padding-bottom:4px;border-bottom:2px solid var(--line)'>Offers for "+d+"</div>";
+    fs.forEach(f=>{ if(f===exceptFid) return; const o=offers[f]; const w=o?psSal(C.V,C.mode,o,d):null, top=w!=null&&w===best;
+      const role=o&&o[d] ? PS_TRK[o[d].t==="Mgr"?"Mgr":"Ana"] : null;
+      h+="<div style='display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0;border-bottom:1px solid var(--line);font-size:"+(big?"1.45rem":"1.02rem")+"'>"+
+        "<span style='font-weight:600'>"+esc(psFirmName(f))+"</span>"+
+        (role ? "<span style='white-space:nowrap"+(top?";color:var(--gold)":"")+"'>"+esc(role)+" · salary <b style='font-family:IBM Plex Mono,monospace;font-size:1.12em'>"+w+"</b>"+(top?" ★":"")+"</span>"
+              : "<span class='mut'>no offer yet</span>")+"</div>"; });
     h+="</div>"; });
   return "<div style='display:flex;gap:18px;flex-wrap:wrap'>"+h+"</div>";
 }
@@ -5367,7 +5371,7 @@ function psPresentBody(){
     w.append(Object.assign(el("div"),{textContent:"Pay: Manager "+(C.mode==="bid"?PS_BAND.Mgr.join("–"):C.V.salM)+" · Analyst "+(C.mode==="bid"?PS_BAND.Ana.join("–"):C.V.salA),style:"font-weight:600"}));
   } else {
     const fd=el("div"); fd.style.cssText="font-family:'IBM Plex Mono',monospace;font-size:"+(C.mode==="bid"?"1.6rem":"3rem")+";font-weight:700"; fd.append(psLive("firmsdone"), document.createTextNode(" / "+psActiveFids().length+(C.mode==="bid"?" firms done":"")));
-    if(C.mode==="bid"){ w.append(big("Live job board")); w.append(psLive("board",{big:"1"})); w.append(el("div","sm mut","Gold = top salary for that degree — it wins every candidate with that degree."), fd); }
+    if(C.mode==="bid"){ w.append(big("Live job board")); w.append(psLive("board",{big:"1"})); w.append(el("div","sm mut","Gold ★ = top salary for that degree — it wins every candidate with that degree."), fd); }
     else { w.append(big("Recruiters are deciding")); w.append(fd, el("div","sm mut","firms have pressed Done · offers stay hidden until the reveal")); }
     w.append(psVariantBanner(C));
   }
