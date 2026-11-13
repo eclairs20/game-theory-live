@@ -16,6 +16,7 @@
   --ink:#17222F; --ink-2:#39485A; --muted:#66788C; --faint:#93A3B5;
   --line:#D9E1EB; --line-2:#E7EDF4;
   --accent:#0E7A6E; --accent-ink:#0B5B52; --accent-wash:#E1F1EE;
+  --review:#4F46E5; --review-wash:#ECEDFD;
   --gold:#A8710F; --gold-wash:#F6ECD8;
   --good:#2C7A54; --good-wash:#E2F0E7;
   --bad:#BB4632; --bad-wash:#F6E4DF;
@@ -29,7 +30,7 @@
     --bg:#0C131C; --surface:#131E2A; --surface-2:#182634; --raised:#1B2836;
     --ink:#E9EFF6; --ink-2:#B9C7D6; --muted:#8598AB; --faint:#5E7085;
     --line:#26333F; --line-2:#213040;
-    --accent:#3BB9A9; --accent-ink:#8FE0D4; --accent-wash:#123029;
+    --accent:#3BB9A9; --accent-ink:#8FE0D4; --accent-wash:#123029; --review:#9097F7; --review-wash:#1D1F3D;
     --gold:#D6A548; --gold-wash:#2E2415;
     --good:#4FB483; --good-wash:#16301F; --bad:#DE7A66; --bad-wash:#331A15; --warn:#D8A23E;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px rgba(0,0,0,.4);
@@ -40,7 +41,7 @@
   --bg:#0C131C; --surface:#131E2A; --surface-2:#182634; --raised:#1B2836;
   --ink:#E9EFF6; --ink-2:#B9C7D6; --muted:#8598AB; --faint:#5E7085;
   --line:#26333F; --line-2:#213040;
-  --accent:#3BB9A9; --accent-ink:#8FE0D4; --accent-wash:#123029;
+  --accent:#3BB9A9; --accent-ink:#8FE0D4; --accent-wash:#123029; --review:#9097F7; --review-wash:#1D1F3D;
   --gold:#D6A548; --gold-wash:#2E2415;
   --good:#4FB483; --good-wash:#16301F; --bad:#DE7A66; --bad-wash:#331A15; --warn:#D8A23E;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px rgba(0,0,0,.4);
@@ -197,7 +198,8 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 
 /* The console is a single full-width column: a full-width exercise picker (TOP), then the live
    main panel (Parameters stacks at its top when a game is chosen). No side rail. */
-.console{display:grid; grid-template-columns:1fr; grid-template-areas:"top" "main"; gap:20px; align-items:start}
+.console{display:grid; grid-template-columns:1fr; grid-template-areas:"sw" "top" "main"; gap:20px; align-items:start}
+.console>.console-sw{grid-area:sw}
 .console>.console-top{grid-area:top}
 .console>.stack{grid-area:main}
 /* In the picker card the exercise tiles lay out as a responsive grid. */
@@ -577,7 +579,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-13.007";
+const APP_VERSION = "2026-11-13.008";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -621,7 +623,7 @@ const DEFAULT_CONFIG = {
   adfin:{ rounds:6 },                  // Advertising Game (Finite): a fixed, announced number of rounds
   robot:{ capMin:5, joinMin:5, buildMin:10, teamMin:4, teamMax:6, teams:15, rounds:100, disc:5, house:true },   // Axelrod Tournament: captains / join / build timers (min), min / max team size, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
   bayes:{ pOdd:25, rounds:20 },          // Bayesian Game: % chance each round is Odd-Even (else the Matching Game); rounds per match
-  placement:{ mode:"fixed", variant:"A", firms:5, firmMax:3 },   // Placement Season: "fixed" salaries (role per degree, dealt batches) or "bid" (role + salary in pay bands, shared pool); variant A Classic / B MBA builds skills / C Strong batch / D Online MBA; firms and max recruiters per firm
+  placement:{ mode:"fixed", variant:"A", firms:5, firmMax:3, recMin:3 },   // Placement Season: "fixed" salaries (role per degree, dealt batches) or "bid" (role + salary in pay bands, shared pool); variant A Classic / B MBA builds skills / C Strong batch / D Online MBA; firms and max recruiters per firm
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -1037,7 +1039,7 @@ async function openMeeting(patch){
   // Placement Season: a new round starts with candidates choosing — or with firm sign-up when this meeting has no firms yet.
   if(control.activeGame==="placement"){
     const rk="S"+(p.session!=null?p.session:curSession())+curMSection()+"-placement-"+(p.round!=null?p.round:(control.round||1));
-    if(!(control.ps && control.ps.rk===rk && control.ps.mode)){ const R0=psCfgRaw();
+    if(!(control.ps && control.ps.rk===rk && control.ps.mode)){ const R0 = (p.config && p.config.placement) ? psCfgOf(Object.assign({}, cfg("placement"), p.config.placement)) : psCfgRaw();
       p.ps={rk, step: (control.ps && control.ps.rk===rk) ? (control.ps.step||"choose") : ((psCtx===psBase(rk) && psActiveFids().length) ? "choose" : "roles"), mode:R0.mode, variant:R0.v}; }
   }
   return await writeControl(p);
@@ -1056,6 +1058,65 @@ function liveSess(){ const t=todaySession(curMSection()); return t!=null ? t : c
 function todayStarted(){ return liveSess()===curSession(); }
 function liveRound(){ return todayStarted() ? ((control&&control.round)||1) : 1; }   // a new meeting starts at round 1
 const isOpenNow = ()=> !!(control && control.phase==="open");
+/* ── Run / Review (instructor console) ──
+   Run always shows ONE round: the newest round of the selected game + section today — the only one that can still
+   change. Every earlier round is history and lives in Review (read-only, every game). The switch is per device. */
+let consoleView = (()=>{ try{ return localStorage.getItem("gtl_cview")==="review" ? "review" : "run"; }catch(e){ return "run"; } })();
+let reviewGame=null;
+function setConsoleView(v){ consoleView=v; try{ localStorage.setItem("gtl_cview", v); }catch(e){} if(v==="run") presentMode=false; render(); window.scrollTo(0,0); }
+/* Discarded rounds (control.discarded = {<roundKey>: ts}): records kept but left out of every result, count,
+   leaderboard and debrief (isDone says no). Restorable from Review → Manage data. */
+function discardedMap(){ return (control && control.discarded) || {}; }
+function isDiscarded(rk){ return !!(rk && discardedMap()[rk]); }
+let _ignoreDiscard=false;   // set only while Review draws a discarded meeting as it was
+/* The next unused round of game g in today's meeting of section sec (1 if none). Discarded rounds count as used,
+   so a new round never reuses — and overwrites — an old record key. */
+function freshRound(g, sec){
+  const t=todaySession(sec), sess = t!=null ? t : curSession(), pre="S"+sess+sec+"-"+g+"-"; let mx=0;
+  const see=k=>{ if(k && k.indexOf(pre)===0){ const r=+k.slice(pre.length); if(r>mx) mx=r; } };
+  Object.values(allSubs).forEach(x=>{ if(x) see(x.roundKey); }); Object.keys(discardedMap()).forEach(see);
+  return mx+1;
+}
+/* Does Run's current round hold anything? (records, or an Axelrod tournament under way) */
+function runHasData(){ return subs.some(x=>x && !x.bot) || !!(control && control.activeGame==="robot" && control.robot && control.robot.rk===curKey); }
+function runLabel(){ return ((GAMES[control.activeGame]||{}).name||"")+" · "+sessLabel(curSession())+(curMSection()?"."+curMSection():"")+" · Round "+control.round; }
+/* Undo for moving Run on (Next round / another game / another section / a mode switch) — local to this console,
+   offered until the new round gets its first record. */
+let _runUndo=null;
+function runSnap(){ const c=control||{}; return {activeGame:c.activeGame||null, section:c.section||"", round:c.round||1, session:c.session||1, phase:c.phase||"waiting", ps:c.ps||null, robot:c.robot||null, config:c.config||null}; }
+async function runMove(question, doIt){
+  if(!control) return false;
+  const had=!!control.activeGame && runHasData(), snap=runSnap(), label=control.activeGame?runLabel():"", fromKey=curKey;
+  if(had && question && !confirm(question+"\n\n“"+label+"” moves to Review (read-only)."+(control.phase==="revealed"?" Students still on its results will see the new screen instead.":""))) return false;
+  const ok=await doIt(); if(ok===false) return false;
+  if(had) _runUndo={snap, label, fromKey};
+  render(); return true;
+}
+function runUndoOn(){ if(!_runUndo) return false; if(curKey===_runUndo.fromKey || runHasData()){ _runUndo=null; return false; } return true; }
+async function runUndo(){ const u=_runUndo; if(!u) return; _runUndo=null; const x=u.snap;
+  await writeControl({activeGame:x.activeGame, section:x.section, round:x.round, session:x.session, phase:x.phase, ps:x.ps, robot:x.robot, config:x.config});
+  toast("Back to "+u.label); }
+/* Next round → from Run (console or projector). Moving on from a round that wasn't revealed asks first. */
+async function runNextRound(){
+  if(control.phase!=="revealed" && runHasData() && !confirm("Round "+control.round+" hasn't been revealed. Move on to Round "+(control.round+1)+" anyway?\n\nRound "+control.round+" stays as played, in Review.")) return false;
+  return runMove(null, ()=>openMeeting({round:control.round+1}));
+}
+/* Discard Run's round: its records are set aside (kept, not counted) and Run moves to a fresh round. */
+async function discardRound(){
+  if(!control || !control.activeGame || isOpenNow()) return;
+  const rk=curKey, n=subs.filter(x=>x&&!x.bot).length, label=runLabel(), nr=Math.max(freshRound(control.activeGame, curMSection()), control.round+1);
+  if(!confirm("Discard “"+label+"”?\n\nIts "+n+" record"+(n===1?"":"s")+" are set aside — not counted in results, leaderboards or debriefs — and Run moves to Round "+nr+", set up and empty.\n\nYou can restore it from Review → Manage data.")) return;
+  const d=Object.assign({}, discardedMap()); d[rk]=Date.now();
+  const patch={discarded:d, round:nr, phase:"waiting"};
+  if(control.robot && control.robot.rk===rk) patch.robot=null;
+  _runUndo=null;
+  if(await writeControl(patch)) toast("Discarded "+label+" — restore it from Review if needed");
+}
+async function setDiscarded(rk, on){
+  const d=Object.assign({}, discardedMap()); if(on) d[rk]=Date.now(); else delete d[rk];
+  await writeControl({discarded: Object.keys(d).length ? d : null});
+  toast(on ? "Discarded — left out of results" : "Restored — counted in results again");
+}
 /* A round left OPEN from an earlier session (nobody closed it last class) would keep taking submissions
    into that past meeting. Close it the first time an instructor console loads on a new day — once the
    schedule is loaded, and never today's round (a round opened today always has today's schedule row). */
@@ -1311,7 +1372,9 @@ function subMoves(s){
   return s.seq ? String(s.seq).split(",").filter(x=>x!=="").length : null;
 }
 function isDone(s){
-  if(!s) return false; if(s.done!==false) return true;
+  if(!s) return false;
+  if(!_ignoreDiscard && control && control.discarded && s.roundKey && control.discarded[s.roundKey]) return false;   // a discarded round
+  if(s.done!==false) return true;
   if(!s.partner || !s.roundKey) return false;
   const n=subMoves(s); if(!n) return false;
   if(s.rounds && n>=+s.rounds) return true;
@@ -1579,7 +1642,7 @@ function viewKey(){
     control?control.activeGame:"", control?control.phase:"", control?control.round:"",
     control?control.session:"", control?control.section:"", control&&control.hold?"hold":"", myCourses().length,
     curStudentTab(), practiceGame||"", lessonMode||"", hubOn()?"hub":"", diagAsId||"",
-    control&&control.activeGame==="robot"?rbPhase():"", control&&control.activeGame==="placement"?psStep():""].join("|");
+    control&&control.activeGame==="robot"?rbPhase():"", control&&control.activeGame==="placement"?psStep()+(psTimeUp()?"/up":""):""].join("|");
 }
 let lastViewKey=null, presentMode=false, lessonMode=null, studentTab=null, practiceGame=null, studentResK=null;
 let rollMode=false, rollSection=null, rollSearch="", _rollScroll=0;   // instructor manual roll-call page
@@ -1612,7 +1675,7 @@ function render(){
   const app = $("#app");
   // Axelrod Tournament teams listener: the instructor console (setting up) and students on the live class tab.
   const wantRobot = !!(control && control.activeGame==="robot" && control.phase!=="revealed" && curKey && !diagOn()
-    && (isTeacher() ? (presentMode || !histSel) : (control.phase==="open" && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class")));
+    && (isTeacher() ? (presentMode || consoleView==="run") : (control.phase==="open" && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class")));
   if(wantRobot) rbEnsure(curKey); else if(rbCtx) rbDetach();
   // Placement Season firms (meeting-level live node): instructor console, and students on the live class tab.
   const wantPs = !!(control && control.activeGame==="placement" && curKey
@@ -1625,7 +1688,7 @@ function render(){
   // Instructor "collection" view — full-screen, projected to the class. While submissions are open it shows
   // participation only (never results); after Reveal it shows the class-level results (presentResults — no
   // student names, no personal cards). Only drops if the console context is gone.
-  if(presentMode && !(isTeacher() && control && control.activeGame)) presentMode=false;
+  if(presentMode && !(isTeacher() && control && (control.activeGame || (consoleView==="review" && histSel)))) presentMode=false;
   if(presentMode){ app.replaceChildren(presentView()); return; }
   // Interactive lessons — instructor-launched, or student-launched from the hub (Lessons on).
   if(lessonMode && !isTeacher() && !(hubOn() && lessonVisible(lessonMode))) lessonMode=null;
@@ -1670,7 +1733,8 @@ function render(){
   lastViewKey=key;
   app.replaceChildren(next);
   _drawn.subs=studentSubsSig(); _drawn.rb=rbViewSig(); _drawn.ctrl=studentCtrlSig(); _drawn.ps=psViewSig();   // what this screen now reflects (LIVE-UPDATE RENDERING RULE)
-  if(control && control.activeGame==="robot") _rbLastPh=rbPhase();   // the 1 s ticker then redraws only when a timer actually flips the phase
+  if(control && control.activeGame==="robot") _rbLastPh=rbPhase();
+  if(control && control.activeGame==="placement") _psTU=psTimeUp();   // the 1 s ticker then redraws only when a timer actually flips the phase
 }
 function connectingScreen(){
   const c=el("div","card stage center"); c.style.padding="clamp(30px,6vw,60px)";
@@ -3847,6 +3911,10 @@ function rbTeamList(){ return Object.entries(rbTeams).filter(([,t])=>t&&t.member
 /* Every second: refresh countdowns in place (no re-render), re-render on a phase change, let the
    instructor console lock teams when their timer runs out, and keep student presence fresh. */
 function rbTick(){
+  if(control && control.activeGame==="placement"){   // G12 recruiter timer
+    document.querySelectorAll("[data-pscd]").forEach(n=>{ n.textContent=rbFmtLeft(+n.dataset.pscd - srvNow()); });
+    const tu=psTimeUp(); if(tu!==_psTU){ _psTU=tu; render(); }
+    _rbLastPh=null; return; }
   if(!control || control.activeGame!=="robot"){ _rbLastPh=null; return; }
   const ph=rbPhase();
   document.querySelectorAll("[data-cd]").forEach(n=>{ n.textContent=rbFmtLeft(+n.dataset.cd - srvNow()); });
@@ -4948,8 +5016,19 @@ async function psCopyPrevFirms(){
   const up={}; Object.keys(P.firms).forEach(fid=>{ const f=P.firms[fid]; up["pf/"+fid]=Object.assign({}, f, {ts:f.ts||srvNow()}); Object.keys(f.members).forEach(k=>{ up["pr/"+k]=fid; }); });
   try{ await fb.ref(LIVE_ROOT(psCtx)).update(up); toast("Copied "+Object.keys(P.firms).length+" firms from the last meeting"); }catch(e){ toast("Couldn't copy the firms"); }
 }
-async function psSetStep(step){ const rk=curKey, o=psCtl()||{}, R0=psCfgRaw();
-  await writeControl({ps:{rk, step, mode:o.mode||R0.mode, variant:o.variant||R0.v}}); }
+async function psSetStep(step){ const rk=curKey, o=psCtl()||{}, R0=psCfgRaw(), mins=+cfg("placement").recMin||0;
+  const ps={rk, step, mode:o.mode||R0.mode, variant:o.variant||R0.v};
+  if(step==="recruit"){ const keep = o.step==="recruit" && o.recEnd; if(keep) ps.recEnd=o.recEnd; else if(mins>0) ps.recEnd=srvNow()+mins*60000; }
+  await writeControl({ps}); }
+/* ── Recruiter timer (step 3) ── control.ps.recEnd (server ms). When it runs out the captains' controls lock and the
+   current offers stand; the instructor still decides when to Reveal. "+1 min" extends it (or restarts it if up). */
+function psRecLeft(){ const p=psCtl(); if(!p || p.step!=="recruit" || !p.recEnd || !isOpenNow()) return null; return p.recEnd-srvNow(); }
+function psTimeUp(){ const l=psRecLeft(); return l!=null && l<=0; }
+let _psTU=false;
+function psAddTime(min){ const p=psCtl(); if(!p || p.step!=="recruit") return;
+  writeControl({ps:Object.assign({}, p, {recEnd: Math.max(p.recEnd||0, srvNow())+min*60000})}); }
+function psCountdown(style){ const p=psCtl(), s=el("span"); s.dataset.pscd=String(p&&p.recEnd||0); s.textContent=rbFmtLeft((p&&p.recEnd||0)-srvNow());
+  s.style.cssText="font-family:'IBM Plex Mono',monospace;font-weight:700;"+(style||""); return s; }
 
 /* Recruiters write a participation sub (counts them as present) and the captain's sub carries the firm's offer. */
 function psDefaultOffer(mode){ return mode==="bid" ? {MBA:{t:"Ana",w:100}, Grad:{t:"Ana",w:100}} : {MBA:{t:"Ana"}, Grad:{t:"Ana"}}; }
@@ -4970,14 +5049,14 @@ function psEnsureParticipation(){
   else psSaveFirmSub(mf.fid, false, null);
 }
 function psSetOffer(deg, patch){
-  const mf=psMyFirm(); if(!mf || !mf.cap) return;
+  const mf=psMyFirm(); if(!mf || !mf.cap || psTimeUp()) return;
   const C=psCfg(), rk=curKey, o=JSON.parse(JSON.stringify(psMyOffer()||psDefaultOffer(C.mode)));
   o[deg]=Object.assign({}, o[deg], patch);
   if(C.mode==="bid"){ const [lo,hi]=PS_BAND[o[deg].t]; o[deg].w=Math.min(hi, Math.max(lo, +o[deg].w||lo)); }
   _psOffer[rk]=o; psSaveFirmSub(mf.fid, true, o); render();
 }
 /* The captain's Done / Edit: marks the firm's offer as final (the instructor sees "firms done") or reopens it. */
-function psLockOffer(lock){ const mf=psMyFirm(); if(!mf || !mf.cap) return; const o=psMyOffer()||psDefaultOffer(psCfg().mode);
+function psLockOffer(lock){ const mf=psMyFirm(); if(!mf || !mf.cap || psTimeUp()) return; const o=psMyOffer()||psDefaultOffer(psCfg().mode);
   _psOffer[curKey]=o; psSaveFirmSub(mf.fid, true, o, lock).then(()=>render()); }
 
 /* ── the round's outcome, from subs only ── */
@@ -5081,9 +5160,12 @@ function psProdTable(V, mode){
 /* "This round" banner — what the variant means, in plain words, on every candidate, recruiter and projector screen. Gold
    and tagged NEW when the variant differs from the previous round of this meeting (with the old numbers alongside). */
 const PS_VAR_ICON={A:"🎓", B:"🧠", C:"📈", D:"💻"};
+/* The latest earlier round of this meeting that has records and isn't discarded (rounds can skip numbers). */
+function psPrevRk(rk){ const p=parseRoundKey(rk); if(!p) return null;
+  for(let r=p.round-1; r>=1; r--){ const k="S"+p.session+p.section+"-placement-"+r; if(!isDiscarded(k) && Object.values(allSubs).some(x=>x&&x.roundKey===k)) return k; }
+  return null; }
 function psPrevVariant(){
-  const p=parseRoundKey(curKey); if(!p || p.round<=1) return null;
-  const prk="S"+p.session+p.section+"-placement-"+(p.round-1);
+  const prk=psPrevRk(curKey); if(!prk) return null;
   const s=Object.values(allSubs).find(x=>x && x.roundKey===prk && x.variant);
   return s && PS_VARIANTS[s.variant] ? s.variant : null;
 }
@@ -5291,8 +5373,7 @@ function psCandidateTable(R){
   return card;
 }
 function psLastReport(role){
-  const p=parseRoundKey(curKey); if(!p || p.round<=1) return null;
-  const prk="S"+p.session+p.section+"-placement-"+(p.round-1);
+  const prk=psPrevRk(curKey); if(!prk) return null;
   const R=psRound(Object.values(allSubs).filter(s=>s&&s.roundKey===prk)); if(!R.cands.length) return null;
   const box=el("div","note-box teal"); box.style.marginTop="12px";
   const by=d=>{ const a=R.cands.filter(s=>s.deg===d && R.res[s.studentId]); if(!a.length) return null;
@@ -5463,7 +5544,9 @@ function studentPlacement(c){
   // candidate
   if(step!=="choose"){
     const m=mySub();
-    if(m && m.pt==="C"){ c.append(h("Your choice is locked: "+m.deg)); c.append(el("p","lead","Recruiters are deciding now. Your result appears when your instructor reveals.")); c.append(psVariantBanner(C), psTypeCard(m.type, C.V, C.mode)); }
+    if(m && m.pt==="C"){ c.append(h("Your choice is locked: "+m.deg)); c.append(el("p","lead","Recruiters are deciding now. Your result appears when your instructor reveals."));
+      const lf=psRecLeft(); if(lf!=null){ const tl=el("div"); tl.style.cssText="font-size:1.1rem;margin:2px 0 6px"; tl.append(document.createTextNode(lf>0?"⏱ Recruiters have ":"⏱ Recruiting time is up"), ...(lf>0?[psCountdown(), document.createTextNode(" left")]:[])); c.append(tl); }
+      c.append(psVariantBanner(C), psTypeCard(m.type, C.V, C.mode)); }
     else { c.append(h("Choices are closed for this round")); c.append(el("p","lead","You'll be dealt a type when the next round starts.")); }
     return;
   }
@@ -5512,9 +5595,11 @@ function studentRecruiter(c, mf, C, step){
   }
   const capSub=subs.filter(s=>s.pt==="F"&&s.fid===mf.fid&&s.offer).sort((a,b)=>(b.ts||0)-(a.ts||0))[0];
   const o = mf.cap ? (psMyOffer()||psDefaultOffer(C.mode)) : (capSub||{}).offer;
-  const locked = mf.cap ? !!((mySub()||{}).lock) : !!(capSub && capSub.lock), can = mf.cap && !locked;
+  const tu=psTimeUp(), left=psRecLeft();
+  const locked = mf.cap ? !!((mySub()||{}).lock) : !!(capSub && capSub.lock), can = mf.cap && !locked && !tu;
   const nM=subs.filter(s=>s.pt==="C"&&s.deg==="MBA").length, nG=subs.filter(s=>s.pt==="C"&&s.deg==="Grad").length;
-  c.append(h(locked ? "✓ "+(mf.cap?"Done — your firm's offers are in":"Locked in by your captain") : mf.cap ? "Set your firm's offers" : "Your captain is setting the offers"));
+  c.append(h(locked ? "✓ "+(mf.cap?"Done — your firm's offers are in":"Locked in by your captain") : tu ? "⏱ Time's up — your offers stand" : mf.cap ? "Set your firm's offers" : "Your captain is setting the offers"));
+  if(left!=null && !tu){ const tl=el("div"); tl.style.cssText="font-size:1.15rem;margin:4px 0 2px"; tl.append(document.createTextNode("⏱ "), psCountdown("font-size:1.25rem"), document.createTextNode(" left for recruiters")); c.append(tl); }
   c.append(psVariantBanner(C));
   if(C.mode==="fixed"){
     const fs=psActiveFids().filter(f=>subs.some(s=>s.pt==="F"&&s.fid===f&&s.offer)).length || psActiveFids().length || 1;
@@ -5540,7 +5625,8 @@ function studentRecruiter(c, mf, C, step){
   });
   c.append(box);
   const dr=el("div"); dr.style.cssText="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:10px";
-  if(mf.cap){
+  if(tu){ dr.append(Object.assign(el("span","sm mut"),{textContent:"Recruiting time is up — your firm's current offers are used. Results come when your instructor reveals."})); }
+  else if(mf.cap){
     if(locked){ const ed=el("button","linkbtn","Edit offers"); ed.type="button"; ed.onclick=()=>psLockOffer(false);
       dr.append(Object.assign(el("span","sm mut"),{textContent:"Your instructor can see your firm is done. Need a change? You can edit until the reveal."}), ed); }
     else { const dn=el("button","btn","✓ Done — submit our offers"); dn.style.cssText="width:100%;max-width:420px;padding:13px"; dn.onclick=()=>psLockOffer(true); dr.append(dn); }
@@ -5578,6 +5664,10 @@ function psPresentBody(){
     w.append(Object.assign(el("div"),{textContent:"Pay: Manager "+(C.mode==="bid"?PS_BAND.Mgr.join("–"):C.V.salM)+" · Analyst "+(C.mode==="bid"?PS_BAND.Ana.join("–"):C.V.salA),style:"font-weight:600"}));
   } else {
     const fd=el("div"); fd.style.cssText="font-family:'IBM Plex Mono',monospace;font-size:"+(C.mode==="bid"?"1.6rem":"3rem")+";font-weight:700"; fd.append(psLive("firmsdone"), document.createTextNode(" / "+psActiveFids().length+(C.mode==="bid"?" firms done":"")));
+    const lf=psRecLeft();
+    if(lf!=null){ const tl=el("div"); tl.style.cssText="font-size:2rem;font-weight:650;font-family:Fraunces,Georgia,serif";
+      if(lf>0) tl.append(document.createTextNode("⏱ "), psCountdown("font-size:2.4rem"), document.createTextNode(" left for recruiters"));
+      else { tl.textContent="⏱ Time's up — offers are in"; tl.style.color="var(--gold)"; } w.append(tl); }
     if(C.mode==="bid"){ w.append(big("Live job board")); w.append(psLive("board",{big:"1"})); w.append(el("div","sm mut","Gold ★ = top salary for that degree — it wins every candidate with that degree."), fd); }
     else { w.append(big("Recruiters are deciding")); w.append(fd, el("div","sm mut","firms have pressed Done · offers stay hidden until the reveal")); }
     w.append(psVariantBanner(C));
@@ -5591,9 +5681,23 @@ function psConsoleCard(){
   const steps=[["roles","1 · Choose role"],["choose","2 · Candidates choose"],["recruit","3 · Recruiters decide"]];
   const sr=el("div"); sr.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0";
   const ci=open?psStageIdx():-1;
-  steps.forEach(([k,l],i)=>{ const b=el("button", step===k&&open?"btn":"ghost-btn", (i<ci?"✓ ":"")+l+(i===ci?" · NOW":"")); b.onclick=()=>psAdvance(k); if(!open){ b.disabled=true; }
-    if(i<ci){ b.style.borderColor="var(--good)"; b.style.color="var(--good)"; } sr.append(b); });
+  // Steps only move FORWARD with a tap; going back to a finished step asks first (a stray tap can't undo a step).
+  steps.forEach(([k,l],i)=>{ const b=el("button", step===k&&open?"btn":"ghost-btn", (i<ci?"✓ ":"")+l+(i===ci?" · NOW":""));
+    if(i<ci){ b.style.borderColor="var(--good)"; b.style.color="var(--good)"; b.title="Finished — tap to go back to this step (asks first)";
+      b.onclick=()=>{ if(confirm("Go back to step “"+l+"”?\n\n"+(k==="roles"?"Students can change role and firms again.":"Candidates can change their choices again; the recruiter timer stops."))) psSetStep(k); }; }
+    else if(i===ci){ b.onclick=null; b.style.cursor="default"; }
+    else b.onclick=()=>psAdvance(k);
+    if(!open){ b.disabled=true; } sr.append(b); });
   card.append(sr);
+  if(open && step==="recruit"){
+    const tr=el("div"); tr.style.cssText="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:-2px 0 6px;font-size:1.1rem";
+    const lf=psRecLeft();
+    if(lf==null) tr.append(Object.assign(el("span","mut"),{textContent:"⏱ No recruiter timer this round."}));
+    else if(lf>0) tr.append(document.createTextNode("⏱ "), psCountdown("font-size:1.3rem"), document.createTextNode(" left for recruiters"));
+    else tr.append(Object.assign(el("span"),{innerHTML:"⏱ <b>Time's up</b> — captains' offers are locked. Reveal when ready.",style:"color:var(--gold)"}));
+    const add=el("button","ghost-btn",lf==null?"Start a 1-min timer":"+1 min"); add.onclick=()=>psAddTime(1); tr.append(add);
+    card.append(tr);
+  }
   if(open){
     const tip={roles:"Everyone chooses a role on their phone: Recruiter (start and name a firm, or join one) or Candidate. Anyone who doesn\'t pick plays as a candidate. When the firms look right, press 2 · Candidates choose.",
       choose:"Candidates are dealt a type and pick Grad or MBA. Recruiters wait. When most have chosen, press 3 · Recruiters decide — choices then lock.",
@@ -6481,11 +6585,12 @@ function roundActionBar(){
   const bar=el("div","actionbar");
   const grp=el("div","ab-grp");
   grp.append(el("span","tinylabel","Round"));
-  const minus=el("button","ghost-btn","–"); minus.onclick=()=>{ if(control.round>1) writeControl({round:control.round-1,phase:"waiting"}); };
-  const rnum=el("span","rnum"); rnum.textContent=liveRound();
-  const plus=el("button","ghost-btn","+"); plus.onclick=()=>writeControl({round:control.round+1,phase:"waiting"});
-  [minus,plus].forEach(b=>{ lockIf(b, open, OPEN_LOCK("change the round")); lockIf(b, !open && !started, "Today's meeting starts at round 1 when you open submissions."); });
-  grp.append(minus,rnum,plus); bar.append(grp);
+  const rnum=el("span","rnum"); rnum.textContent=liveRound(); rnum.title="Run only ever shows the newest round. Earlier rounds are in Review.";
+  grp.append(rnum);
+  if(reviewMeetings(control.activeGame).some(m=>!(m.session===curSession() && m.round===control.round))){
+    const rl=el("button","linkbtn","Earlier rounds → Review"); rl.type="button"; rl.style.marginLeft="6px";
+    rl.onclick=()=>{ reviewGame=control.activeGame; histSel=reviewDefault(reviewGame, true); setConsoleView("review"); }; grp.append(rl); }
+  bar.append(grp);
   bar.append(el("div","ab-spacer"));
   const openBtn=el("button","btn"+(open?" neutral":""), open?"Close submissions":"Open submissions");
   // Opening a round auto-launches the class-facing collection screen (participation only).
@@ -6506,16 +6611,15 @@ function roundActionBar(){
   }
   if(control.activeGame==="placement" && open){ revealBtn.onclick=()=>psReveal(); }
   if(control.activeGame==="placement" && open) lockIf(revealBtn, psStep()!=="recruit", "Start step 3 · Recruiters decide first — the reveal comes after recruiters have made their offers.");
-  const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>openMeeting({round:control.round+1});
+  const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>runNextRound();
   lockIf(nextR, open, OPEN_LOCK("move to the next round (Reveal, then Next round)"));
   lockIf(nextR, !open && !started, "Today's meeting starts at round 1 — use Open submissions.");
   const presentBtn=el("button","ghost-btn","Present ⛶"); presentBtn.title="Show the class the full-screen collection screen (no results)";
   presentBtn.onclick=()=>{ presentMode=true; render(); };
-  const clr=el("button","ghost-btn ab-clear","Clear"); clr.title="Clear this meeting's submissions";
-  clr.onclick=()=>{ const mtg=(GAMES[control.activeGame]||{}).name+" · "+sessLabel(curSession())+(curMSection()?"."+curMSection():"")+" · Round "+control.round;
-    if(confirm("Clear all submissions for “"+mtg+"”? This also resets any in-progress card match and can't be undone.")) clearRound(); };
-  lockIf(clr, open, OPEN_LOCK("clear (Close, then Clear, then Open again)"));
-  lockIf(clr, !open && !started, "Nothing recorded in today's meeting yet. To clear an earlier meeting, open it under Analyze.");
+  const clr=el("button","ghost-btn ab-clear","Discard…"); clr.title="Set this round aside (kept, not counted) and move to a fresh round";
+  clr.onclick=()=>discardRound();
+  lockIf(clr, open, OPEN_LOCK("discard (Close first)"));
+  lockIf(clr, !open && !(started && runHasData()), "Nothing recorded in this round yet.");
   bar.append(openBtn,revealBtn,nextR,presentBtn,clr);
   return bar;
 }
@@ -6739,6 +6843,7 @@ function presentResults(g){
   return box;
 }
 function presentView(){
+  if(consoleView==="review" && histSel) return reviewPresentView();
   const g=control.activeGame, phase=control.phase, open=phase==="open", revealed=phase==="revealed";
   const wrap=el("div","present");
   const head=el("div","present-head");
@@ -6783,13 +6888,14 @@ function presentView(){
     if(g==="placement"){ const st=psStep();
       if(st==="roles"){ const b=el("button","btn","2 · Candidates choose ▶"); b.onclick=()=>psSetStep("choose"); ctr.append(b); }
       else if(st==="choose"){ const b=el("button","btn","3 · Recruiters decide ▶"); b.onclick=()=>psAdvance("recruit"); ctr.append(b); }
-      else { const b=el("button","btn gold","Reveal results"); b.onclick=()=>psReveal(); ctr.append(b); } }
+      else { const t1=el("button","ghost-btn","+1 min"); t1.onclick=()=>psAddTime(1); ctr.append(t1);
+        const b=el("button","btn gold","Reveal results"); b.onclick=()=>psReveal(); ctr.append(b); } }
     const close=el("button","btn neutral","Close submissions"); close.onclick=()=>writeControl({phase:"waiting"});
     ctr.append(close);
   } else if(revealed){
     // Results are showing here (class level) and on students' screens. Offer to hide or move on.
     const hide=el("button","btn neutral","Hide results"); hide.onclick=()=>writeControl({phase:"waiting"});
-    const nextR=el("button","btn","Next round →"); nextR.onclick=()=>openMeeting({round:control.round+1});
+    const nextR=el("button","btn","Next round →"); nextR.onclick=()=>runNextRound();
     ctr.append(hide,nextR);
   } else {
     const reveal=el("button","btn gold","Reveal results"); reveal.onclick=()=>{ doReveal(); };
@@ -6906,9 +7012,10 @@ function sessionTile(){
     } else {
       const mkSec=(val)=>{ const b=el("button","ghost-btn"); b.textContent=val; b.style.padding="6px 12px";
         if(cur===val){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
-        b.title="Section meeting now (switching starts it at Round 1; its session comes from the schedule when you open submissions)";
-        // Switching section starts that section's meeting fresh: reset the round to 1.
-        b.onclick=()=>{ if(cur!==val) writeControl({section:val, round:1, phase:"waiting"}); };
+        b.title="Section meeting now (switching lands on that section's next unused round; its session comes from the schedule when you open submissions)";
+        // Switching section starts that section's meeting on its NEXT UNUSED round (never an old, played round).
+        b.onclick=()=>{ if(cur===val) return;
+          runMove("Start Section "+val+"'s meeting", ()=>writeControl({section:val, round: control.activeGame ? freshRound(control.activeGame, val) : 1, phase:"waiting"})); };
         if(cur!==val) lockIf(b, isOpenNow(), OPEN_LOCK("switch section")); return b; };
       rsecs.forEach(s=> g2.append(mkSec(s)));
     }
@@ -7346,6 +7453,8 @@ function teacherConsole(){
 
   // TOP panel: the full-width exercise picker. No side rail — the chosen game's Parameters card
   // stacks below it, at the top of the centre panel.
+  c.append(consoleSwitch());
+  if(consoleView==="review"){ c.style.gridTemplateAreas='"sw" "main"'; c.append(reviewConsole()); return c; }
   const s1=el("div","rail-sec console-top");
   s1.append(Object.assign(el("h3"),{textContent:"Choose exercise"}));
   const gp=el("div","game-pick");
@@ -7353,7 +7462,9 @@ function teacherConsole(){
     const b=el("button","gp"+(control&&control.activeGame===k?" on":""));
     b.append(Object.assign(el("span","ic"),{textContent:GAMES[k].icon}));
     const tx=el("div"); tx.append(el("div","n",GAMES[k].name),el("div","d",GAMES[k].blurb)); b.append(tx);
-    b.onclick=()=>{ histSel=null; writeControl({activeGame:k, round:1, phase:"waiting"}); };
+    // Picking a game lands on its NEXT UNUSED round in today's meeting (never an old, played round).
+    b.onclick=()=>{ if(control && control.activeGame===k) return;
+      runMove("Switch the class to "+GAMES[k].name, ()=>writeControl({activeGame:k, round:freshRound(k, curMSection()), phase:"waiting"})); };
     lockIf(b, isOpenNow(), OPEN_LOCK("switch game"));
     gp.append(b);
   });
@@ -7404,19 +7515,14 @@ function teacherConsole(){
   const sBan=scheduleBanner(); if(sBan) main.append(sBan);
   main.append(sessionTile());
   const g=control&&control.activeGame;
-  if(histSel && histSel.game!==g) histSel=null;   // a different game is selected now
+  if(runUndoOn()){
+    const ub=el("div","note-box"); ub.style.cssText="border-color:var(--gold);background:var(--gold-wash);display:flex;gap:10px;align-items:center;flex-wrap:wrap";
+    ub.append(Object.assign(el("span"),{innerHTML:"Moved on from <b>"+esc(_runUndo.label)+"</b>. Wrong move? You can go back until this round gets its first record.",style:"flex:1 1 260px"}));
+    const ubb=el("button","btn neutral","↶ Back to it"); ubb.onclick=()=>runUndo(); ub.append(ubb); main.append(ub);
+  }
   if(g){
-    if(histSel){
-      // Viewing a past meeting: the live round controls collapse to one line, so nothing on screen can act
-      // on today's round while you look at an old one.
-      const bk=el("div","actionbar");
-      bk.append(Object.assign(el("div","sm"),{innerHTML:"<b>Viewing past results</b> (read-only)"+(isOpenNow()?" · today's round is still open for submissions":"")+".",style:"flex:1"}));
-      const b=el("button","btn neutral","← Back to today"); b.onclick=()=>{ histSel=null; render(); }; bk.append(b);
-      main.append(bk);
-    } else {
-      if(isOpenNow()) main.append(Object.assign(el("div","sm mut"),{textContent:"🔒 Submissions are open — game, section, round, settings and Clear are locked until you close them.",style:"margin:-4px 2px 0"}));
-      main.append(roundActionBar());
-    }
+    if(isOpenNow()) main.append(Object.assign(el("div","sm mut"),{textContent:"🔒 Submissions are open — game, section, settings and Discard are locked until you close them.",style:"margin:-4px 2px 0"}));
+    main.append(roundActionBar());
     const ab=analyzeBar(); if(ab) main.append(ab);
   }
   if(!g){
@@ -7424,8 +7530,6 @@ function teacherConsole(){
     w.append(el("div","eyebrow","Ready"),Object.assign(el("h2"),{textContent:"Pick an exercise to begin",style:"font-size:1.6rem;margin:8px 0"}),
       el("p","lead","Choose a game above, open submissions, and share the link. Live responses and the full analysis appear here."));
     main.append(w);
-  } else if(histSel){
-    main.append(historyPanel());
   } else if(g==="robot" && control.phase!=="revealed"){
     main.append(rbConsoleCard());
   } else if(g==="placement" && control.phase!=="revealed"){
@@ -7447,7 +7551,7 @@ function teacherConsole(){
     mon.append(Object.assign(el("p","lead"),{textContent: isOpenNow()?"Share the link and watch responses arrive. Results appear here live — for your eyes only — until you reveal.":"Click “Open submissions” when the class is ready.",style:"margin-top:8px"}));
     main.append(mon);
   }
-  if(g && !histSel && (haveRoster()||analysisSubs().length)) main.append(attendanceCard());
+  if(g && (haveRoster()||analysisSubs().length)) main.append(attendanceCard());
   c.append(main);
   return c;
 }
@@ -7741,7 +7845,7 @@ function csvCell(v){ v=(v==null?"":String(v)); return /[",\n\r]/.test(v) ? '"'+v
    analysis and long-term retention. Reads allSubs, so it spans the whole class. */
 function exportCSV(){
   const rows=Object.values(allSubs).filter(Boolean).sort((a,b)=>(a.ts||0)-(b.ts||0));
-  const head=["room","session","game","round","roundKey","email","name","id","area","section","enrolled","response","timestamp"];
+  const head=["room","session","game","round","roundKey","email","name","id","area","section","enrolled","response","timestamp","discarded"];
   const out=[head.join(",")];
   rows.forEach(s=>{
     // Identity is the per-record studentId (a real student's email, or a synthetic s_/np:/bot: id);
@@ -7755,7 +7859,7 @@ function exportCSV(){
       const ty=bgList(s,"types"), pt=bgPoints(s);
       resp=(s.role||"")+" ["+bgList(s).join(" ")+"] · games ["+ty.join(" ")+"] · points "+(pt?pt.pts+"/"+pt.L:"?")+" · vs "+(s.partnerName||"?");
     }
-    out.push([ROOM, (s.session!=null?sessLabel(s.session):""), s.game||"", (s.round!=null?s.round:""), s.roundKey||"", idEmail, s.name||"", s.sid||"", s.area||"", secOf(s), enrolled, resp, (s.ts?new Date(s.ts).toISOString():"")].map(csvCell).join(","));
+    out.push([ROOM, (s.session!=null?sessLabel(s.session):""), s.game||"", (s.round!=null?s.round:""), s.roundKey||"", idEmail, s.name||"", s.sid||"", s.area||"", secOf(s), enrolled, resp, (s.ts?new Date(s.ts).toISOString():""), isDiscarded(s.roundKey)?"yes":""].map(csvCell).join(","));
   });
   try{
     const blob=new Blob([out.join("\r\n")],{type:"text/csv;charset=utf-8"});
@@ -7800,67 +7904,187 @@ const meetDate = ts=> (ts && ts<Infinity) ? shortDate(todayISO(new Date(ts))) : 
    live round controls to a "Back to today" line; a Today chip returns. Only this game's sessions are
    listed (usually one to three), newest first. */
 function analyzeBar(){
-  const g=control.activeGame, secs=rosterSections(), today=liveSess(), eff=effScope();
-  const past=pastMeetings().filter(m=>m.game===g && m.session!==today)
-    .sort((a,b)=> (sessOrd(b.session)-sessOrd(a.session)) || (b.round-a.round));
-  if(secs.length<=1 && !past.length) return null;   // nothing to choose between
+  const secs=rosterSections(), today=liveSess(), eff=effScope();
+  if(secs.length<=1) return null;   // Run: only today's sections to choose between (older meetings live in Review)
   const card=el("div","card"); card.style.padding="12px 14px";
   const chip=(label,on,fn)=>{ const b=el("button","ghost-btn"); b.textContent=label; b.style.padding="5px 11px";
     if(on){ b.style.borderColor="var(--accent)"; b.style.color="var(--accent-ink)"; b.style.background="var(--accent-wash)"; }
     b.onclick=fn; return b; };
-  const row=(title, chips)=>{ const r=el("div","row"); r.style.cssText="gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0";
-    r.append(Object.assign(el("span","tinylabel"),{textContent:title,style:"min-width:150px"})); chips.forEach(c=>r.append(c)); return r; };
-  card.append(Object.assign(el("div","eyebrow"),{textContent:"Analyze",style:"margin-bottom:4px"}));
-  const toToday=sc=>()=>{ histSel=null; sectionScope=sc; render(); };
-  const tChips = secs.length>1
-    ? secs.map(sc=>chip("Section "+sc, !histSel && eff===sc, toToday(sc))).concat([chip("Both", !histSel && eff==="BOTH", toToday("BOTH"))])
-    : [chip("Live results", !histSel, toToday(null))];
-  card.append(row("Today · "+sessLabel(today)+" ("+shortDate(todayISO())+")", tChips));
-  const perSess={}; past.forEach(m=>{ perSess[m.session]=(perSess[m.session]||0)+1; });
-  past.forEach(m=>{
-    const ss=Object.keys(m.secs).sort();
-    const on=sc=> !!histSel && histSel.session===m.session && histSel.round===m.round && histSel.scope===sc;
-    const go=sc=>()=>{ histSel={game:g, session:m.session, round:m.round, scope:sc}; render(); };
-    const chips=ss.map(sc=>chip((sc?"Section "+sc:"Results")+" · "+m.secs[sc], on(sc), go(sc)));
-    if(ss.length>1) chips.push(chip("Both", on("BOTH"), go("BOTH")));
-    card.append(row("Past · "+sessLabel(m.session)+(meetDate(m.ts)?" ("+meetDate(m.ts)+")":"")+(perSess[m.session]>1?" · R"+m.round:""), chips));
-  });
-  if(past.length) card.append(Object.assign(el("div","sm mut"),{textContent:"Past meetings open read-only — they never change what students see.",style:"margin-top:4px"}));
+  const r=el("div","row"); r.style.cssText="gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0";
+  r.append(Object.assign(el("span","tinylabel"),{textContent:"Analyze · today "+sessLabel(today)+" ("+shortDate(todayISO())+") · round "+liveRound(),style:"min-width:150px"}));
+  const toToday=sc=>()=>{ sectionScope=sc; render(); };
+  secs.forEach(sc=>r.append(chip("Section "+sc, eff===sc, toToday(sc)))); r.append(chip("Both", eff==="BOTH", toToday("BOTH")));
+  card.append(r);
   return card;
 }
-/* Read-only results of one past meeting (histSel), shown in the results area under the Analyze bar. */
-function historyPanel(){
-  const h=histSel, c=el("div","stack");
+/* ── REVIEW mode (instructor console, every game) ──────────────────────────────────────────────────────────────
+   Read-only by design: nothing here writes to the live class (control's game / round / phase). The exercise tiles
+   become a filter, the meeting list shows every recorded session · round (today's too), and the results are drawn
+   by each game's own analysis. Manage data (discard / restore / delete / remove one record) is the only writer. */
+function consoleSwitch(){
+  const w=el("div","console-sw"); w.style.cssText="display:flex;gap:10px;align-items:center;flex-wrap:wrap";
+  const seg=el("div"); seg.style.cssText="display:inline-flex;border:1.5px solid var(--line);border-radius:12px;overflow:hidden";
+  [["run","▶ Run class"],["review","📊 Review results"]].forEach(([k,l])=>{ const b=el("button"); b.type="button"; b.textContent=l;
+    const on=consoleView===k, col=k==="run"?"var(--accent)":"var(--review)";
+    b.style.cssText="border:0;padding:9px 16px;font:inherit;font-weight:700;cursor:pointer;"+(on?"background:"+col+";color:#fff":"background:transparent;color:var(--ink)");
+    b.onclick=()=>{ if(consoleView===k) return;
+      if(k==="review"){ reviewGame=reviewGame || (control&&control.activeGame) || null; if(!histSel || histSel.game!==reviewGame) histSel=reviewDefault(reviewGame); }
+      setConsoleView(k); };
+    seg.append(b); });
+  w.append(seg);
+  w.append(Object.assign(el("span","sm mut"),{textContent: consoleView==="run" ? "Run shows only today's newest round — the one that can still change." : "Review is read-only — nothing here changes what students see."}));
+  return w;
+}
+/* Every recorded meeting of game g (incl. today's and discarded ones), newest first. */
+function reviewMeetings(g){
+  let ms; _ignoreDiscard=true; try{ ms=pastMeetings(); } finally{ _ignoreDiscard=false; }
+  return ms.filter(m=>!g || m.game===g).sort((a,b)=> (sessOrd(b.session)-sessOrd(a.session)) || (b.round-a.round));
+}
+/* The meeting Review opens on: the newest of game g (optionally skipping Run's current round), its first section. */
+function reviewDefault(g, skipCurrent){
+  const ms=reviewMeetings(g).filter(m=>!(skipCurrent && m.session===curSession() && m.round===(control&&control.round)));
+  const m=ms[0]; if(!m) return null;
+  const secs=Object.keys(m.secs).sort(), mine=curMSection();
+  return {game:g, session:m.session, round:m.round, scope: secs.indexOf(mine)>=0 ? mine : secs[0]};
+}
+function reviewConsole(){
+  const wrap=el("div","stack");
+  const band=el("div","note-box"); band.style.cssText="margin:0;border-color:var(--review);background:var(--review-wash)";
+  band.innerHTML="<b>REVIEW · read-only.</b> Pick a game and a meeting to see its results. Nothing here changes what students see — use <b>▶ Run class</b> to play.";
+  wrap.append(band);
+  if(control && control.activeGame && (isOpenNow() || runUndoOn())){
+    const live=el("div","note-box"); live.style.cssText="margin:0;border-color:var(--gold);background:var(--gold-wash);display:flex;gap:10px;align-items:center;flex-wrap:wrap";
+    live.append(Object.assign(el("span"),{innerHTML:"<b>Live now:</b> "+esc(runLabel())+(isOpenNow()?" — open for submissions.":"."),style:"flex:1 1 240px"}));
+    const bk=el("button","btn","▶ Back to Run"); bk.onclick=()=>setConsoleView("run"); live.append(bk); wrap.append(live);
+  }
+  // game filter (never touches the live class)
+  const have={}; reviewMeetings(null).forEach(m=>{ have[m.game]=(have[m.game]||0)+1; });
+  if(reviewGame && !have[reviewGame] && !GAMES[reviewGame]) reviewGame=null;
+  const s1=el("div","rail-sec console-top"); s1.style.margin="0";
+  s1.append(Object.assign(el("h3"),{textContent:"Review which game?"}));
+  const gp=el("div","game-pick");
+  Object.keys(GAMES).forEach(k=>{
+    const b=el("button","gp"+(reviewGame===k?" on":""));
+    b.append(Object.assign(el("span","ic"),{textContent:GAMES[k].icon}));
+    const tx=el("div"); tx.append(el("div","n",GAMES[k].name), el("div","d", have[k] ? have[k]+" recorded round"+(have[k]===1?"":"s") : "Nothing recorded yet")); b.append(tx);
+    if(!have[k]) b.style.opacity=".5";
+    b.onclick=()=>{ reviewGame=k; histSel=reviewDefault(k); render(); };
+    gp.append(b); });
+  s1.append(gp); wrap.append(s1);
+  if(!reviewGame){ wrap.append(Object.assign(el("div","card stage center mut"),{textContent:"Pick a game above to see its recorded meetings."})); return wrap; }
+  const ms=reviewMeetings(reviewGame);
+  if(!ms.length){ wrap.append(Object.assign(el("div","card stage center mut"),{textContent:"No recorded rounds of "+GAMES[reviewGame].name+" yet."})); return wrap; }
+  // meeting list
+  const card=el("div","card"); card.style.padding="12px 14px";
+  card.append(Object.assign(el("div","eyebrow"),{textContent:GAMES[reviewGame].name+" · recorded meetings",style:"margin-bottom:4px"}));
+  const chip=(label,on,fn,tag)=>{ const b=el("button","ghost-btn"); b.textContent=label; b.style.padding="5px 11px";
+    if(tag==="discarded"){ b.style.textDecoration="line-through"; b.style.opacity=".7"; b.title="Discarded — not counted in results"; }
+    if(on){ b.style.borderColor="var(--review)"; b.style.color="var(--review)"; b.style.background="var(--review-wash)"; }
+    b.onclick=fn; return b; };
+  const perSess={}; ms.forEach(m=>{ perSess[m.session]=(perSess[m.session]||0)+1; });
+  const today=liveSess();
+  ms.forEach(m=>{
+    const r=el("div","row"); r.style.cssText="gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0";
+    const isLive = control && control.activeGame===reviewGame && m.session===curSession() && m.round===control.round;
+    r.append(Object.assign(el("span","tinylabel"),{textContent:(m.session===today?"Today · ":"")+sessLabel(m.session)+(meetDate(m.ts)?" ("+meetDate(m.ts)+")":"")+" · R"+m.round+(isLive?" · in Run now":""),style:"min-width:190px"}));
+    const ss=Object.keys(m.secs).sort();
+    const on=sc=> !!histSel && histSel.game===reviewGame && histSel.session===m.session && histSel.round===m.round && histSel.scope===sc;
+    const go=sc=>()=>{ histSel={game:reviewGame, session:m.session, round:m.round, scope:sc}; render(); };
+    ss.forEach(sc=>{ const rk="S"+m.session+sc+"-"+reviewGame+"-"+m.round;
+      r.append(chip((sc?"Section "+sc:"Results")+" · "+m.secs[sc]+(isDiscarded(rk)?" · discarded":""), on(sc), go(sc), isDiscarded(rk)?"discarded":"")); });
+    if(ss.length>1) r.append(chip("Both", on("BOTH"), go("BOTH")));
+    card.append(r); });
+  wrap.append(card);
+  if(histSel && histSel.game===reviewGame) wrap.append(historyPanel(histSel));
+  else wrap.append(Object.assign(el("div","card stage center mut"),{textContent:"Pick a meeting above."}));
+  return wrap;
+}
+/* The records of one reviewed meeting h = {game, session, round, scope}. A single discarded section is drawn as
+   it was (its records ignore the discard); "Both" counts only what isn't discarded. */
+function histData(h){
   const inMeeting=s=>{ const pk=s&&parseRoundKey(s.roundKey); return pk && pk.game===h.game && pk.session===h.session && pk.round===h.round ? pk : null; };
-  const all=Object.values(allSubs).filter(s=> s && isDone(s) && !s.bot && inMeeting(s));
+  const rk = h.scope==="BOTH" ? null : "S"+h.session+(h.scope||"")+"-"+h.game+"-"+h.round;
+  const disc = !!(rk && isDiscarded(rk));
+  let all; _ignoreDiscard=disc; try{ all=Object.values(allSubs).filter(s=> s && isDone(s) && !s.bot && inMeeting(s)); } finally{ _ignoreDiscard=false; }
   const secs=[...new Set(all.map(s=>inMeeting(s).section))].sort();
   const list=all.filter(s=> h.scope==="BOTH" || inMeeting(s).section===h.scope);
   const ts=list.reduce((a,s)=>Math.min(a, s.ts||Infinity), Infinity);
   const scLbl = h.scope==="BOTH" ? " · "+secs.join("+")+" combined" : h.scope ? "."+h.scope : "";
   const title=((GAMES[h.game]||{}).name||h.game)+" · "+sessLabel(h.session)+scLbl+(meetDate(ts)?" · "+meetDate(ts):"")+" · Round "+h.round;
+  return {list, secs, ts, scLbl, title, rk, disc};
+}
+/* Draw a meeting's analysis, honouring the discard flag while drawing (each game's analysis re-checks isDone). */
+function histAnalysis(h, D, teacher){
+  _ignoreDiscard=D.disc;
+  try{ return analysisBody(h.game, D.list, teacher); }
+  catch(e){ try{ console.error(e); }catch(_){} return Object.assign(el("div","note-box"),{textContent:"Couldn't draw these results ("+String(e&&e.message||e).slice(0,120)+")."}); }
+  finally{ _ignoreDiscard=false; }
+}
+/* Read-only results of one recorded meeting (Review). */
+function historyPanel(h){
+  h=h||histSel; const c=el("div","stack"), D=histData(h);
+  const isLiveOpen = !!(D.rk && D.rk===curKey && isOpenNow());
   const head=el("div","card stage");
-  head.append(el("div","eyebrow gold","Past results · read-only"),
+  head.append(el("div","eyebrow","Review · read-only"+(D.disc?" · DISCARDED":"")),
     Object.assign(el("h2"),{textContent:(GAMES[h.game]||{}).name||h.game,style:"font-size:1.7rem;margin-top:4px"}),
-    Object.assign(el("div","sm mut"),{textContent:sessLabel(h.session)+scLbl+(meetDate(ts)?" · "+meetDate(ts):"")+" · Round "+h.round+" · "+list.length+" response"+(list.length===1?"":"s"),style:"margin-top:2px"}));
+    Object.assign(el("div","sm mut"),{textContent:sessLabel(h.session)+D.scLbl+(meetDate(D.ts)?" · "+meetDate(D.ts):"")+" · Round "+h.round+" · "+D.list.length+" response"+(D.list.length===1?"":"s"),style:"margin-top:2px"}));
+  const acts=el("div"); acts.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px";
+  const pj=el("button","btn","📽 Project this"); pj.title="Show these results full-screen on the projector (class level, no names). The live class is not touched.";
+  pj.onclick=()=>{ presentMode=true; render(); };
+  lockIf(pj, isLiveOpen, "This round is open for submissions right now — its results stay hidden until you reveal it in Run.");
+  lockIf(pj, !D.list.length, "Nothing recorded to show.");
+  acts.append(pj); head.append(acts);
+  if(D.disc) head.append(Object.assign(el("div","note-box"),{innerHTML:"<b>Discarded</b> — these records are kept but left out of every result, leaderboard and debrief. Restore them under Manage data below.",style:"margin-top:10px"}));
   c.append(head);
-  if(!list.length){ c.append(Object.assign(el("div","card stage center mut"),{textContent:"No submissions recorded for this meeting."})); }
+  if(!D.list.length){ c.append(Object.assign(el("div","card stage center mut"),{textContent:"No submissions recorded for this meeting."})); }
   else {
-    c.append(analysisBody(h.game, list, true));
-    const who=el("div","card stage"); who.append(el("div","eyebrow","Who submitted"), submittedTable(list,{removable:true})); c.append(who);
+    c.append(histAnalysis(h, D, true));
+    const who=el("div","card stage"); who.append(el("div","eyebrow","Who submitted"), submittedTable(D.list,{removable:!isLiveOpen})); c.append(who);
   }
-  // Clear exactly this meeting (one section's record key), with a confirmation that names it.
-  const danger=el("div","card stage");
-  if(h.scope==="BOTH"){ danger.append(Object.assign(el("div","sm mut"),{textContent:"To clear a meeting, pick one section in Analyze — each section's meeting is cleared separately."})); }
+  // Manage data — the only writers in Review, each behind a confirmation that names the meeting.
+  const md=el("div","card stage");
+  md.append(el("div","eyebrow","Manage data"));
+  if(h.scope==="BOTH"){ md.append(Object.assign(el("div","sm mut"),{textContent:"Pick one section to discard, restore or delete its records — each section's meeting is separate.",style:"margin-top:6px"})); }
+  else if(isLiveOpen){ md.append(Object.assign(el("div","sm mut"),{textContent:"This round is open for submissions in Run — close it there first.",style:"margin-top:6px"})); }
   else {
-    const rk="S"+h.session+(h.scope||"")+"-"+h.game+"-"+h.round;
-    const nAll=Object.values(allSubs).filter(s=>s&&s.roundKey===rk).length;
-    const b=el("button","ghost-btn ab-clear","Clear this meeting…");
-    b.onclick=async()=>{ if(!confirm("Permanently delete all "+nAll+" submission"+(nAll===1?"":"s")+" for “"+title+"”?\n\nThis can't be undone.")) return;
-      await clearMeeting(rk); histSel=null; render(); };
-    danger.append(b, Object.assign(el("div","sm mut"),{textContent:"Deletes every submission recorded for "+title+".",style:"margin-top:6px"}));
+    const rk=D.rk, nAll=Object.values(allSubs).filter(s=>s&&s.roundKey===rk).length, isRun=(rk===curKey);
+    const row=el("div"); row.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px";
+    if(D.disc){ const rs=el("button","btn","Restore — count it again"); rs.onclick=()=>{ if(confirm("Restore “"+D.title+"”?\n\nIts records count in results, leaderboards and debriefs again.")) setDiscarded(rk,false); }; row.append(rs); }
+    else { const ds=el("button","ghost-btn","Discard…"); ds.title="Keep the records but leave them out of all results";
+      ds.onclick=()=>{ if(isRun){ discardRound(); return; }
+        if(confirm("Discard “"+D.title+"”?\n\nIts "+nAll+" record"+(nAll===1?"":"s")+" are kept but left out of results, leaderboards and debriefs. You can restore them here.")) setDiscarded(rk,true); };
+      row.append(ds); }
+    const del=el("button","ghost-btn ab-clear","Delete permanently…");
+    del.onclick=async()=>{ if(!confirm("Permanently delete all "+nAll+" submission"+(nAll===1?"":"s")+" for “"+D.title+"”?\n\nThis can't be undone.")) return;
+      if(!confirm("Really delete them for good? (Discard keeps them and can be undone.)")) return;
+      await clearMeeting(rk); if(isDiscarded(rk)) await setDiscarded(rk,false); histSel=reviewDefault(h.game); render(); };
+    row.append(del);
+    md.append(row, Object.assign(el("div","sm mut"),{textContent:"Discard keeps the records and can be undone. Delete permanently removes every record of "+D.title+(isRun?" — this is the round Run is on; afterwards it can be played again from scratch.":"."),style:"margin-top:6px"}));
   }
-  c.append(danger);
+  c.append(md);
   return c;
+}
+/* Projector view of a reviewed meeting (Review → 📽 Project this): class-level results only, never names. */
+function reviewPresentView(){
+  const h=histSel, D=histData(h), wrap=el("div","present");
+  const head=el("div","present-head");
+  const cn=courseName(); if(cn) head.append(el("div","present-course",cn));
+  head.append(el("div","present-game",(GAMES[h.game]||{}).name||h.game),
+    el("div","present-meta",sessLabel(h.session)+D.scLbl+(meetDate(D.ts)?" · "+meetDate(D.ts):"")+" · Round "+h.round+" · Results"));
+  wrap.append(head);
+  const body=el("div","present-body"); body.style.alignItems="flex-start";
+  const box=el("div"); box.style.cssText="flex:1 1 100%;min-width:0;max-width:1240px;margin:0 auto;text-align:left";
+  box.append(Object.assign(el("div","present-numlabel"),{textContent:D.list.length+" "+(D.list.length===1?"response":"responses")+". "+revealNarr(h.game),style:"text-align:center;margin:0 0 14px"}));
+  _presenting=true; try{ box.append(histAnalysis(h, D, false)); } finally{ _presenting=false; }
+  body.append(box); wrap.append(body);
+  const sk="rev|"+(D.rk||h.game+h.session+h.round+h.scope);
+  if(_presScroll.k===sk){ const y=_presScroll.y; setTimeout(()=>{ if(wrap.isConnected) wrap.scrollTop=y; },0); } else _presScroll={k:sk, y:0};
+  wrap.addEventListener("scroll",()=>{ if(_presScroll.k===sk) _presScroll.y=wrap.scrollTop; });
+  const ctr=el("div","present-controls");
+  const fs=el("button","ghost-btn","⛶ Fullscreen"); fs.onclick=toggleFullscreen;
+  const ex=el("button","btn neutral","← Back to Review"); ex.onclick=()=>{ presentMode=false; render(); };
+  ctr.append(fs, ex); wrap.append(ctr);
+  return wrap;
 }
 /* Delete one meeting's records (by its record key) — any meeting, not just the live one. Also wipes its
    live pairing node, like clearRound. */
@@ -7868,6 +8092,7 @@ async function clearMeeting(rk){
   const ks=Object.keys(allSubs).filter(k=>allSubs[k] && allSubs[k].roundKey===rk);
   let n=0; for(const k of ks){ try{ await fb.ref(SUBS_PATH()+"/"+k).remove(); n++; }catch(e){} }
   try{ await fb.ref(LIVE_ROOT(rk)).remove(); }catch(e){}
+  if(control && control.robot && control.robot.rk===rk) await writeControl({robot:null});
   toast(n ? ("Cleared "+n+" submission"+(n===1?"":"s")) : "Nothing to clear");
 }
 /* Instructor: delete ONE student's record (e.g. someone dealt into the wrong section's meeting). Confirms with the
@@ -7981,16 +8206,28 @@ function paramEditor(){
       wrap.append(nb); }
     wrap.append(Object.assign(el("div","tinylabel"),{textContent:"Recruiting mode"}));
     const mr=el("div","row"); mr.style.cssText="gap:8px;flex-wrap:wrap;margin-top:4px";
-    [["fixed","Fixed salaries"],["bid","Bidding war"]].forEach(([k,l])=>{ const b=el("button","ghost-btn"+(C.mode===k?" hold-on":""),l); b.onclick=()=>{ if(C.mode!==k) setK("mode",k); }; mr.append(b); });
+    // Mode / variant: free while nothing is recorded in Run's round; greyed while a round is being played; after
+    // Reveal a change STARTS THE NEXT ROUND (after a confirmation) — a round's settings never change under it.
+    const played=runHasData(), rev=control.phase==="revealed", rd=control.round;
+    const chg=(k,v)=>{
+      if(!played){ setK(k,v); const pc=psCtl(); if(pc && pc.mode){ const np=Object.assign({},pc); if(k==="mode") np.mode=v; else np.variant=v; writeControl({ps:np}); } return; }
+      const nc=Object.assign({},(control.config&&control.config[g])||{}); nc[k]=v; const conf=Object.assign({},control.config); conf[g]=nc;
+      const A=psCfgOf(Object.assign({}, cfg(g), nc));
+      if(!confirm("Switch to "+MD(A.mode)+" · "+A.v+" "+A.V.name+" and start Round "+(rd+1)+" now?\n\nRound "+rd+" stays as played ("+MD(L.mode)+" · "+L.v+") and moves to Review."+(A.mode!==L.mode?" The recruiter leaderboard restarts for "+MD(A.mode).toLowerCase()+".":""))) return;
+      runMove(null, ()=>openMeeting({round:rd+1, config:conf})); };
+    const lockWhy="Round "+rd+" is being played — reveal it (or discard it) first; a switch then starts Round "+(rd+1)+".";
+    [["fixed","Fixed salaries"],["bid","Bidding war"]].forEach(([k,l])=>{ const b=el("button","ghost-btn"+(C.mode===k?" hold-on":""),l); b.onclick=()=>{ if(C.mode!==k) chg("mode",k); };
+      if(C.mode!==k) lockIf(b, played && !rev, lockWhy); mr.append(b); });
     wrap.append(mr);
     wrap.append(Object.assign(el("div","tinylabel"),{textContent:"Variant",style:"margin-top:10px"}));
     const vr=el("div","row"); vr.style.cssText="gap:8px;flex-wrap:wrap;margin-top:4px";
     Object.keys(PS_VARIANTS).forEach(k=>{ const V=PS_VARIANTS[k]; const b=el("button","ghost-btn"+(C.v===k?" hold-on":""),k+" · "+V.name);
       b.title="H share "+V.q+"% · MBA cost H "+V.cH+" / L "+V.cL+" · Manager "+V.salM+" / Analyst "+V.salA;
       if(C.mode==="bid" && k==="B"){ b.disabled=true; b.title="B pays managers 300, outside the bidding war's pay band — use fixed salaries"; }
-      b.onclick=()=>{ if(C.v!==k) setK("variant",k); }; vr.append(b); });
+      b.onclick=()=>{ if(C.v!==k) chg("variant",k); }; if(C.v!==k && !b.disabled) lockIf(b, played && !rev, lockWhy); vr.append(b); });
     wrap.append(vr);
-    const grid=el("div","paramgrid"); grid.style.marginTop="10px"; grid.append(mk("Number of firms (2–8)","firms",cf.firms), mk("Max recruiters per firm","firmMax",cf.firmMax)); wrap.append(grid);
+    if(played && rev) wrap.append(Object.assign(el("div","sm mut"),{textContent:"Changing mode or variant now starts Round "+(rd+1)+" with it (you'll be asked first).",style:"margin-top:6px"}));
+    const grid=el("div","paramgrid"); grid.style.marginTop="10px"; grid.append(mk("Number of firms (2–8)","firms",cf.firms), mk("Max recruiters per firm","firmMax",cf.firmMax), mk("Recruiter time, minutes (0 = no timer)","recMin",cf.recMin)); wrap.append(grid);
     const V=C.V, thr=psThreshold(V,"MBA");
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Variant "+C.v+": "+V.q+"% of candidates are type H; an MBA costs H "+V.cH+" and L "+V.cL+". "
       +(C.mode==="bid" ? "Bidding war: each firm posts a role and a salary for MBAs and for Grads (Manager 200–250, Analyst 100–150); every candidate goes to the highest salary for their degree; no hiring limit."

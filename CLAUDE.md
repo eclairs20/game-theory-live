@@ -91,7 +91,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     (`todaySession(sec)` → `schedRowOn(date,sec)`: a row naming the section beats a shared row) and, if it
     differs from `control.session`, writes it with `round:1`. So a game can never be opened into a past
     session, and Reopen on a later day starts today's meeting (no late submissions to a past meeting).
-    `openMeeting` is the ONLY writer of `control.session` (plus `undoSchedChoice` restoring it).
+    `openMeeting` is the ONLY writer of `control.session` (plus `undoSchedChoice` and the Run Undo `runUndo` restoring it).
   - **The console shows TODAY's meeting** (`liveSess()` = today's schedule row for the running section, else
     `control.session`; `liveRound()`; `todayStarted()` = students are already in it). Before today's first Open
     `control.session` still holds the last meeting, so the session label (`sessionTile`, read-only: "S5 · today ·
@@ -102,8 +102,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     session (control.session ≠ today's row, or today unscheduled) is closed, so no late submissions reach a past
     meeting. Never today's round; never in a course with no schedule.
   - **Freeze while submissions are open** (`isOpenNow()`, `lockIf(node,cond,reason)`, `OPEN_LOCK(what)`): game
-    tiles, section switch, round ±, Next round →, Undo, Parameters (inputs disabled + note), schedule Save/Clear
-    and Clear are dimmed and a tap toasts the reason; a 🔒 line above the round bar says so. The only ways
+    tiles, section switch, Next round →, Undo, Parameters (inputs disabled + note), schedule Save/Clear
+    and Discard are dimmed and a tap toasts the reason; a 🔒 line above the round bar says so. The only ways
     forward are **Close submissions** and **Reveal**; **Hold** stays available (it pauses without losing
     anything). Normal flow is unchanged: Reveal → Next round works because submissions are closed by then.
   - **Unscheduled day** (`resolveTodaySession` → blocking `chooseModal`, `#chooseModal`; also a non-blocking
@@ -125,18 +125,32 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     would share a record key and a replayed game would overwrite); warns (confirm) when a save changes the
     date of a session that already has records (e.g. re-pasting an older spreadsheet after an in-app move);
     keeps recorded extra-class rows that a re-paste dropped.
-  - **Analyze bar = live + past, for the selected game** (`analyzeBar`; replaced the old `sectionScopeBar` and
-    the separate Past-results card/page): a **Today · S5** row (Section A / B / Both → `sectionScope`) and one
-    **Past · S3 (date)** row per earlier session·round of the *selected game* that has submissions
-    (`pastMeetings`, newest first, round shown only when a session had several), each with per-section chips
-    (with counts) and Both. A past chip sets local `histSel` → the results area shows `historyPanel` (read-only:
-    analysis, who submitted, **Clear this meeting…** → `clearMeeting(rk)`, confirm names the meeting, single
-    section only; each who-submitted row also has **✕ Remove** → `removeRecord(s)`, deleting just that one student's
-    record after a confirm naming them and the meeting — also on today's attendance card, but hidden while submissions
-    are open) and the round controls **collapse to "Viewing past results — ← Back to today"**, so nothing on
-    screen can act on today's round meanwhile; the attendance card is hidden. Writes nothing to `control`.
-    Other games' history: pick that game up top (frozen while a round is open). This replaced stepping the
-    session back, which closed submissions for the whole class.
+  - **Run / Review (instructor console, every game)** — a two-part switch at the top of the console
+    (`consoleSwitch`, `consoleView` = `"run"|"review"`, remembered per device in `localStorage gtl_cview`).
+    - **▶ Run class shows exactly ONE round**: the newest round of the selected game + section today — the only one
+      that can still change. There is **no round −/+** (going back used to reopen a played round under the same
+      record key, so a re-submission overwrote it); the round is a label with an **"Earlier rounds → Review"** link.
+      The Analyze bar (`analyzeBar`) only picks today's scope (Section A / B / Both → `sectionScope`).
+    - **A round locks (moves to Review) the moment Run points elsewhere**: **Next round →** (`runNextRound`; asks
+      first if the round wasn't revealed), **another game** (tile) or **another section** — the last two confirm
+      when the current round has data and land on that game/section's **next unused round** today (`freshRound(g,sec)`,
+      which also counts discarded rounds, so an old record key is never reused). All go through `runMove(question,
+      doIt)`, which leaves a local **"↶ Back to it"** Undo (`_runUndo`/`runUndoOn`/`runUndo` — restores game, section,
+      round, session, phase, `ps`, `robot`, `config`) until the new round gets its first record (`runHasData`).
+    - **Discard… (Run)** replaces Clear: `discardRound` marks `control.discarded[<roundKey>] = ts` and moves Run to a
+      fresh round. A discarded round's records are **kept but not counted**: `isDone` returns false for them (unless
+      `_ignoreDiscard`), so every result, count, leaderboard, debrief and hub view skips them; the CSV has a final
+      `discarded` column. Locked while open and when the round has no data. No Firebase rules change (it's in `control`).
+    - **📊 Review results** (`reviewConsole`, not full-screen) — **read-only**: nothing writes `control`'s game /
+      round / phase. An **indigo** band (`--review`/`--review-wash`, both themes) says so; a gold "Live now …
+      ▶ Back to Run" line shows while a round is open (or an Undo is pending). The exercise tiles become a **filter**
+      (`reviewGame`, with "N recorded rounds"); the meeting list (`reviewMeetings` — every recorded session · round incl.
+      today's and discarded ones, newest first) has per-section chips (+ Both; discarded struck through) → `histSel` →
+      `historyPanel(h)`: the game's own analysis (`histData`/`histAnalysis`, a discarded section drawn as it was via
+      `_ignoreDiscard`), who submitted (✕ Remove per record), **📽 Project this** (→ `reviewPresentView`: class-level
+      results on the projector, `_presenting`, never names; locked for a round that is open right now) and **Manage
+      data**: Discard / **Restore** (`setDiscarded`) and **Delete permanently…** (`clearMeeting`, double confirm) —
+      single section only. Permanent deletion lives ONLY here.
   - `pairSubs` (G1 pairing) seeds from the meeting's own roundKey, so a past meeting re-pairs exactly as it
     did live (it used to use the live `curKey`).
 - **Students on hold** — `control.hold` (boolean). When true it freezes the **live class** only: the
@@ -679,7 +693,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - `placement` — **Placement Season** (**G12**) — **signalling** (Spence). Candidates are dealt a private type
   (**H** / **L**, high/low productivity) and choose **Grad** or **MBA**; recruiter **firms** (teams of students, one
   **captain** taps) see only the degree and choose an offer **per degree** (Player 2's S₂ᴹᴮᴬ / S₂ᴳʳᵃᵈ). Self-contained
-  `ps*` block. Config `{ mode:"fixed"|"bid", variant:"A"|"B"|"C"|"D", firms:5, firmMax:3 }` (`psCfg()`; max 3 recruiters per firm by default since 13 Nov).
+  `ps*` block. Config `{ mode:"fixed"|"bid", variant:"A"|"B"|"C"|"D", firms:5, firmMax:3, recMin:3 }` (`psCfg()`; max 3 recruiters per firm by default since 13 Nov).
   - **Wording:** the job a firm offers a degree is a **role** (Manager / Analyst) everywhere in the UI ("track" survives only
     in code: `PS_TRK`, `res.track`); step 1 is **"Choose role"** (Recruiter or Candidate; "Choose your role for today"), button "1 · Choose role".
   - **Variants** (`PS_VARIANTS`; productivity `prod[type][deg][track]`, recruiter payoff = productivity − salary):
@@ -719,6 +733,21 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     degree nobody offered for; `psLastReport`/`psDebriefCard`/`psRoundsCard`/`psCandidateTable` run through `psSafe`; and
     `render()` catches a crash while building any screen and shows "Something went wrong on this screen — Reload" instead of
     leaving the old screen frozen.
+  - **Changing mode / variant** (Parameters): free while Run's round has nothing recorded (also updates the round's
+    stamp); **greyed** while a round with data is unrevealed ("reveal it (or discard it) first"); after Reveal a tap asks
+    "Switch to … and start Round N+1 now?" and opens it with the new config in the same write (`openMeeting({round, config})`
+    stamps `p.config`), with the Run Undo. The leaderboard restarts per mode, as before.
+  - **Steps only move forward with a tap** (`psConsoleCard`): the current step isn't clickable, later steps advance
+    (`psAdvance`), a finished (✓) step asks "Go back to step …?" first.
+  - **Recruiter timer** (`recMin`, default **3** min, 0 = none; Parameters "Recruiter time"): entering step 3 stamps
+    `control.ps.recEnd` (server ms; `psSetStep` keeps it on re-entry). Countdown (`psCountdown`, `[data-pscd]`, updated in
+    place by the 1 s `rbTick`, which also redraws once when time runs out — `_psTU`, `psTimeUp()` is in `viewKey`) on the
+    captain's and teammates' phones, candidates' "choice locked" screen, the console card and the projector. At zero the
+    captains' controls lock ("⏱ Time's up — your offers stand"; `psSetOffer`/`psLockOffer` refuse) and the current offers
+    are used; the instructor still Reveals. **+1 min** (console card + projector controls, `psAddTime`) extends — or
+    restarts from now if it ran out; with no timer it reads "Start a 1-min timer".
+  - **"Last round"** (`psLastReport`, `psPrevVariant`) uses `psPrevRk` — the latest earlier round with records that isn't
+    discarded (round numbers can skip after a Discard).
   - **Flow** (`control.ps`, `psStep()`): Open → **roles** (first round of a meeting only, when it has
     no firms: every student first sees a **role picker** — 🏢 **Recruiter** (seats left shown; greyed when full) or 🎓
     **Candidate** (writes a ready mark `live/<base>/pc/<enc(id)>` = `{id,name,ts}`, `psPickCandidate`; "Change to recruiter" /
@@ -867,13 +896,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - Instructor: click "Instructor" → passcode → console (pick game, open/close submissions,
   reveal, next round, clear round data, edit parameters). First run sets the passcode.
 - **Console layout** (`teacherConsole`) — a **single full-width column** (`.console`,
-  `grid-template-areas:"top" "main"`, **no side rail**): a **full-width Choose exercise** picker
-  (`.console-top` — the game tiles + the IL1/IL2 lessons) over the **main** panel. The
-  chosen game's **Parameters** card stacks at the **top of the main panel** (first card, full width),
-  followed by the unscheduled-day/Undo banner, the session label + section/hold bar (`sessionTile`, no
-  session stepper), the 🔒 line when open, round controls (or the "Back to today" line), the **Analyze** bar
-  (today + this game's past meetings), then live preview/analysis or the read-only `historyPanel`, and the
-  attendance card.
+  `grid-template-areas:"sw" "top" "main"`, **no side rail**): the **Run / Review switch** (`.console-sw`), then in Run a
+  **full-width Choose exercise** picker (`.console-top` — the game tiles + the IL1/IL2 lessons + videos) over the
+  **main** panel: the chosen game's **Parameters** card, the unscheduled-day/schedule-Undo banner, the session label +
+  section/hold bar (`sessionTile`, no session stepper), the "↶ Back to it" Run-undo banner, the 🔒 line when open, the
+  round bar (Round label · Open/Close · Reveal · Next round → · Present · Discard…), the today-only **Analyze** bar,
+  then live preview/analysis and the attendance card. Review replaces all of that with `reviewConsole`.
 - **Top bar** (`.topbar`, a flex **column** of `.tb-row`s) — **Row 1:** the brand (left) +
   (`.tb-actions`, right-aligned) the phase pill, **Log out** (`#logoutBtn`/`syncLogoutBtn`,
   instructor-only → `logOut`) and the theme toggle. **Row 2** (`.tb-sub`): the **course picker**
