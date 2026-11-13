@@ -769,10 +769,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     the band floor (bid) or that role's salary (fixed), or not hiring them = 0; bid notes "assumes you'd still have won them").
     `psDebriefCard(R)` tops every results view. **Instructor console + projector:** named cases — candidate groups (type ×
     degree × payoff) who "left N on the table" (red) and who made the "Best choice" (green), up to 6 names + "and N more";
-    every firm's made vs could-have-made (firm names) with the best move; a **Hide names / Show names** link
+    every firm's made vs could-have-made (firm names) with the best move — a firm that **hired nobody** is gold "safe this round, not a winning plan" with `psNoHireNote` (which degree's hires earned their firms money at the winning offers, or that none did), never "best possible"; a **Hide names / Show names** link
     (`psDebriefNames`, local); and a ⚠ "That Grad pay came from offers that lost firms N per hire — don't count on it next
     round" on any case whose payoff came from a loss-making offer (so "H as a Grad made 250" doesn't pull H's out of the MBA).
-    **A student's phone:** only their own line ("You (H) went MBA and made 210. As a Grad you would have made 250 — 40 more")
+    **A student's phone:** only their own line ("You (H) went MBA and made 210. As a Grad you would have made 250 …") — when the better payoff came from a loss-making offer (`psLossy`) it reads "— but only because firms paid Grads more than they produced (they lost 94 per hire). Don't count on that next round." instead of "40 more", and a best choice paid by such an offer gets the same ⚠
     or their firm's, plus their side's question — never other students' names. Questions (`psPointers`): recruiters — a degree
     paid ≥20 more than it produced → "Who is likely to turn up with a Grad degree?", bid with salary ≈ output → "the bidding
     pushed salaries up…"; candidates — **forward-looking** first: "Firms lost 94 on every Grad hire they paid 250. If they stop

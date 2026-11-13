@@ -5141,6 +5141,12 @@ function psFirmAlt(R, f){
     how.push(best===0 ? "not hiring the "+hs.length+" "+d+"s (0)" : hs.length+" "+d+"s as "+(m>=a?"Manager":"Analyst")+" at "+sal(m>=a?"Mgr":"Ana")+" ("+(best>0?"+":"")+best+")"); });
   return {made:f.realProfit, could, how:how.join(" · ")};
 }
+/* How much firms LOST per hire on a degree this round (≥20 = a loss-making offer), else 0. */
+function psLossy(R, d){ const q=psProdPaid(R)[d]; return q && q.sal-q.prod>=20 ? q.sal-q.prod : 0; }
+/* For a firm that hired nobody: was any degree profitable at the winning offers? (Not hiring is never a lead.) */
+function psNoHireNote(R){ const pp=psProdPaid(R), ok=["MBA","Grad"].filter(d=>pp[d] && pp[d].prod-pp[d].sal>0);
+  return ok.length ? ok.map(d=>d+" hires earned their firms +"+(pp[d].prod-pp[d].sal)+" each").join(" · ")+" — sitting out missed that. A firm that never hires never gets ahead."
+                   : "No degree was profitable at this round's winning offers, so sitting out was safe — but a firm that never hires never gets ahead."; }
 let psDebriefNames=true;   // instructor's projector/console: show students' names in the named cases (toggle on the card)
 /* The debrief card at the top of the results. Instructor (console + projector): named cases — whose choice cost them
    the most and who got it right, every firm's made vs could-have-made — plus one question each. A student's phone:
@@ -5160,10 +5166,14 @@ function psDebriefCard(R, tag){
     const fm=mySubF && R.firms.find(f=>f.fid===mySubF.fid);
     const box=el("div"); box.style.cssText="margin-top:8px;font-size:1.05rem;line-height:1.5";
     if(me){ const made=psMadeC(R,me), alt=psAltC(R,me);
+      const la=psLossy(R,alt.deg), lm=psLossy(R,me.deg);
       box.innerHTML="You ("+me.type+") went <b>"+(me.deg==="MBA"?"MBA":"Grad")+"</b> and made <b>"+made+"</b>. "+
-        (alt.sal==null ? "Nobody offered anything "+DL(alt.deg)+"." : (alt.avg?"On average "+DL(alt.deg):DL(alt.deg).charAt(0).toUpperCase()+DL(alt.deg).slice(1))+" you would have made <b>"+alt.pay+"</b>"+(alt.pay>made?" — <b style='color:var(--bad)'>"+(alt.pay-made)+" more</b>.":alt.pay<made?" — your choice was the better one.":" — the same."));
+        (alt.sal==null ? "Nobody offered anything "+DL(alt.deg)+"." : (alt.avg?"On average "+DL(alt.deg):DL(alt.deg).charAt(0).toUpperCase()+DL(alt.deg).slice(1))+" you would have made <b>"+alt.pay+"</b>"+
+          (alt.pay>made ? (la ? " — but only because firms paid "+alt.deg+"s more than they produced (they lost "+la+" per hire). <b>Don't count on that next round.</b>" : " — <b style='color:var(--bad)'>"+(alt.pay-made)+" more</b>.")
+           : alt.pay<made ? " — your choice was the better one."+(lm?" <span style='color:var(--gold)'>⚠ But your "+me.deg+" pay came from offers that lost firms "+lm+" per hire — don't count on it next round.</span>":"") : " — the same."));
     } else if(fm){ const A=psFirmAlt(R,fm);
-      box.innerHTML="Your firm <b>"+esc(psFirmName(fm.fid,R))+"</b> made <b>"+fmt(A.made)+"</b>. With the same hires the best it could have made was <b>"+fmt(A.could)+"</b> — "+esc(A.how)+"."+(R.mode==="bid"?" <span class='sm mut'>(Assumes you'd still have won them.)</span>":"");
+      if(!fm.hires.length) box.innerHTML="Your firm <b>"+esc(psFirmName(fm.fid,R))+"</b> hired nobody and made <b>0</b>. "+esc(psNoHireNote(R));
+      else box.innerHTML="Your firm <b>"+esc(psFirmName(fm.fid,R))+"</b> made <b>"+fmt(A.made)+"</b>. With the same hires the best it could have made was <b>"+fmt(A.could)+"</b> — "+esc(A.how)+"."+(R.mode==="bid"?" <span class='sm mut'>(Assumes you'd still have won them.)</span>":"");
     } else box.innerHTML="<span class='mut'>You didn't take part in this round.</span>";
     card.append(box);
     const q=me?P.cand:fm?P.rec:null; if(q){ const b=el("div","note-box teal"); b.style.marginTop="12px"; b.innerHTML="<b>Think about:</b> "+esc(q); card.append(b); }
@@ -5192,7 +5202,10 @@ function psDebriefCard(R, tag){
   fbox.append(Object.assign(el("h3"),{textContent:"🏢 Recruiters",style:"font-size:1.15rem;margin:0 0 6px"}));
   const FA=R.firms.map(f=>({f, A:psFirmAlt(R,f)})).sort((a,b)=>(b.A.could-b.A.made)-(a.A.could-a.A.made));
   let fh="";
-  FA.forEach(({f,A})=>{ const gap=A.could-A.made, bad=gap>0;
+  FA.forEach(({f,A})=>{ if(!f.hires.length){
+      fh+="<div style='padding:8px 10px;margin-bottom:8px;border-left:4px solid var(--gold);background:color-mix(in srgb, var(--gold) 10%, transparent);border-radius:6px'>"+
+        "<b>"+esc(psFirmName(f.fid,R))+"</b> hired nobody and made <b>0</b> — <b style='color:var(--gold)'>safe this round, not a winning plan</b><div class='sm' style='margin-top:3px'>"+esc(psNoHireNote(R))+"</div></div>"; return; }
+    const gap=A.could-A.made, bad=gap>0;
     fh+="<div style='padding:8px 10px;margin-bottom:8px;border-left:4px solid "+(bad?"var(--bad)":"var(--good)")+";background:color-mix(in srgb, "+(bad?"var(--bad)":"var(--good)")+" 8%, transparent);border-radius:6px'>"+
       "<b>"+esc(psFirmName(f.fid,R))+"</b> made <b>"+fmt(A.made)+"</b>"+(f.hires.length?"":" (hired nobody)")+" — could have made <b>"+fmt(A.could)+"</b>"+(bad?" <b style='color:var(--bad)'>(missed "+gap+")</b>":" <b style='color:var(--good)'>(best possible)</b>")+
       (A.how?"<div class='sm' style='margin-top:3px'>Best with the same hires: "+esc(A.how)+"</div>":"")+"</div>"; });
@@ -5270,7 +5283,8 @@ function psLastReport(role){
   const P=psPointers(R), q=role==="F"?P.rec:P.cand, fm=v=>(v>0?"+":"")+v;
   let mine=null; const me=R.cands.find(s=>s.studentId===myId);
   const myF=Object.values(allSubs).find(s=>s&&s.roundKey===prk&&s.studentId===myId&&s.pt==="F"), ff=myF&&R.firms.find(f=>f.fid===myF.fid);
-  if(me){ const made=psMadeC(R,me), alt=psAltC(R,me); mine="You ("+me.type+", "+me.deg+") made "+made+(alt.sal==null?".":"; "+(alt.deg==="MBA"?"with an MBA":"as a Grad")+" you'd have made "+alt.pay+".")+" Your type is re-dealt this round."; }
+  if(me){ const made=psMadeC(R,me), alt=psAltC(R,me), la=psLossy(R,alt.deg);
+    mine="You ("+me.type+", "+me.deg+") made "+made+(alt.sal==null?".":"; "+(alt.deg==="MBA"?"with an MBA":"as a Grad")+" you'd have made "+alt.pay+(la&&alt.pay>made?" — but only because firms lost "+la+" on each "+alt.deg+" hire, so don't count on it.":"."))+" Your type is re-dealt this round."; }
   else if(ff){ const A=psFirmAlt(R,ff); mine="Your firm made "+fm(A.made)+"; with the same hires it could have made "+fm(A.could)+" ("+A.how+")."; }
   box.innerHTML="<b>Last round's placement report.</b><br>"+[by("MBA"),by("Grad"),mine].filter(Boolean).map(esc).join("<br>")+(q?"<div style='margin-top:6px'><b>Think about:</b> "+esc(q)+"</div>":"");
   return box;
