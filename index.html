@@ -577,7 +577,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-13.003";
+const APP_VERSION = "2026-11-13.004";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -621,7 +621,7 @@ const DEFAULT_CONFIG = {
   adfin:{ rounds:6 },                  // Advertising Game (Finite): a fixed, announced number of rounds
   robot:{ capMin:5, joinMin:5, buildMin:10, teamMin:4, teamMax:6, teams:15, rounds:100, disc:5, house:true },   // Axelrod Tournament: captains / join / build timers (min), min / max team size, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
   bayes:{ pOdd:25, rounds:20 },          // Bayesian Game: % chance each round is Odd-Even (else the Matching Game); rounds per match
-  placement:{ mode:"fixed", variant:"A", firms:5, firmMax:4 },   // Placement Season: "fixed" salaries (role per degree, dealt batches) or "bid" (role + salary in pay bands, shared pool); variant A Classic / B MBA builds skills / C Strong batch / D Online MBA; firms and max recruiters per firm
+  placement:{ mode:"fixed", variant:"A", firms:5, firmMax:3 },   // Placement Season: "fixed" salaries (role per degree, dealt batches) or "bid" (role + salary in pay bands, shared pool); variant A Classic / B MBA builds skills / C Strong batch / D Online MBA; firms and max recruiters per firm
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -4736,7 +4736,7 @@ const PS_VARIANTS={   // class order: A separating → B pooling on MBA (skills,
 };
 function psCfg(){ const c=cfg("placement"); const mode=c.mode==="bid"?"bid":"fixed";
   let v=PS_VARIANTS[c.variant]?c.variant:"A"; if(mode==="bid" && v==="B") v="A";
-  return {mode, v, V:PS_VARIANTS[v], firms:Math.max(2,Math.min(8,Math.round(+c.firms||5))), max:Math.max(1,Math.min(8,Math.round(+c.firmMax||4)))}; }
+  return {mode, v, V:PS_VARIANTS[v], firms:Math.max(2,Math.min(8,Math.round(+c.firms||5))), max:Math.max(1,Math.min(8,Math.round(+c.firmMax||3)))}; }
 /* A firm's display name: from the round's records (R.names, so history keeps the name used then), else the live
    firm, else a fallback. Captains name their firm when they start it. */
 function psFirmName(fid, R){ return (R && R.names && R.names[fid]) || (psFirms[fid] && psFirms[fid].name) || ("Firm "+String(fid||"").slice(-3).toUpperCase()); }
