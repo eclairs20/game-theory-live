@@ -868,10 +868,18 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   `diagAsId`. `diagAsId` is part of `viewKey()` so switching students re-renders.
 - **Collection view** (`presentView`, local `presentMode` flag) — a full-screen, class-facing
   screen that auto-opens when the instructor presses **Open submissions** (also via the round
-  bar's **Present** button). It shows participation only — live count, progress vs the section's
-  roster, and a **join QR** (`qrSVG`/`qrFor` of `location.href`) — and **never any result**, so
-  the instructor can project it safely while the console preview would otherwise leak the
-  answer. Close/Reopen/Reveal/Fullscreen/Exit controls live on it; Reveal exits present mode.
+  bar's **Present** button). While submissions are open/closed it shows participation only — live count,
+  progress vs the section's roster, and a **join QR** (`qrSVG`/`qrFor` of `location.href`) — never a result.
+  **Reveal keeps it open and switches it to Results** (`presentResults`; `doReveal` no longer clears
+  `presentMode` — a Reveal pressed on the console with the present view closed still stays on the console):
+  the class-level analysis over the console's meeting scope (`analysisSubs()`/`effScope()`), drawn with the
+  student-safe `analysisBody(g, list, false)` and a global **`_presenting`** flag so nothing name-by-name
+  reaches the projector — `pairingsCard` returns an empty div, `orphanWarning` returns null, G12's personal
+  "Your result"/`psNoResultCard` is skipped, and team/firm member lists are already teacher-only. The Guess
+  winner's name still shows (intended). Full instructor detail stays on the console. The scroll position is
+  kept across the ~1/s console redraws (`_presScroll`, keyed by roundKey + scope), and `.present-controls` is
+  **sticky** at the bottom (Hide results · Next round → · Fullscreen · Exit to console), so long results never
+  push the buttons off screen. G12 keeps its stage tracker on top ("4 Results").
 
 ## Conventions
 - **Live-update rendering rule (MANDATORY for every game, existing and new).** `render()` rebuilds the whole

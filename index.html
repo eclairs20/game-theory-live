@@ -380,7 +380,8 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .present-qr .qrbox{background:#fff; padding:clamp(10px,1.5vw,18px); border-radius:14px; box-shadow:var(--shadow); width:clamp(180px,26vw,320px)}
 .present-qr .qrbox svg{display:block; width:100%; height:auto}
 .present-qr .qrcap{font-size:clamp(.95rem,1.8vw,1.2rem); font-weight:700; color:var(--ink)}
-.present-controls{display:flex; flex-wrap:wrap; gap:12px; justify-content:center; align-items:center}
+.present-controls{display:flex; flex-wrap:wrap; gap:12px; justify-content:center; align-items:center;
+  position:sticky; bottom:calc(-1 * clamp(18px,3.5vw,44px)); z-index:3; background:var(--bg); padding:10px 0 clamp(18px,3.5vw,44px); margin-bottom:calc(-1 * clamp(18px,3.5vw,44px)); border-top:1px solid var(--line)}
 .present-controls .btn{padding:14px 26px; font-size:1.05rem}
 /* Pareto-optimality interactive lesson (instructor-projected, no submissions). */
 .lesson{position:fixed; inset:0; z-index:60; background:var(--bg); color:var(--ink); overflow:auto;
@@ -576,7 +577,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-13.001";
+const APP_VERSION = "2026-11-13.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1268,7 +1269,7 @@ async function writeControl(patch){
 /* Reveal results, and record this meeting as published so it shows in the student hub
    (auto-publish on reveal). Merges into control.published so past meetings persist. */
 function doReveal(){
-  presentMode=false;
+  // Reveal keeps the presentation screen open (if it is) — it switches to the class-level results view.
   const rk=roundKey(control.activeGame, control.round);
   const pub=Object.assign({}, publishedMap()); pub[rk]=Date.now();
   writeControl({phase:"revealed", published:pub});
@@ -1620,9 +1621,9 @@ function render(){
   // Instructor "View as student" diagnostic (read-only) — show exactly what a chosen student
   // sees, wrapped in a picker + exit. Takes precedence over every other screen.
   if(diagOn()){ app.replaceChildren(diagView()); return; }
-  // Instructor "collection" view — full-screen, projected to the class. Shows
-  // participation only (never results), so it can't leak the answer. Available in any
-  // phase (Reveal from the console exits it); only drops if the console context is gone.
+  // Instructor "collection" view — full-screen, projected to the class. While submissions are open it shows
+  // participation only (never results); after Reveal it shows the class-level results (presentResults — no
+  // student names, no personal cards). Only drops if the console context is gone.
   if(presentMode && !(isTeacher() && control && control.activeGame)) presentMode=false;
   if(presentMode){ app.replaceChildren(presentView()); return; }
   // Interactive lessons — instructor-launched, or student-launched from the hub (Lessons on).
@@ -5478,8 +5479,8 @@ function analyzePlacement(list, teacher){
   if(!Rs.length){ wrap.append(Object.assign(el("div","card stage center mut"),{textContent:"No placement data yet."})); return wrap; }
   const R0=Rs[0], V=R0.V, mode=R0.mode, multi=Rs.length>1;
   const secTag=R=> multi ? " ("+((parseRoundKey(R.rk)||{}).section||"")+")" : "";
-  // my own result
-  if(!teacher){
+  // my own result (never on the projector: there it would be the instructor's "You didn't take part")
+  if(!teacher && !_presenting){
     const R=Rs.find(X=>X.res[myId] || X.firms.some(f=>f.members.includes(myName)));
     const myS=list.find(s=>s.studentId===myId);
     if(R && myS && myS.pt==="C" && R.res[myId]){
@@ -5888,6 +5889,7 @@ function pairName(s){ return (s&&s.name||"?")+(s&&s.proxy?" (unconfirmed)":""); 
 /* Instructor warning: subs that couldn't be matched into a pair because the partner they named has
    no submission (the failure mode that silently dropped a partner's side). Returns null if all paired. */
 function orphanWarning(list, pairs){
+  if(_presenting) return null;   // instructor-only warning
   const paired=new Set(); pairs.forEach(p=>{ paired.add(String(p[0].studentId)); paired.add(String(p[1].studentId)); });
   const byId={}; list.forEach(s=>{ byId[String(s.studentId)]=s; });
   const orphans=list.filter(s=> s && !s.bot && !paired.has(String(s.studentId)) && !String(s.partner||"").startsWith("bot:"));
@@ -5902,6 +5904,7 @@ function orphanWarning(list, pairs){
 }
 /* Compact "who played whom" list for the matched pairs (instructor-facing). */
 function pairingsCard(pairs, fmtPair){
+  if(_presenting) return el("div");   // names of who played whom stay on the console, never the projector
   const card=el("div","chart-card"); card.append(Object.assign(el("h3"),{textContent:"Who played whom ("+pairs.length+" pairs)"}));
   if(!pairs.length){ card.append(Object.assign(el("div","cap"),{textContent:"No complete pairs yet — both partners must submit."})); return card; }
   let html="<tr><th>#</th><th style='text-align:left'>Pair</th></tr>";
@@ -6500,16 +6503,35 @@ function rollCall(){
 }
 /* The full-screen collection screen shown to the class while submissions are open.
    Participation only — the count and a join QR — never any result. */
+/* Class-level results for the projector (after Reveal): the same student-safe analysis students see
+   (analysisBody(…, false)) over the console's chosen meeting scope, with `_presenting` set so nothing
+   personal or name-by-name is drawn — no "your result" card, no who-played-whom table, no unpaired
+   warning, no team/firm member lists. The full instructor detail stays on the console. */
+let _presenting=false, _presScroll={k:null,y:0};
+function presentResults(g){
+  const list=analysisSubs(), sc=effScope(), n=list.length;
+  const box=el("div"); box.style.cssText="flex:1 1 100%;min-width:0;max-width:1240px;margin:0 auto;text-align:left";
+  const lead=el("div","present-numlabel"); lead.style.cssText="text-align:center;margin:0 0 14px";
+  lead.textContent=n+" "+(n===1?"response":"responses")+(sc==="BOTH"?" · both sections":sc?" · Section "+sc:"")+". "+revealNarr(g);
+  box.append(lead);
+  if(!n){ box.append(Object.assign(el("div","card stage center mut"),{textContent:"No submissions to show for this round."})); return box; }
+  _presenting=true;
+  try{ box.append(analysisBody(g, list, false)); }
+  catch(e){ box.append(Object.assign(el("div","note-box"),{textContent:"Couldn't draw the results here — see the console."})); }
+  finally{ _presenting=false; }
+  return box;
+}
 function presentView(){
   const g=control.activeGame, phase=control.phase, open=phase==="open", revealed=phase==="revealed";
   const wrap=el("div","present");
   const head=el("div","present-head");
   const cn=courseName(); if(cn) head.append(el("div","present-course",cn));
   head.append(el("div","present-game",GAMES[g].name),
-    el("div","present-meta","Session "+sessLabel(liveSess())+(curMSection()?"."+curMSection():"")+" · Round "+liveRound()));
+    el("div","present-meta","Session "+sessLabel(liveSess())+(curMSection()?"."+curMSection():"")+" · Round "+liveRound()+(revealed?" · Results":"")));
   wrap.append(head);
 
   const body=el("div","present-body");
+  if(revealed) body.style.alignItems="flex-start";
   if(g==="robot" && !revealed){ body.append(rbPresentBody()); }
   if(g==="placement"){ const sw=el("div"); sw.style.cssText="flex:1 1 100%;min-width:0"; sw.append(psStepper(true)); body.append(sw); }
   if(g==="placement" && !revealed){ body.append(psPresentBody()); }
@@ -6522,14 +6544,21 @@ function presentView(){
   const num=el("div","present-num"); num.textContent=n; cnt.append(num);
   cnt.append(el("div","present-numlabel", haveRoster() ? ("of "+rl.length+" "+(curMSection()?"in Section "+curMSection():"enrolled")+" submitted") : (n===1?"response in":"responses in")));
   if(haveRoster() && rl.length){ const pr=el("div","present-prog"); const bar=el("span"); bar.style.width=Math.min(100,Math.round(100*n/rl.length))+"%"; pr.append(bar); cnt.append(pr); }
-  if(!((g==="robot"||g==="placement") && !revealed)) body.append(cnt);
-
-  const qr=el("div","present-qr");
-  const box=el("div","qrbox"); const svg=qrFor(location.href);
-  if(svg){ box.innerHTML=svg; qr.append(box, el("div","qrcap","Scan to join")); }
-  else { qr.append(Object.assign(el("div","qrcap"),{textContent:location.href})); }
-  body.append(qr);
+  if(revealed){ body.append(presentResults(g)); }
+  else {
+    if(!((g==="robot"||g==="placement") && !revealed)) body.append(cnt);
+    const qr=el("div","present-qr");
+    const box=el("div","qrbox"); const svg=qrFor(location.href);
+    if(svg){ box.innerHTML=svg; qr.append(box, el("div","qrcap","Scan to join")); }
+    else { qr.append(Object.assign(el("div","qrcap"),{textContent:location.href})); }
+    body.append(qr);
+  }
   wrap.append(body);
+  // keep the projector's scroll position across the ~1/s console redraws (results can be long)
+  const sk=revealed ? curKey+"|"+effScope() : null;
+  if(sk && _presScroll.k===sk){ const y=_presScroll.y; setTimeout(()=>{ if(wrap.isConnected) wrap.scrollTop=y; },0); }
+  else _presScroll={k:sk, y:0};
+  wrap.addEventListener("scroll",()=>{ if(_presScroll.k===sk) _presScroll.y=wrap.scrollTop; });
 
   const ctr=el("div","present-controls");
   if(open){
@@ -6541,7 +6570,7 @@ function presentView(){
     const close=el("button","btn neutral","Close submissions"); close.onclick=()=>writeControl({phase:"waiting"});
     ctr.append(close);
   } else if(revealed){
-    // Results are showing on the console/students' screens. Offer to hide or move on.
+    // Results are showing here (class level) and on students' screens. Offer to hide or move on.
     const hide=el("button","btn neutral","Hide results"); hide.onclick=()=>writeControl({phase:"waiting"});
     const nextR=el("button","btn","Next round →"); nextR.onclick=()=>openMeeting({round:control.round+1});
     ctr.append(hide,nextR);
