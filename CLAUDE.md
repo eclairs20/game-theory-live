@@ -681,7 +681,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   **captain** taps) see only the degree and choose an offer **per degree** (Player 2's S₂ᴹᴮᴬ / S₂ᴳʳᵃᵈ). Self-contained
   `ps*` block. Config `{ mode:"fixed"|"bid", variant:"A"|"B"|"C"|"D", firms:5, firmMax:4 }` (`psCfg()`).
   - **Wording:** the job a firm offers a degree is a **role** (Manager / Analyst) everywhere in the UI ("track" survives only
-    in code: `PS_TRK`, `res.track`); step 1 is **"Pick your side"** (Recruiter or Candidate), button "1 · Pick sides".
+    in code: `PS_TRK`, `res.track`); step 1 is **"Choose role"** (Recruiter or Candidate; "Choose your role for today"), button "1 · Choose role".
   - **Variants** (`PS_VARIANTS`; productivity `prod[type][deg][track]`, recruiter payoff = productivity − salary):
     in **class order** (re-lettered 12 Nov; the sandbox's older records used A/B/D/E and were deleted):
     **A** Classic MBA (50% H, MBA cost H 40 / L 160; Manager 200 / Analyst 100; productivity H 300/150, L 100/100 —
@@ -732,9 +732,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     firm card); Present shows the counts (`psLive("canddone"|"firmsdone")`, patched in place). Advancing is never blocked:
     `psAdvance("recruit")` and `psReveal()` (console step buttons, round-bar Reveal, Present buttons) **confirm** when someone
     isn't done ("their choice still counts").
-    **Stage tracker** (`psStepper`/`psStageBox`, `PS_STAGES`, `psStageIdx`): four boxes **1 Pick sides → 2 Candidates choose →
+    **Stage tracker** (`psStepper`/`psStageBox`, `PS_STAGES`, `psStageIdx`): four boxes **1 Choose role → 2 Candidates choose →
     3 Recruiters decide → 4 Results** (4 = phase revealed) — done = green ✓, now = gold ▶ + NOW, later = grey dashed ○ (symbol +
-    colour, both themes); in rounds 2+ box 1 reads "Sides set (kept)". Students see it at the top of the G12 card and above
+    colour, both themes); in rounds 2+ box 1 reads "Roles set (kept)". Students see it at the top of the G12 card and above
     their results, with a tailored **"Now: … · Next: …"** line (`psNowNext`: candidate / recruiter / captain, locked or not).
     The **projector** shows it big across the top — finished stages stay visible as ✓ boxes and are **not tappable** (going
     back is console-only, via the step buttons, which carry the same ✓ / "· NOW" marks). It only changes with the step or

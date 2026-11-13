@@ -576,7 +576,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-12.004";
+const APP_VERSION = "2026-11-13.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -5140,11 +5140,11 @@ function psSubsSig(){
   return "PS#"+mine+"#"+firmOffer+"#"+(mf?mf.fid:"");
 }
 
-/* ── stage tracker: 1 Pick sides → 2 Candidates choose → 3 Recruiters decide → 4 Results ──
+/* ── stage tracker: 1 Choose role → 2 Candidates choose → 3 Recruiters decide → 4 Results ──
    On every student screen (with a "Now / Next" line for that student), on the projector (big; finished stages stay as ✓,
    not tappable) and as the style of the console's step buttons. Done = green ✓, now = gold ▶ + NOW, later = grey ○ — a
    symbol per state as well as a colour. It changes only when the step or phase changes (both already redraw every screen). */
-const PS_STAGES=[["roles","Pick sides"],["choose","Candidates choose"],["recruit","Recruiters decide"],["results","Results"]];
+const PS_STAGES=[["roles","Choose role"],["choose","Candidates choose"],["recruit","Recruiters decide"],["results","Results"]];
 function psStageIdx(){ if(control && control.phase==="revealed") return 3; const i=PS_STAGES.findIndex(x=>x[0]===psStep()); return i<0?1:i; }
 function psStepper(big){
   const cur=psStageIdx(), kept=(control&&control.round||1)>1 && cur>0;
@@ -5158,7 +5158,7 @@ function psStepper(big){
     const top=el("div"); top.style.cssText="display:flex;align-items:center;gap:5px;flex-wrap:wrap";
     top.append(Object.assign(el("span"),{textContent:sym+" "+(i+1),style:"font-weight:700;color:"+col+";font-family:'IBM Plex Mono',monospace;font-size:"+(big?"1.05rem":".8rem")}));
     if(st==="now") top.append(Object.assign(el("span"),{textContent:"NOW",style:"background:var(--gold);color:#fff;border-radius:6px;padding:0 5px;font-size:"+(big?".72rem":".62rem")+";font-weight:700;letter-spacing:.04em"}));
-    b.append(top, Object.assign(el("div"),{textContent:(i===0&&kept)?"Sides set (kept)":lab,style:"font-weight:"+(st==="now"?700:600)+";font-size:"+(big?"1.02rem":".78rem")+";line-height:1.2;margin-top:2px;"+(st==="next"?"color:var(--muted)":"")}));
+    b.append(top, Object.assign(el("div"),{textContent:(i===0&&kept)?"Roles set (kept)":lab,style:"font-weight:"+(st==="now"?700:600)+";font-size:"+(big?"1.02rem":".78rem")+";line-height:1.2;margin-top:2px;"+(st==="next"?"color:var(--muted)":"")}));
     g.append(b); });
   return g;
 }
@@ -5167,7 +5167,7 @@ function psNowNext(){
   const mf=psMyFirm(), m=mySub(), st=psStageIdx();
   if(st===3) return ["Round over — here are the results.", "your instructor starts the next round."];
   const step=PS_STAGES[st][0];
-  if(step==="roles") return mf ? ["your firm is set up — wait for the round to start.", "candidates choose Grad or MBA."] : ["pick your side: Recruiter or Candidate.", "candidates choose Grad or MBA."];
+  if(step==="roles") return mf ? ["your firm is set up — wait for the round to start.", "candidates choose Grad or MBA."] : ["choose your role: Recruiter or Candidate.", "candidates choose Grad or MBA."];
   if(step==="choose"){
     if(mf) return ["candidates are choosing.", "your captain sets your firm's offers."];
     return (m && m.pt==="C" && m.lock) ? ["your choice is locked in.", "recruiters decide."] : ["pick Grad or MBA and press Done.", "recruiters decide."]; }
@@ -5207,7 +5207,7 @@ function studentPlacement(c){
       c.append(el("p","lead","Wait for the round to start. Each round you'll get a private type (H or L) and choose Grad or MBA."));
       if(psSeatsLeft()>0){ const sw=el("button","linkbtn","Change to recruiter"); sw.type="button"; sw.style.marginTop="6px"; sw.onclick=psPickRecruiter; c.append(sw); }
     } else if(psRolePick[psCtx]!=="rec"){
-      c.append(h("Pick your side for today"));
+      c.append(h("Choose your role for today"));
       const seats=psSeatsLeft(), grid=el("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px";
       const card=(icon,title,txt,sub,on,fn)=>{ const b=el("button","card"); b.type="button";
         b.style.cssText="text-align:left;padding:16px;display:flex;flex-direction:column;gap:6px;cursor:"+(on?"pointer":"not-allowed")+";opacity:"+(on?1:.55)+";border:1.5px solid var(--line);background:var(--surface)";
@@ -5345,7 +5345,7 @@ function psPresentBody(){
   const big=(t)=>Object.assign(el("div"),{textContent:t,style:"font-family:Fraunces,Georgia,serif;font-size:2rem;font-weight:650"});
   w.append(Object.assign(el("div","tinylabel"),{textContent:(C.mode==="bid"?"Bidding war":"Fixed salaries")+" · "+C.V.name}));
   if(step==="roles"){
-    w.append(big("Pick your side on your phone"));
+    w.append(big("Choose your role on your phone"));
     const fs=psActiveFids(), rc=psRoleCounts();
     const cn=el("div"); cn.style.cssText="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-end";
     [[rc.ready,"candidates ready"],[rc.recruiters,"recruiters in "+rc.firms+" firm"+(rc.firms===1?"":"s")]].concat(rc.notPicked!=null?[[rc.notPicked,"haven't picked yet"]]:[]).forEach(([n,l])=>{
@@ -5375,15 +5375,15 @@ function psPresentBody(){
 function psConsoleCard(){
   const C=psCfg(), step=psStep(), open=isOpenNow(), card=el("div","card stage");
   card.append(el("div","eyebrow gold","Placement Season · "+(C.mode==="bid"?"bidding war":"fixed salaries")+" · "+C.V.name));
-  if(!open){ card.append(Object.assign(el("p","lead"),{textContent:"Open submissions to start. The first round opens with step 1 · Pick sides (Recruiter or Candidate); later rounds go straight to candidates choosing (firms are kept for the whole meeting).",style:"margin-top:6px"})); }
-  const steps=[["roles","1 · Pick sides"],["choose","2 · Candidates choose"],["recruit","3 · Recruiters decide"]];
+  if(!open){ card.append(Object.assign(el("p","lead"),{textContent:"Open submissions to start. The first round opens with step 1 · Choose role (Recruiter or Candidate); later rounds go straight to candidates choosing (firms are kept for the whole meeting).",style:"margin-top:6px"})); }
+  const steps=[["roles","1 · Choose role"],["choose","2 · Candidates choose"],["recruit","3 · Recruiters decide"]];
   const sr=el("div"); sr.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0";
   const ci=open?psStageIdx():-1;
   steps.forEach(([k,l],i)=>{ const b=el("button", step===k&&open?"btn":"ghost-btn", (i<ci?"✓ ":"")+l+(i===ci?" · NOW":"")); b.onclick=()=>psAdvance(k); if(!open){ b.disabled=true; }
     if(i<ci){ b.style.borderColor="var(--good)"; b.style.color="var(--good)"; } sr.append(b); });
   card.append(sr);
   if(open){
-    const tip={roles:"Everyone picks a side on their phone: Recruiter (start and name a firm, or join one) or Candidate. Anyone who doesn\'t pick plays as a candidate. When the firms look right, press 2 · Candidates choose.",
+    const tip={roles:"Everyone chooses a role on their phone: Recruiter (start and name a firm, or join one) or Candidate. Anyone who doesn\'t pick plays as a candidate. When the firms look right, press 2 · Candidates choose.",
       choose:"Candidates are dealt a type and pick Grad or MBA. Recruiters wait. When most have chosen, press 3 · Recruiters decide — choices then lock.",
       recruit:"Captains set their firm's offers"+(C.mode==="bid"?" — the job board is live on every phone and on Present":"")+". Then press Reveal results."}[step];
     card.append(Object.assign(el("div","sm mut"),{textContent:tip}));
@@ -5439,7 +5439,7 @@ function psConsoleCard(){
       r.append(nm, x); b.append(r); });
     grid.append(b); });
   if(fs.length) card.append(grid);
-  else card.append(Object.assign(el("div","sm mut"),{textContent: isOpenNow()&&step==="roles" ? "No firms yet — ask for volunteers to start firms on their phones." : "No firms yet. They're started by students in step 1 · Pick sides.",style:"margin-top:6px"}));
+  else card.append(Object.assign(el("div","sm mut"),{textContent: isOpenNow()&&step==="roles" ? "No firms yet — ask for volunteers to start firms on their phones." : "No firms yet. They're started by students in step 1 · Choose role.",style:"margin-top:6px"}));
   card.append(Object.assign(el("div","sm mut"),{textContent:"★ = captain (taps for the firm; names it and can rename until step 2). Tap a name to make them captain; ✕ removes a recruiter (they become a candidate). Reset recruiters clears every firm — use it to swap recruiters between phases or sessions.",style:"margin-top:8px"}));
   return card;
 }
@@ -7744,7 +7744,7 @@ function paramEditor(){
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Variant "+C.v+": "+V.q+"% of candidates are type H; an MBA costs H "+V.cH+" and L "+V.cL+". "
       +(C.mode==="bid" ? "Bidding war: each firm posts a role and a salary for MBAs and for Grads (Manager 200–250, Analyst 100–150); every candidate goes to the highest salary for their degree; no hiring limit."
         : "Fixed salaries: Manager "+V.salM+", Analyst "+V.salA+"; CVs are dealt to firms in batches that match the class by degree and type, and each firm picks a role per degree. Putting MBAs on Manager pays "+(thr==="always"?"whatever their share of H":thr==="never"?"never":"when more than "+Math.round(thr*100)+"% of them are H")+".")
-      +" Flow: Open → 1 pick sides (first round of a meeting only) → 2 candidates choose → 3 recruiters decide → Reveal → Next round. Suggested order: A → B → C → D. "+V.lesson,style:"margin-top:8px"})); }
+      +" Flow: Open → 1 choose role (first round of a meeting only) → 2 candidates choose → 3 recruiters decide → Reveal → Next round. Suggested order: A → B → C → D. "+V.lesson,style:"margin-top:8px"})); }
   else if(g==="adfin"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played (announced to students)","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Same High/Low advertising game as G8, but every pair plays exactly this many rounds and students are told so (\"Round 3 of "+rpFinRounds()+"\", with the final round flagged). Backward induction predicts High in every round; compare the class's play near the end with G8.",style:"margin-top:6px"})); }
