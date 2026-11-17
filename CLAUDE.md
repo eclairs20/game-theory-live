@@ -200,6 +200,15 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     session (`setAttend`); tap a **session header** to mark — or clear — the whole column
     (`setAttendMany`). Its scroll (both axes) is preserved across the per-tick re-render via
     `_rollGT`/`_rollGL`. The roll-call page is `maxWidth 1180px` for both views.
+  **⬇ Export PDF** (roll-call header; also Course config → Data → "Attendance register (PDF)…") opens a panel
+  (`attendanceExportCard`, local `attExpOpen`/`attExpDraft`) that prints the **institute's register format**
+  (IIM-L sheet): per section a centred header (Institute · Batch · Academic Year · Term · Course (Section) · Faculty —
+  editable, prefilled by `attExportDefaults` (batch = commonest roll prefix, e.g. PGP41; year from today), saved per
+  course in `control.attExport`), then S.No · Roll No · Student Name · lectures 1..N with dates ("3 Oct", from the
+  schedule via `attShortDate`) · Total P · Total A, absences shaded red, "Faculty Signature" after each section, each
+  section on a new page. Lectures = the sessions whose roll was **taken** for that section (`attendSessions`); students =
+  `enrolledRoster()` in roster order (audit/dropped left out); `attRegister(sec)` builds the rows. `attExportHTML` →
+  hidden iframe → the browser's print dialog ("Save as PDF"), landscape — no PDF library, nothing new loaded.
   A **read-only "played" overlay** (`playedMap`/`playedIn`) marks students who *submitted a game* in a
   meeting — a faint **played** chip in the single-session list and a faint **·** in the grid (a cell
   that is ticked present shows **P** instead). It **never writes** to `control.attend`: the

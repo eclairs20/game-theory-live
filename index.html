@@ -579,7 +579,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-13.008";
+const APP_VERSION = "2026-11-17.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -824,6 +824,98 @@ function gridSessions(sec){
   const out=[]; for(let s=1;s<=mx;s++) out.push(s);
   known.forEach(s=>{ if(isExtraSess(s)) out.push(s); });
   return out.sort((a,b)=>sessOrd(a)-sessOrd(b));
+}
+/* ── Attendance register as PDF (the institute's format) ─────────────────────────────────────────────
+   One block per section: a centred header (institute, batch, year, term, course (section), faculty), then
+   S.No · Roll No · Student Name · lecture 1..N (with dates) · Total P · Total A, absences shaded red, and
+   "Faculty Signature" at the end; each section starts on a new page. Columns = the sessions whose roll was
+   TAKEN for that section (attendSessions); a student without a tick in a taken session is absent. Students =
+   the section's enrolled roster in the roster's saved order (audit / dropped left out). The header fields are
+   editable and remembered per course in control.attExport. Built as a print-ready page in a hidden iframe →
+   the browser's print dialog → "Save as PDF" (no PDF library, nothing new loaded). */
+let attExpOpen=false, attExpDraft=null;
+function attExportDefaults(){
+  const saved=(control&&control.attExport)||{}, now=new Date(), y=now.getFullYear(), m=now.getMonth();
+  const ay = m>=5 ? y+"-"+String((y+1)%100).padStart(2,"0") : (y-1)+"-"+String(y%100).padStart(2,"0");
+  const cnt={}; enrolledRoster().forEach(e=>{ const mm=/^([A-Za-z]+)\D*(\d+)/.exec(String(e.sid||"")); if(mm){ const k=mm[1].toUpperCase()+mm[2]; cnt[k]=(cnt[k]||0)+1; } });
+  const batch=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0]||"";
+  return Object.assign({inst:"INDIAN INSTITUTE OF MANAGEMENT LUCKNOW", batch, year:ay, term:"", course:courseName()||"", faculty:""}, saved);
+}
+function attShortDate(sess, sec){
+  const r = schedule.find(x=>x.session===sess && x.section===sec) || schedule.find(x=>x.session===sess && !x.section);
+  const m=r && /^(\d{4})-(\d{2})-(\d{2})$/.exec(r.date||""); if(!m) return sessLabel(sess);
+  return (+m[3])+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m[2]-1];
+}
+/* The register for one section: {sessions, rows:[{sno, roll, name, marks:["P"|"A"], p, a}]} */
+function attRegister(sec){
+  const sessions=attendSessions(sec);
+  const people=enrolledRoster().filter(e=> !sec || e.section===sec);
+  const rows=people.map((e,i)=>{ const marks=sessions.map(ss=> isPresent(attendKeyFor(ss,sec), e.email) ? "P" : "A");
+    const p=marks.filter(x=>x==="P").length; return {sno:i+1, roll:e.sid||"", name:String(e.name||e.email||"").toUpperCase(), marks, p, a:marks.length-p}; });
+  return {sessions, rows};
+}
+function attExportHTML(f, secs){
+  const H=x=>esc(String(x==null?"":x));
+  const blocks=secs.map((sec,bi)=>{ const R=attRegister(sec), n=R.sessions.length;
+    const head="<div class='hd'><div>"+H(f.inst)+"</div>"+(f.batch?"<div>Batch : "+H(f.batch)+"</div>":"")+(f.year?"<div>Academic Year : "+H(f.year)+"</div>":"")+
+      (f.term?"<div>Term : "+H(f.term)+"</div>":"")+"<div>Course (Section) : "+H(f.course)+(sec?" ("+H(sec)+")":"")+"</div>"+(f.faculty?"<div>Faculty : "+H(f.faculty)+"</div>":"")+"</div>";
+    let t="<table><thead><tr><th class='c'>S.No</th><th class='l'>Roll No</th><th class='l'>Student Name</th>"+R.sessions.map((ss,i)=>"<th class='c'>"+(i+1)+"</th>").join("")+"<th class='c'>Total P</th><th class='c'>Total A</th></tr>"+
+      "<tr><th></th><th></th><th class='l'>Lectures Date--&gt;</th>"+R.sessions.map(ss=>"<th class='c dt'>"+H(attShortDate(ss,sec))+"</th>").join("")+"<th></th><th></th></tr></thead><tbody>";
+    R.rows.forEach(r=>{ t+="<tr><td class='c'>"+r.sno+"</td><td class='l'>"+H(r.roll)+"</td><td class='l nm'>"+H(r.name)+"</td>"+r.marks.map(m=>"<td class='c"+(m==="A"?" ab":"")+"'>"+m+"</td>").join("")+"<td class='r'>"+r.p+"</td><td class='r'>"+r.a+"</td></tr>"; });
+    if(!R.rows.length) t+="<tr><td colspan='"+(5+n)+"' class='c'>No enrolled students in this section.</td></tr>";
+    t+="</tbody></table>";
+    const note = n ? "" : "<div class='note'>No roll call has been taken for this section yet.</div>";
+    return "<section"+(bi?" class='pb'":"")+">"+head+t+note+"<div class='sig'>Faculty Signature</div></section>"; }).join("");
+  const title=(f.course||"Attendance").replace(/[^\w ]+/g,"").trim().replace(/\s+/g,"_")+"_Attendance";
+  return "<!doctype html><html><head><meta charset='utf-8'><title>"+H(title)+"</title><style>"+
+    "@page{size:landscape;margin:10mm 9mm}*{box-sizing:border-box}body{margin:0;font-family:Calibri,Carlito,Arial,sans-serif;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}"+
+    ".hd{text-align:center;font-family:Arial,Helvetica,sans-serif;font-weight:700;font-size:10.5pt;line-height:1.3;margin:0 0 4px}"+
+    "table{width:100%;border-collapse:collapse;font-size:8pt}th,td{border:.6pt solid #000;padding:1.5px 3px;white-space:nowrap}"+
+    "thead th{font-family:Arial,Helvetica,sans-serif;font-size:8.5pt;font-weight:700}th.dt{font-size:8pt}.c{text-align:center}.l{text-align:left}.r{text-align:right}"+
+    "td.nm{max-width:2.6in;overflow:hidden;text-overflow:ellipsis}td.ab{background:#F8CBCB;color:#C00000}thead{display:table-header-group}tr{page-break-inside:avoid}"+
+    ".sig{text-align:right;font-family:Arial,Helvetica,sans-serif;font-weight:700;font-size:9.5pt;margin:28px 30px 0 0}.note{font-size:9pt;color:#555;margin-top:6px}"+
+    "section.pb{page-break-before:always;break-before:page}"+
+    "</style></head><body>"+blocks+"</body></html>";
+}
+async function attExportPrint(f, secs){
+  try{ await writeControl({attExport:{inst:f.inst||"", batch:f.batch||"", year:f.year||"", term:f.term||"", course:f.course||"", faculty:f.faculty||""}}); }catch(e){}
+  const html=attExportHTML(f, secs);
+  const old=document.getElementById("attPrintFrame"); if(old) old.remove();
+  const fr=document.createElement("iframe"); fr.id="attPrintFrame"; fr.setAttribute("aria-hidden","true");
+  fr.style.cssText="position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+  document.body.appendChild(fr);
+  const d=fr.contentWindow.document; d.open(); d.write(html); d.close();
+  const prevTitle=document.title; document.title=d.title;   // some browsers name the PDF after the top page's title
+  setTimeout(()=>{ try{ fr.contentWindow.focus(); fr.contentWindow.print(); }catch(e){ toast("Couldn't open the print dialog"); }
+    setTimeout(()=>{ document.title=prevTitle; }, 1500); }, 250);
+}
+/* The export panel (roll-call page). Local draft so live roll-call redraws never wipe what's being typed. */
+function attendanceExportCard(){
+  const f = attExpDraft || (attExpDraft=attExportDefaults());
+  const secs=rosterSections(); if(!f.secs) f.secs = secs.length ? secs.slice() : [""];
+  const card=el("div","card stage");
+  const top=el("div","row"); top.style.cssText="justify-content:space-between;align-items:center;gap:10px";
+  top.append(el("div","eyebrow gold","Export attendance (PDF)"));
+  const x=el("button","linkbtn","Close"); x.type="button"; x.onclick=()=>{ attExpOpen=false; render(); }; top.append(x);
+  card.append(top);
+  card.append(Object.assign(el("div","sm mut"),{textContent:"The institute's register: one block per section, lectures = the sessions whose roll call you took (with their dates), absences shaded. These header lines are remembered for this course.",style:"margin:4px 0 10px"}));
+  const grid=el("div","paramgrid");
+  [["inst","Institute"],["batch","Batch"],["year","Academic year"],["term","Term"],["course","Course"],["faculty","Faculty"]].forEach(([k,l])=>{
+    const fd=el("div","field"); fd.append(Object.assign(el("label"),{textContent:l}));
+    const i=el("input","input"); i.value=f[k]||""; i.placeholder={term:"e.g. Term V",faculty:"e.g. Prof. …"}[k]||""; i.oninput=()=>{ f[k]=i.value; };
+    fd.append(i); grid.append(fd); });
+  card.append(grid);
+  if(secs.length){
+    const sr=el("div","res-list"); sr.style.marginTop="10px"; sr.append(el("span","tinylabel","Sections"));
+    secs.forEach(sc=>{ const on=f.secs.includes(sc); const b=el("button","res-btn"+(on?" on":"")); b.type="button";
+      const n=attendSessions(sc).length; b.textContent="Section "+sc+" · "+n+" lecture"+(n===1?"":"s");
+      b.onclick=()=>{ f.secs = on ? f.secs.filter(z=>z!==sc) : secs.filter(z=>z===sc||f.secs.includes(z)); render(); }; sr.append(b); });
+    card.append(sr);
+  }
+  const go=el("button","btn","⬇ Create PDF"); go.style.marginTop="12px";
+  go.onclick=()=>{ if(!f.secs.length){ toast("Pick at least one section"); return; } attExportPrint(f, f.secs); };
+  card.append(go, Object.assign(el("div","sm mut"),{textContent:"Opens your browser's print dialog — choose “Save as PDF” as the printer. Landscape, one section per page block.",style:"margin-top:6px"}));
+  return card;
 }
 /* Who *submitted a game* in each meeting — a read-only overlay for roll call. It NEVER writes to
    the register; the instructor's ticks stay the single source of truth. Maps meetingKey
@@ -6697,7 +6789,10 @@ function rollCall(){
   if(rollSess!=null && rollSess!==tdy && tdy!=null){ const back=el("button","linkbtn","back to today"); back.type="button"; back.style.marginLeft="8px"; back.onclick=()=>{ rollSess=null; render(); }; sub.append(back); }
   hl.append(sub);
   hr.append(hl);
-  const close=el("button","btn neutral","Done"); close.onclick=()=>{ rollMode=false; rollSearch=""; render(); }; hr.append(close);
+  const close=el("button","btn neutral","Done"); close.onclick=()=>{ rollMode=false; rollSearch=""; attExpOpen=false; render(); };
+  const hb=el("div"); hb.style.cssText="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end";
+  if(haveRoster()){ const ex=el("button","ghost-btn","⬇ Export PDF"); ex.title="Download the attendance register as a PDF (institute format)"; ex.onclick=()=>{ attExpOpen=!attExpOpen; if(attExpOpen) attExpDraft=null; render(); }; hb.append(ex); }
+  hb.append(close); hr.append(hb);
   head.append(hr);
   const ub=schedUndoBanner(); if(ub){ ub.style.marginTop="10px"; head.append(ub); }
   // count + progress (enrolled only; audit shown but not in the denominator)
@@ -6706,6 +6801,7 @@ function rollCall(){
     textContent: !haveRoster() ? "No roster loaded — load the class roster first." : !mk ? "Roll call starts once today's class is settled." : (enrolledPresent+" of "+nEnr+" "+(sec?"Section "+sec:"enrolled")+" present"+(presentN>enrolledPresent?"  ·  +"+(presentN-enrolledPresent)+" visiting (audit/dropped)":""))}));
   if(nEnr && mk){ const pr=el("div","present-prog"); pr.style.marginTop="8px"; const bar=el("span"); bar.style.width=Math.round(100*enrolledPresent/nEnr)+"%"; pr.append(bar); head.append(pr); }
   wrap.append(head);
+  if(attExpOpen && haveRoster()) wrap.append(attendanceExportCard());
 
   if(!haveRoster()) return wrap;
 
@@ -7752,7 +7848,10 @@ function courseConfig(){
   sD.append(Object.assign(el("h3"),{textContent:"Data"}));
   sD.append(Object.assign(el("div","sm mut"),{textContent:"Class “"+ROOM+"”. Export downloads every session's submissions as CSV — keep it for your records and analysis."}));
   const expB=el("button","btn neutral wide","Export all data (CSV)"); expB.style.marginTop="8px"; expB.onclick=exportCSV;
-  sD.append(expB); grid.append(sD);
+  sD.append(expB);
+  if(haveRoster()){ const ap=el("button","btn neutral wide","Attendance register (PDF)…"); ap.style.marginTop="8px";
+    ap.onclick=()=>{ cfgMode=false; rollSection=curMSection(); rollSess=null; rollSearch=""; rollMode=true; attExpOpen=true; attExpDraft=null; render(); }; sD.append(ap); }
+  grid.append(sD);
 
   wrap.append(grid);
   return wrap;
