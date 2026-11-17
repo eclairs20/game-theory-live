@@ -579,7 +579,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-17.001";
+const APP_VERSION = "2026-11-17.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -847,8 +847,10 @@ function attShortDate(sess, sec){
   return (+m[3])+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m[2]-1];
 }
 /* The register for one section: {sessions, rows:[{sno, roll, name, marks:["P"|"A"], p, a}]} */
-function attRegister(sec){
-  const sessions=attendSessions(sec);
+/* Taken sessions of a section, optionally only up to (and including) session `upTo` (chronological, so S8.5 < S9). */
+function attSessionsUpTo(sec, upTo){ const all=attendSessions(sec); return upTo==null ? all : all.filter(ss=>sessOrd(ss)<=sessOrd(upTo)); }
+function attRegister(sec, upTo){
+  const sessions=attSessionsUpTo(sec, upTo);
   const people=enrolledRoster().filter(e=> !sec || e.section===sec);
   const rows=people.map((e,i)=>{ const marks=sessions.map(ss=> isPresent(attendKeyFor(ss,sec), e.email) ? "P" : "A");
     const p=marks.filter(x=>x==="P").length; return {sno:i+1, roll:e.sid||"", name:String(e.name||e.email||"").toUpperCase(), marks, p, a:marks.length-p}; });
@@ -856,7 +858,7 @@ function attRegister(sec){
 }
 function attExportHTML(f, secs){
   const H=x=>esc(String(x==null?"":x));
-  const blocks=secs.map((sec,bi)=>{ const R=attRegister(sec), n=R.sessions.length;
+  const blocks=secs.map((sec,bi)=>{ const R=attRegister(sec, f.upTo), n=R.sessions.length;
     const head="<div class='hd'><div>"+H(f.inst)+"</div>"+(f.batch?"<div>Batch : "+H(f.batch)+"</div>":"")+(f.year?"<div>Academic Year : "+H(f.year)+"</div>":"")+
       (f.term?"<div>Term : "+H(f.term)+"</div>":"")+"<div>Course (Section) : "+H(f.course)+(sec?" ("+H(sec)+")":"")+"</div>"+(f.faculty?"<div>Faculty : "+H(f.faculty)+"</div>":"")+"</div>";
     let t="<table><thead><tr><th class='c'>S.No</th><th class='l'>Roll No</th><th class='l'>Student Name</th>"+R.sessions.map((ss,i)=>"<th class='c'>"+(i+1)+"</th>").join("")+"<th class='c'>Total P</th><th class='c'>Total A</th></tr>"+
@@ -905,10 +907,20 @@ function attendanceExportCard(){
     const i=el("input","input"); i.value=f[k]||""; i.placeholder={term:"e.g. Term V",faculty:"e.g. Prof. …"}[k]||""; i.oninput=()=>{ f[k]=i.value; };
     fd.append(i); grid.append(fd); });
   card.append(grid);
+  // Up to which session: every session with a roll taken in any section (chips), or All
+  const allS=[...new Set((secs.length?secs:[""]).flatMap(sc=>attendSessions(sc)))].sort((a,b)=>sessOrd(a)-sessOrd(b));
+  if(f.upTo!=null && !allS.includes(f.upTo)) f.upTo=null;
+  if(allS.length>1){
+    const ur=el("div","res-list"); ur.style.marginTop="10px"; ur.append(el("span","tinylabel","Up to session"));
+    allS.forEach(ss=>{ const b=el("button","res-btn"+(f.upTo===ss?" on":"")); b.type="button"; b.textContent=sessLabel(ss);
+      b.title="Include lectures up to and including "+sessLabel(ss); b.onclick=()=>{ f.upTo=ss; render(); }; ur.append(b); });
+    const all=el("button","res-btn"+(f.upTo==null?" on":"")); all.type="button"; all.textContent="All"; all.onclick=()=>{ f.upTo=null; render(); }; ur.append(all);
+    card.append(ur);
+  }
   if(secs.length){
     const sr=el("div","res-list"); sr.style.marginTop="10px"; sr.append(el("span","tinylabel","Sections"));
     secs.forEach(sc=>{ const on=f.secs.includes(sc); const b=el("button","res-btn"+(on?" on":"")); b.type="button";
-      const n=attendSessions(sc).length; b.textContent="Section "+sc+" · "+n+" lecture"+(n===1?"":"s");
+      const n=attSessionsUpTo(sc, f.upTo).length; b.textContent="Section "+sc+" · "+n+" lecture"+(n===1?"":"s");
       b.onclick=()=>{ f.secs = on ? f.secs.filter(z=>z!==sc) : secs.filter(z=>z===sc||f.secs.includes(z)); render(); }; sr.append(b); });
     card.append(sr);
   }

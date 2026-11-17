@@ -206,7 +206,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   editable, prefilled by `attExportDefaults` (batch = commonest roll prefix, e.g. PGP41; year from today), saved per
   course in `control.attExport`), then S.No · Roll No · Student Name · lectures 1..N with dates ("3 Oct", from the
   schedule via `attShortDate`) · Total P · Total A, absences shaded red, "Faculty Signature" after each section, each
-  section on a new page. Lectures = the sessions whose roll was **taken** for that section (`attendSessions`); students =
+  section on a new page. Lectures = the sessions whose roll was **taken** for that section (`attendSessions`), optionally
+  cut off by **Up to session** chips (`f.upTo`, `attSessionsUpTo` — chronological, so S8.5 < S9; "All" = every taken
+  session; the section chips show the lecture count within the cut-off); students =
   `enrolledRoster()` in roster order (audit/dropped left out); `attRegister(sec)` builds the rows. `attExportHTML` →
   hidden iframe → the browser's print dialog ("Save as PDF"), landscape — no PDF library, nothing new loaded.
   A **read-only "played" overlay** (`playedMap`/`playedIn`) marks students who *submitted a game* in a
