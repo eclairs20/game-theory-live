@@ -174,7 +174,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   **separate** from who submitted a game. Stored in `control.attend[<meetingKey>][<encodeKey(email)>]`
   = timestamp (meetingKey = `"S<session><section>"`, e.g. `S1A`) — in `control` so it's
   instructor-writable / world-readable like the hub, **no Firebase rules change**. The instructor
-  opens a full-screen page (`rollCall()`, local `rollMode`) from the **top-bar "📋 Take roll call"**
+  opens a full-screen page (`rollCall()`, local `rollMode`) from the **top-bar "📋 Roll Call"**
   button (`#rollBtn`, shown/wired by `syncRollBtn()` for an instructor with a roster): a section-wise,
   searchable tick list built from the roster, in the roster's **saved order** (`setAttend`/
   `setAttendMany` write `control/attend/…` directly; audit members are shown but excluded from the
@@ -921,7 +921,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - **Top bar** (`.topbar`, a flex **column** of `.tb-row`s) — **Row 1:** the brand (left) +
   (`.tb-actions`, right-aligned) the phase pill, **Log out** (`#logoutBtn`/`syncLogoutBtn`,
   instructor-only → `logOut`) and the theme toggle. **Row 2** (`.tb-sub`): the **course picker**
-  `<select>` (left) + (`.tb-actions`, right) **📋 Take roll call** (`#rollBtn`/`syncRollBtn`),
+  `<select>` (left) + (`.tb-actions`, right) **📋 Roll Call** (`#rollBtn`/`syncRollBtn`),
   **⚙ Course config** (`#cfgBtn`/`syncCfgBtn`) — both instructor-only, hidden in any full-screen
   mode — and the role toggle (`#roleBtn`, Instructor / Exit console). Each row's actions wrap and
   stay right-aligned, so nothing overflows.

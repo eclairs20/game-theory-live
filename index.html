@@ -65,7 +65,7 @@ code{font-family:"IBM Plex Mono",monospace; background:var(--surface-2); padding
 
 .shell{max-width:1120px; margin:0 auto; padding:20px clamp(14px,3vw,30px) 72px}
 /* Two explicit rows. Row 1: brand (left) + phase pill, Log out, theme (right). Row 2: the course
-   picker (left) + Take roll call, Course config, role toggle (right). Each row's actions wrap and
+   picker (left) + Roll Call, Course config, role toggle (right). Each row's actions wrap and
    stay right-aligned, so nothing overflows. */
 .topbar{display:flex; flex-direction:column; gap:10px; padding:14px 4px 20px}
 .tb-row{display:flex; align-items:center; gap:10px 16px; flex-wrap:wrap}
@@ -518,7 +518,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     <div class="tb-row tb-sub">
       <select id="courseSel" class="course-sel" title="Switch course" hidden></select>
       <div class="tb-actions">
-        <button id="rollBtn" class="ghost-btn" hidden>📋 Take roll call</button>
+        <button id="rollBtn" class="ghost-btn" hidden>📋 Roll Call</button>
         <button id="cfgBtn" class="ghost-btn" hidden>⚙ Course config</button>
         <button id="roleBtn" class="ghost-btn">Instructor</button>
       </div>
@@ -579,7 +579,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-18.001";
+const APP_VERSION = "2026-11-18.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -7677,7 +7677,7 @@ function teacherConsole(){
   c.append(main);
   return c;
 }
-/* Show/hide the top-bar "Take roll call" button (instructor + roster present, not already in a
+/* Show/hide the top-bar "Roll Call" button (instructor + roster present, not already in a
    full-screen mode) and wire it. Mirrors the removed rail card. */
 function syncRollBtn(){
   const b=$("#rollBtn"); if(!b) return;
