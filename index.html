@@ -579,7 +579,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-17.002";
+const APP_VERSION = "2026-11-18.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -787,15 +787,25 @@ function meetingLabels(list){
 function attendMap(){ return (control&&control.attend)||{}; }
 function attendKeyFor(sess, sec){ return "S"+sess+(sec||""); }
 function parseAttendKey(mk){ const m=/^S(\d+)([A-Za-z]*)$/.exec(String(mk||"")); return m?{session:+m[1], section:m[2]||""}:null; }
-function isPresent(mk, id){ const a=attendMap()[mk]; return !!(a && a[encodeKey(String(id))]); }
+/* Present at a meeting = ticked in THAT meeting's roll call, OR in another section's roll call for the SAME session
+   number. Attendance follows the student, not the section list they were in when ticked: a student moved between
+   sections in the roster (18 Nov: Saurabh B → A showed absent everywhere, his ticks were all under "S…B") keeps their
+   record, and one session counts once whichever section's class they sat in. isPresentHere = this meeting only. */
+function isPresentHere(mk, id){ const a=attendMap()[mk]; return !!(a && a[encodeKey(String(id))]); }
+function attendKeysSameSession(mk){ const pk=parseAttendKey(mk); if(!pk) return [mk];
+  return Object.keys(attendMap()).filter(m=>{ const q=parseAttendKey(m); return q && q.session===pk.session; }).concat([mk]); }
+function isPresent(mk, id){ if(isPresentHere(mk,id)) return true; const att=attendMap(), k=encodeKey(String(id));
+  return attendKeysSameSession(mk).some(m=> m!==mk && att[m] && att[m][k]); }
 async function setAttend(mk, id, present){
-  try{ const r=fb.ref(CTRL_PATH()+"/attend/"+mk+"/"+encodeKey(String(id)));
-    if(present) await r.set(Date.now()); else await r.remove(); }
+  try{ const k=encodeKey(String(id));
+    if(present) await fb.ref(CTRL_PATH()+"/attend/"+mk+"/"+k).set(Date.now());
+    else { const up={}; new Set(attendKeysSameSession(mk)).forEach(m=>{ up[m+"/"+k]=null; }); await fb.ref(CTRL_PATH()+"/attend").update(up); } }   // absent = no tick for this session in ANY section
   catch(e){ toast("Couldn't save attendance — check your connection"); }
 }
 async function setAttendMany(mk, ids, present){
-  try{ const up={}; ids.forEach(id=>{ up[encodeKey(String(id))]= present? Date.now() : null; });
-    await fb.ref(CTRL_PATH()+"/attend/"+mk).update(up); }
+  try{ const up={}, ms=new Set(attendKeysSameSession(mk));
+    ids.forEach(id=>{ const k=encodeKey(String(id)); if(present) up[mk+"/"+k]=Date.now(); else ms.forEach(m=>{ up[m+"/"+k]=null; }); });
+    await fb.ref(CTRL_PATH()+"/attend").update(up); }
   catch(e){ toast("Couldn't save attendance"); }
 }
 /* Session numbers that have a *taken* roll for this section (any entry), ascending — the columns
@@ -2009,10 +2019,14 @@ function hubAttendance(){
   const myIds=rn ? [rn.email, rn.email2].filter(Boolean) : [String(myId)];
   const mySec=(rn&&rn.section)||"";
   const att=attendMap();
-  const rows=Object.keys(att).filter(mk=>{ const a=att[mk]; return a && Object.keys(a).length; })  // roll taken
+  // one row per SESSION: a roll taken in my section (or a section-less one), or any roll call I was ticked in
+  const bySess={};
+  Object.keys(att).filter(mk=>{ const a=att[mk]; return a && Object.keys(a).length; })  // roll taken
     .map(mk=>({mk, pk:parseAttendKey(mk)})).filter(x=>x.pk)
-    .filter(({mk,pk})=> myIds.some(id=>isPresent(mk,id)) || !pk.section || pk.section===mySec)  // relevant to me
-    .sort((a,b)=> (sessOrd(a.pk.session)-sessOrd(b.pk.session)) || (a.pk.section<b.pk.section?-1:1));
+    .filter(({mk,pk})=> myIds.some(id=>isPresentHere(mk,id)) || !pk.section || pk.section===mySec)  // relevant to me
+    .forEach(x=>{ const cur=bySess[x.pk.session]; const mine=myIds.some(id=>isPresentHere(x.mk,id));
+      if(!cur || (mine && !cur.mine) || (!cur.mine && x.pk.section===mySec)) bySess[x.pk.session]=Object.assign(x,{mine}); });
+  const rows=Object.values(bySess).sort((a,b)=> sessOrd(a.pk.session)-sessOrd(b.pk.session));
   if(!rows.length) return null;   // no roll calls taken that concern this student
   const card=el("div","card stage");
   card.append(el("div","eyebrow","My attendance"));

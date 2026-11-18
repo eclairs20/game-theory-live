@@ -186,7 +186,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   header shows the meeting's **date** from the session schedule (`schedDateFor`/`fmtSchedDate`,
   matched on session+section). A meeting's roll is "taken" once it has any entry; a listed student
   without an entry counts **absent**. Helpers: `attendMap`, `attendKeyFor`,
-  `parseAttendKey`, `isPresent`. Each tick re-renders (attendance is in `control`), so `_rollScroll`
+  `parseAttendKey`, `isPresent`. **Attendance follows the student, not the section:** `isPresent(mk,id)` is true if they
+  were ticked in that meeting OR in any other section's roll call for the **same session number**
+  (`attendKeysSameSession`; `isPresentHere` = this meeting only) — so moving a student between sections in the roster
+  keeps their record (18 Nov: Saurabh moved B → A showed absent everywhere, all his ticks were under `S…B`). Marking
+  absent (`setAttend`/`setAttendMany` with false) clears that session's tick in **every** section; marking present writes
+  under the roll call you're in. My page (`hubAttendance`) shows one row per session. Each tick re-renders (attendance is in `control`), so `_rollScroll`
   preserves the list scroll position. A **View** toggle (`rollGrid`) switches between two layouts:
   - **This session** — the single-meeting tick list, a **responsive multi-column grid** (`.roll-list`,
     `auto-fill minmax(360px,1fr)` — up to 3 columns on a projector, 1 on a phone) that fills the full
