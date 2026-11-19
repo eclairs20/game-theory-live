@@ -325,8 +325,14 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   players A, B, C and a characteristic function v(S). Config `{ v:{A,B,C,AB,AC,BC,ABC}, showSh }` (`ngCfg()`); presets
   `NG_PRESETS` **Game 1** (AB 100, AC 200, BC 300, ABC 400 → core A 0–100, B 0–200, C 100–300; Shapley 83.33 / 133.33 /
   183.33) and **Game 2** (AB 0, AC 0, BC 400, ABC 400 → core: A gets 0; Shapley 0 / 200 / 200), or any custom numbers
-  (`paramEditor`). The round's v is **stamped** by `openMeeting` into `control.ng = {rk, v}` (`ngV()`), so a Parameters
-  change applies from the next round. Self-contained `ng*` block.
+  (`paramEditor`). The round's v is **stamped** by `openMeeting` into `control.ng = {rk, v}` (`ngV()`), so a round's values never
+  change under it. **Changing v follows G12's mode-switch rule:** free while Run's round has nothing recorded (also updates the
+  stamp); **greyed** while a round with data is unrevealed ("reveal it (or discard it) first"); after Reveal a preset tap or a
+  value edit asks "Switch to Game 2 and start Round N+1 now?" and opens it with the new values in one write
+  (`openMeeting({round, config})`), with the Run Undo (`runSnap` now also restores `ng`). A note on the card says "Round N runs
+  Game 1 — fixed for this round. Next round will use …". (19 Nov sandbox: tapping Game 2 after Reveal only changed Parameters
+  and Run stayed on round 1, which looked like nothing happened.) The proposal draft is per round (`ngDraft[roundKey|gid]`),
+  so a new round starts with an empty form. Self-contained `ng*` block.
   - **Groups (meeting-level, kept across rounds)**: `live/<S1A-nego>/ng/<gid>` = `{members:{enc(id):{id,name}}, by, ts}`, pointer
     `nm/<enc(id)>` = gid claimed by **transaction**, size cap by a transaction on `members`. Students tap **Start a group** /
     **Join (n/3)**; a **4th** can join only once every group is full ("Join as 4th" — watches, role `"O"`, sub `obs:true`).

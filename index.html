@@ -579,7 +579,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-19.001";
+const APP_VERSION = "2026-11-19.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1205,7 +1205,7 @@ function runLabel(){ return ((GAMES[control.activeGame]||{}).name||"")+" · "+se
 /* Undo for moving Run on (Next round / another game / another section / a mode switch) — local to this console,
    offered until the new round gets its first record. */
 let _runUndo=null;
-function runSnap(){ const c=control||{}; return {activeGame:c.activeGame||null, section:c.section||"", round:c.round||1, session:c.session||1, phase:c.phase||"waiting", ps:c.ps||null, robot:c.robot||null, config:c.config||null}; }
+function runSnap(){ const c=control||{}; return {activeGame:c.activeGame||null, section:c.section||"", round:c.round||1, session:c.session||1, phase:c.phase||"waiting", ps:c.ps||null, robot:c.robot||null, ng:c.ng||null, config:c.config||null}; }
 async function runMove(question, doIt){
   if(!control) return false;
   const had=!!control.activeGame && runHasData(), snap=runSnap(), label=control.activeGame?runLabel():"", fromKey=curKey;
@@ -1216,7 +1216,7 @@ async function runMove(question, doIt){
 }
 function runUndoOn(){ if(!_runUndo) return false; if(curKey===_runUndo.fromKey || runHasData()){ _runUndo=null; return false; } return true; }
 async function runUndo(){ const u=_runUndo; if(!u) return; _runUndo=null; const x=u.snap;
-  await writeControl({activeGame:x.activeGame, section:x.section, round:x.round, session:x.session, phase:x.phase, ps:x.ps, robot:x.robot, config:x.config});
+  await writeControl({activeGame:x.activeGame, section:x.section, round:x.round, session:x.session, phase:x.phase, ps:x.ps, robot:x.robot, ng:x.ng||null, config:x.config});
   toast("Back to "+u.label); }
 /* Next round → from Run (console or projector). Moving on from a round that wasn't revealed asks first. */
 async function runNextRound(){
@@ -6180,7 +6180,7 @@ async function ngPropose(gid, role, coal, xin){
   const ok={}; if(coal.indexOf(role)>=0) ok[role]=true;
   try{ await fb.ref(LIVE_ROOT(curKey)+"/np/"+gid).set({coal, x, by:String(myId), byRole:role, ts:srvNow(), ok}); }
   catch(e){ toast("Couldn't send — check your connection"); return false; }
-  ngDraft[gid]=null; render(); return true;
+  ngDraft[curKey+"|"+gid]=null; render(); return true;
 }
 async function ngConfirm(gid, role){
   const p=ngProps[gid]; if(!p || p.coal.indexOf(role)<0) return;
@@ -6278,7 +6278,7 @@ function studentNego(c){
   }
   if(!canAct){ c.append(el("p","sm mut","Three of your group play; help them negotiate.")); return; }
   // proposal form (local draft survives live redraws)
-  const d=ngDraft[gid] || (ngDraft[gid]={coal:"ABC", x:{}});
+  const d=ngDraft[curKey+"|"+gid] || (ngDraft[curKey+"|"+gid]={coal:"ABC", x:{}});   // per round: a new round starts with an empty form
   const fm=el("div","card"); fm.style.cssText="padding:12px;margin-top:12px";
   fm.append(Object.assign(el("div","tinylabel"),{textContent: p&&p.coal ? "Or propose something else" : "Make a proposal"}));
   const cr=el("div","res-list"); cr.style.marginTop="6px"; cr.append(el("span","tinylabel","Coalition"));
@@ -8777,18 +8777,35 @@ function paramEditor(){
         : "Fixed salaries: Manager "+V.salM+", Analyst "+V.salA+"; CVs are dealt to firms in batches that match the class by degree and type, and each firm picks a role per degree. Putting MBAs on Manager pays "+(thr==="always"?"whatever their share of H":thr==="never"?"never":"when more than "+Math.round(thr*100)+"% of them are H")+".")
       +" Flow: Open → 1 choose role (first round of a meeting only) → 2 candidates choose → 3 recruiters decide → Reveal → Next round. Suggested order: A → B → C → D. "+V.lesson,style:"margin-top:8px"})); }
   else if(g==="nego"){
-    const C=ngCfg(), cur=JSON.stringify(C.v);
-    const setV=nv=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.v=nv; const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
+    const C=ngCfg(), cur=JSON.stringify(C.v), vKey=v=>NG_KEYS.map(k=>+v[k]||0).join(",");
+    const vName=v=>{ const k=Object.keys(NG_PRESETS).find(k=>vKey(NG_PRESETS[k].v)===vKey(v)); return k ? NG_PRESETS[k].name : "custom ("+["AB","AC","BC","ABC"].map(x=>x+" "+fmt(+v[x]||0,2)).join(", ")+")"; };
+    // The values are fixed per round (stamped in control.ng when it opens). Same rule as G12's mode switch: free while Run's
+    // round has nothing recorded; greyed while a round with data is being played; after Reveal a change STARTS THE NEXT
+    // ROUND with it (after a confirmation) — a round's values never change under it.
+    const st=control.ng && control.ng.rk===curKey ? control.ng : null, L=st ? st.v : C.v;
+    const played=runHasData(), rev=control.phase==="revealed", rd=control.round, rdNow=(parseRoundKey(curKey)||{}).round||rd;
+    const lockWhy="Round "+rd+" is being played — reveal it (or discard it) first; a change then starts Round "+(rd+1)+".";
+    if(st){ const diff=vKey(L)!==vKey(C.v); const nb=el("div","note-box"+(diff?"":" teal")); nb.style.margin="0 0 8px";
+      nb.innerHTML="Round "+rdNow+" runs <b>"+esc(vName(L))+"</b> — fixed for this round."+(diff?" <b style='color:var(--gold)'>Next round will use "+esc(vName(C.v))+".</b>":" A change below starts with the next round.");
+      wrap.append(nb); }
+    const setV=nv=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.v=nv; const conf=Object.assign({},control.config); conf[g]=nc;
+      if(!played){ const patch={config:conf}; if(st) patch.ng={rk:st.rk, v:Object.assign({},NG_PRESETS.g1.v,nv)}; writeControl(patch); return true; }
+      if(!confirm("Switch to "+vName(nv)+" and start Round "+(rd+1)+" now?\n\nRound "+rd+" stays as played ("+vName(L)+") and moves to Review. Groups stay the same; roles are re-dealt.")) return false;
+      runMove(null, ()=>openMeeting({round:rd+1, config:conf})); return true; };
     wrap.append(Object.assign(el("div","tinylabel"),{textContent:"Characteristic function"}));
     const pr=el("div","row"); pr.style.cssText="gap:8px;flex-wrap:wrap;margin-top:4px";
     Object.keys(NG_PRESETS).forEach(k=>{ const P=NG_PRESETS[k], on=JSON.stringify(Object.assign({},P.v))===cur;
-      const b=el("button","ghost-btn"+(on?" hold-on":""),P.name+": "+["AB","AC","BC","ABC"].map(x=>x+" "+P.v[x]).join(", ")); b.onclick=()=>{ if(!on) setV(Object.assign({},P.v)); }; pr.append(b); });
+      const b=el("button","ghost-btn"+(on?" hold-on":""),P.name+": "+["AB","AC","BC","ABC"].map(x=>x+" "+P.v[x]).join(", ")); b.onclick=()=>{ if(!on) setV(Object.assign({},P.v)); };
+      if(!on) lockIf(b, played && !rev, lockWhy); pr.append(b); });
     wrap.append(pr);
     const grid=el("div","paramgrid"); grid.style.marginTop="10px";
     NG_KEYS.forEach(k=>{ const f=el("div","field"); f.append(Object.assign(el("label"),{textContent:"v("+k+")"}));
       const i=el("input","input mono"); i.type="number"; i.value=C.v[k]; i.style.padding="8px 10px";
-      i.onchange=()=>{ const nv=Object.assign({},C.v); nv[k]=Number(i.value)||0; setV(nv); }; f.append(i); grid.append(f); });
+      if(played && !rev){ i.disabled=true; i.title=lockWhy; }
+      i.onchange=()=>{ const nv=Object.assign({},C.v); nv[k]=Number(i.value)||0; if(!setV(nv)) i.value=C.v[k]; }; f.append(i); grid.append(f); });
     wrap.append(grid);
+    if(played && rev) wrap.append(Object.assign(el("div","sm mut"),{textContent:"Changing the values now starts Round "+(rd+1)+" with them (you'll be asked first).",style:"margin-top:6px"}));
+    else if(played) wrap.append(Object.assign(el("div","sm mut"),{textContent:lockWhy,style:"margin-top:6px"}));
     const sh=ngShapley(C.v), cr=ngCoreRange(C.v);
     const shB=el("button","ghost-btn"+(C.showSh?" hold-on":""), C.showSh?"✓ Students see the Shapley value":"Show the Shapley value to students"); shB.style.marginTop="10px";
     shB.onclick=()=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.showSh=!C.showSh; const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
