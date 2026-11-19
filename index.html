@@ -385,6 +385,25 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .present-controls{display:flex; flex-wrap:wrap; gap:12px; justify-content:center; align-items:center;
   position:sticky; bottom:calc(-1 * clamp(18px,3.5vw,44px)); z-index:3; background:var(--bg); padding:10px 0 clamp(18px,3.5vw,44px); margin-bottom:calc(-1 * clamp(18px,3.5vw,44px)); border-top:1px solid var(--line)}
 .present-controls .btn{padding:14px 26px; font-size:1.05rem}
+/* "How to play" walkthrough on the projector (demoView): a phone mock-up + a big caption, stepped with ← / →. */
+.demo-wrap{flex:1 1 auto; display:flex; gap:clamp(20px,4vw,56px); align-items:center; justify-content:center; flex-wrap:wrap; padding:8px 0}
+.demo-phone{position:relative; width:340px; max-width:88vw; height:min(600px, calc(100vh - 230px)); min-height:420px; border:11px solid #1d1d1f; border-radius:38px; background:var(--bg);
+  box-shadow:0 0 0 1px var(--line), 0 18px 50px rgba(0,0,0,.28); padding:26px 14px 18px; overflow:hidden; font-size:.92rem; pointer-events:none; flex:0 0 auto}
+.demo-phone:before{content:""; position:absolute; top:8px; left:50%; transform:translateX(-50%); width:90px; height:6px; border-radius:6px; background:#1d1d1f; opacity:.85}
+.demo-phone .card{padding:12px; margin-top:10px}
+.demo-phone .btn{width:100%; padding:11px}
+.demo-cap{flex:1 1 360px; max-width:560px; display:flex; flex-direction:column; gap:14px}
+.demo-cap .demo-n{font-size:.85rem; letter-spacing:.14em; text-transform:uppercase; color:var(--gold); font-weight:800}
+.demo-cap h2{font-family:Fraunces,Georgia,serif; font-size:clamp(1.8rem,3.4vw,2.8rem); margin:0; line-height:1.1}
+.demo-cap p{font-size:clamp(1.1rem,2vw,1.45rem); line-height:1.45; margin:0; color:var(--ink-2)}
+.demo-dots{display:flex; gap:8px; justify-content:center}
+.demo-dots span{width:10px; height:10px; border-radius:50%; background:var(--line)}
+.demo-dots span.on{background:var(--gold)}
+.demo-hl{outline:3px solid var(--gold); outline-offset:3px; border-radius:10px; animation:demoPulse 1.4s ease-in-out infinite}
+@keyframes demoPulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--gold) 55%, transparent)} 50%{box-shadow:0 0 0 9px color-mix(in srgb, var(--gold) 0%, transparent)}}
+.demo-dialog{position:absolute; left:18px; right:18px; top:150px; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:14px;
+  box-shadow:0 14px 40px rgba(0,0,0,.35); z-index:2}
+.demo-dim{position:absolute; inset:0; background:rgba(0,0,0,.38); z-index:1}
 /* Pareto-optimality interactive lesson (instructor-projected, no submissions). */
 .lesson{position:fixed; inset:0; z-index:60; background:var(--bg); color:var(--ink); overflow:auto;
   display:flex; flex-direction:column; padding:clamp(16px,3vw,40px); gap:clamp(12px,2vh,22px)}
@@ -579,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-19.004";
+const APP_VERSION = "2026-11-19.005";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1350,6 +1369,7 @@ function onCtrl(snap){
   if(applyVideoParam()){ render(); return; }   // opened from a slide's direct video link
   const cs=studentCtrlSig(); if(cs!==null && cs===_drawn.ctrl) return;   // e.g. a roll-call tick: nothing this student sees
   if(lessonMode && (isTeacher() || isVideoMode())) return;   // an interactive lesson / video shows nothing from control
+  if(demoGame && presentMode && isTeacher() && control && control.activeGame===demoGame) return;   // "How to play" walkthrough: local, nothing shared to redraw
   render();
 }
 /* What a STUDENT's screen takes from `control`: everything except roll-call ticks (control.attend), which
@@ -1377,7 +1397,7 @@ function onSubGone(snap){ if(snap&&snap.key){ delete allSubs[snap.key]; schedule
 const _drawn={subs:null, rb:null, ctrl:null, ps:null, ng:null};
 let _teachRT=null, _teachAt=0;
 function teacherRenderSoon(){ if(_teachRT) return;
-  _teachRT=setTimeout(()=>{ _teachRT=null; _teachAt=Date.now(); if(lessonMode) return; render(); }, Math.max(60, 1000-(Date.now()-_teachAt))); }
+  _teachRT=setTimeout(()=>{ _teachRT=null; _teachAt=Date.now(); if(lessonMode || (demoGame && presentMode)) return; render(); }, Math.max(60, 1000-(Date.now()-_teachAt))); }
 let _subsRenderT=null;
 /* In a live pair match (G5–G9) a student's screen depends only on their OWN sub, their partner's sub and the
    class "submitted" count — but every classmate's move fires a subs change, and redrawing the whole screen on
@@ -1816,6 +1836,7 @@ function render(){
   // participation only (never results); after Reveal it shows the class-level results (presentResults — no
   // student names, no personal cards). Only drops if the console context is gone.
   if(presentMode && !(isTeacher() && control && (control.activeGame || (consoleView==="review" && histSel)))) presentMode=false;
+  if(!presentMode) demoGame=null;
   if(presentMode){ app.replaceChildren(presentView()); return; }
   // Interactive lessons — instructor-launched, or student-launched from the hub (Lessons on).
   if(lessonMode && !isTeacher() && !(hubOn() && lessonVisible(lessonMode))) lessonMode=null;
@@ -6431,6 +6452,89 @@ function analyzeNego(list, teacher){
   }
   return wrap;
 }
+
+/* ── "How to play" walkthrough for the projector (Present view → ▶ How to play) ─────────────────────────────
+   A few click-through steps, each a phone mock-up (drawn with the app's own styles, fixed sample data — never the
+   live screens) + a big caption. Local only: writes nothing, and shared-data redraws are skipped while it's open
+   (teacherRenderSoon / onCtrl), so a click is never lost. ← / → / Esc on the keyboard. Add a game = one DEMOS entry. */
+let demoGame=null, demoStep=0;
+const DEMOS={ nego: ()=>ngDemoSteps() };
+function demoPhone(fill){ const ph=el("div","demo-phone"); fill(ph); return ph; }
+function demoHL(node){ node.classList.add("demo-hl"); return node; }
+function demoOpen(g){ demoGame=g; demoStep=0; render(); }
+function demoClose(){ demoGame=null; demoStep=0; render(); }
+function demoGo(d){ const st=DEMOS[demoGame]?DEMOS[demoGame]():[]; demoStep=Math.max(0,Math.min(st.length-1,demoStep+d)); render(); }
+document.addEventListener("keydown",e=>{
+  if(!demoGame || !presentMode) return;
+  if(e.key==="ArrowRight"||e.key==="PageDown"){ e.preventDefault(); demoGo(1); }
+  else if(e.key==="ArrowLeft"||e.key==="PageUp"){ e.preventDefault(); demoGo(-1); }
+  else if(e.key==="Escape"){ demoClose(); }
+});
+function demoView(g){
+  const steps=DEMOS[g](), i=Math.min(demoStep,steps.length-1), S=steps[i];
+  const wrap=el("div","present");
+  const head=el("div","present-head");
+  head.append(el("div","present-course","How to play"), el("div","present-game",GAMES[g].name));
+  wrap.append(head);
+  const body=el("div","demo-wrap");
+  body.append(demoPhone(S.phone));
+  const cap=el("div","demo-cap");
+  cap.append(el("div","demo-n","Step "+(i+1)+" of "+steps.length), Object.assign(el("h2"),{textContent:S.title}), Object.assign(el("p"),{innerHTML:S.text}));
+  const dots=el("div","demo-dots"); dots.style.justifyContent="flex-start"; steps.forEach((_,k)=>dots.append(el("span",k===i?"on":""))); cap.append(dots);
+  body.append(cap);
+  wrap.append(body);
+  const ctr=el("div","present-controls");
+  const back=el("button","btn neutral","← Back"); back.onclick=()=>demoGo(-1); if(i===0) back.disabled=true;
+  const next= i<steps.length-1 ? el("button","btn","Next →") : el("button","btn gold","Done ✓");
+  next.onclick= i<steps.length-1 ? ()=>demoGo(1) : demoClose;
+  const ex=el("button","ghost-btn","Exit demo"); ex.onclick=demoClose;
+  ctr.append(back,next,ex);
+  wrap.append(ctr);
+  return wrap;
+}
+/* G13's walkthrough, using the round's actual values (Game 1, Game 2 or custom). */
+function ngDemoSteps(){
+  const v=ngV(), V=ngVal(v,"ABC"), names={A:"Chen", B:"Asha (you)", C:"Ravi"};
+  // NO sample numbers for the split: the demo is shown right before they negotiate (and before the core is taught),
+  // so any example split would anchor the class. Share boxes show "?" throughout.
+  const pair=["AB","AC","BC"].sort((a,b)=>ngVal(v,b)-ngVal(v,a))[0], out=ngOthers(pair)[0];
+  const QX="A ? · B ? · C ?";
+  const top=(ph,t)=>{ ph.append(Object.assign(el("div","eyebrow gold"),{textContent:"NEGOTIATION GAME"})); if(t) ph.append(Object.assign(el("div","sm mut"),{textContent:t,style:"margin-top:4px"})); };
+  const roleHead=ph=>{ ph.append(Object.assign(el("div"),{textContent:"You are Player B",style:"font-family:Fraunces,Georgia,serif;font-size:1.45rem;font-weight:650;margin-top:10px"}),
+      Object.assign(el("div","sm"),{innerHTML:["A","B","C"].map(r=>"<b>"+r+"</b> "+esc(names[r])).join(" · "),style:"margin-top:4px"})); };
+  const chips=(sel)=>{ const cr=el("div","res-list"); cr.style.marginTop="6px"; NG_COALS.forEach(k=>{ const b=el("span","res-btn"+(sel===k?" on":"")); b.textContent=k+" · "+fmt(ngVal(v,k),2); cr.append(b); }); return cr; };
+  const boxes=(coal,xx)=>{ const g=el("div"); g.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px";
+      ["A","B","C"].forEach(r=>{ const f=el("div","field"); f.style.minWidth="80px"; f.append(Object.assign(el("label"),{textContent:"Player "+r+(r==="B"?" (you)":"")}));
+        if(coal.indexOf(r)>=0){ const i=el("input","input mono"); i.value="?"; i.readOnly=true; i.style.cssText="width:86px;padding:7px 9px"; f.append(i); }
+        else f.append(Object.assign(el("div"),{textContent:fmt(ngVal(v,r),2)+" (left out)",style:"padding:7px 2px;color:var(--muted)"}));
+        g.append(f); }); return g; };
+  return [
+    { title:"Form a group of 3", text:"Sit with two classmates. One of you taps <b>Start a group</b>; the other two tap <b>Join</b>. Your group stays together for every round today.",
+      phone:ph=>{ top(ph,"Round 1 · split the pot"); ph.append(Object.assign(el("h2"),{textContent:"Form a group of 3",style:"font-size:1.3rem;margin:10px 0 4px"}));
+        ph.append(demoHL(el("div","btn","Start a group")));
+        const c=el("div","card"); c.append(Object.assign(el("div"),{textContent:"Chen's group",style:"font-weight:700"}), Object.assign(el("div","sm mut"),{textContent:"Chen, Ravi"}), Object.assign(el("div","btn"),{textContent:"Join (2/3)",style:"margin-top:6px"})); ph.append(c); } },
+    { title:"You get a role", text:"Each round the app makes you <b>Player A, B or C</b>. The tiles show what each group can earn: alone, in a pair, or all three together (<b>ABC = "+fmt(V,2)+"</b>).",
+      phone:ph=>{ top(ph,"Round 1 · how much each coalition is worth:"); ph.append(demoHL(ngVTable(v))); roleHead(ph); } },
+    { title:"Pick a coalition", text:"Talk it over, then anyone can make a proposal. First choose <b>who is in the deal</b>: all three of you (<b>ABC</b>) or just two.",
+      phone:ph=>{ top(ph); roleHead(ph); const c=el("div","card"); c.append(Object.assign(el("div","tinylabel"),{textContent:"Make a proposal"}),
+          Object.assign(el("div"),{textContent:"Please select your coalition",style:"font-weight:700;margin-top:6px"}), demoHL(chips(null))); ph.append(c); } },
+    { title:"Split the pot", text:"Type each player's share. Together they can't add up to more than the coalition is worth. Then tap <b>Propose to my group</b>.",
+      phone:ph=>{ top(ph); roleHead(ph); const c=el("div","card"); c.append(chips("ABC"), Object.assign(el("div","sm"),{innerHTML:"<b>All three of you</b> share <b>"+fmt(V,2)+"</b>.",style:"margin-top:8px"}), boxes("ABC"),
+          Object.assign(el("div","sm"),{textContent:"Shares must add up to "+fmt(V,2)+" or less",style:"margin-top:6px;font-weight:600"})); c.append(demoHL(Object.assign(el("div","btn"),{textContent:"Propose to my group",style:"margin-top:8px"}))); ph.append(c); } },
+    { title:"Leaving someone out?", text:"You may make a deal with just one partner, but the app asks <b>“Are you sure?”</b> The player left out gets only what they'd earn alone ("+fmt(ngVal(v,out),2)+"), and together all three would share "+fmt(V,2)+".",
+      phone:ph=>{ top(ph); roleHead(ph); const c=el("div","card"); c.append(chips(pair), boxes(pair)); ph.append(c);
+        ph.append(el("div","demo-dim")); const d=el("div","demo-dialog"); d.append(Object.assign(el("div"),{textContent:"Are you sure?",style:"font-weight:800;font-size:1.05rem"}),
+          Object.assign(el("div","sm"),{textContent:"This deal is coalition "+pair+" only — "+out+" is left out and gets "+fmt(ngVal(v,out),2)+". Together, all three of you (ABC) are worth "+fmt(V,2)+".",style:"margin-top:6px;line-height:1.4"}));
+        const r=el("div"); r.style.cssText="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"; r.append(el("span","ghost-btn","Cancel"), el("span","btn","OK")); r.lastChild.style.width="auto"; d.append(r); ph.append(demoHL(d)); } },
+    { title:"Everyone in the deal confirms", text:"A proposal appears on every phone in the group. Each player in the coalition taps <b>Confirm</b>. Don't like it? <b>Propose something else</b>: the newest proposal replaces the old one.",
+      phone:ph=>{ top(ph); roleHead(ph); const c=el("div","card"); c.append(Object.assign(el("div","tinylabel"),{textContent:"Proposal on the table · from Player A"}),
+          Object.assign(el("div"),{innerHTML:"<b>Coalition ABC</b> &nbsp; "+QX,style:"margin:4px 0"}), Object.assign(el("div","sm"),{textContent:"Confirmed: A ✓   B …   C …"}));
+        c.append(demoHL(Object.assign(el("div","btn"),{textContent:"✓ Confirm this deal",style:"margin-top:8px"}))); ph.append(c); } },
+    { title:"Deal!", text:"When everyone in the deal has confirmed, it <b>locks</b>, and nobody can change it. Results appear when your instructor reveals them.",
+      phone:ph=>{ top(ph); roleHead(ph); const c=el("div","card"); c.append(Object.assign(el("div"),{textContent:"✓ Deal agreed — coalition ABC",style:"font-weight:800;font-size:1.1rem;color:var(--good)"}),
+          Object.assign(el("div"),{textContent:QX,style:"font-family:IBM Plex Mono,monospace;font-weight:700;margin-top:6px"}), Object.assign(el("div","sm"),{textContent:"You get the share you agreed. The results appear when your instructor reveals.",style:"margin-top:6px"})); ph.append(demoHL(c)); } }
+  ];
+}
 function ngSubValue(s){
   if(s.obs) return "watched ("+(s.gname||"group")+")";
   const r="Player "+(s.role||"?");
@@ -7388,6 +7492,7 @@ function presentResults(g){
 function presentView(){
   if(consoleView==="review" && histSel) return reviewPresentView();
   const g=control.activeGame, phase=control.phase, open=phase==="open", revealed=phase==="revealed";
+  if(demoGame && demoGame===g && DEMOS[g]) return demoView(g);
   const wrap=el("div","present");
   const head=el("div","present-head");
   const cn=courseName(); if(cn) head.append(el("div","present-course",cn));
@@ -7446,8 +7551,9 @@ function presentView(){
     const reopen=el("button","btn","Reopen"); reopen.onclick=()=>openMeeting({});
     ctr.append(reveal,reopen);
   }
+  if(DEMOS[g] && !revealed){ const hp=el("button","ghost-btn","▶ How to play"); hp.title="A click-through walkthrough of the student screens (← / → keys)"; hp.onclick=()=>demoOpen(g); ctr.append(hp); }
   const fs=el("button","ghost-btn","⛶ Fullscreen"); fs.onclick=toggleFullscreen;
-  const exit=el("button","ghost-btn","Exit to console"); exit.onclick=()=>{ presentMode=false; render(); };
+  const exit=el("button","ghost-btn","Exit to console"); exit.onclick=()=>{ presentMode=false; demoGame=null; render(); };
   ctr.append(fs,exit);
   wrap.append(ctr);
   return wrap;

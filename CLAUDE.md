@@ -930,6 +930,18 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   (`onCtrl` returns for `isVideoMode()`, plus the existing lessonMode guards in `teacherRenderSoon`/`scheduleSubsRender`).
   Verified: playback continues through 40 shared writes and a forced `render()`, instructor and student.
 
+## "How to play" walkthroughs (projector)
+- Present view → **▶ How to play** (shown before Reveal for any game in the `DEMOS` registry; currently **G13** only) opens
+  `demoView(g)`: a click-through of steps, each a **phone mock-up** (`demoPhone`, drawn with the app's own classes and fixed
+  sample data — never the live student screens) + a big caption, step dots, ← Back / Next → / Done ✓ / Exit demo; keys
+  ← → (and PageUp/PageDown for clickers), Esc. Local state `demoGame`/`demoStep`; writes nothing; shared-data redraws are skipped
+  while it's open (`teacherRenderSoon`, `onCtrl`), and it clears when the present view closes. `demoHL(node)` rings the button a
+  step talks about (`.demo-hl`, pulsing gold). Add a game = one `DEMOS` entry returning `[{title, text, phone:ph=>{…}}]`.
+- **G13 (`ngDemoSteps`, 7 steps):** form a group of 3 → you get a role (the round's v tiles) → pick a coalition → split the pot →
+  leaving someone out ("Are you sure?" mock dialog) → everyone in the deal confirms → Deal!. Uses the round's actual v (Game 1/2/
+  custom). **No sample split numbers anywhere** — the share boxes show "?" — because the demo runs right before they negotiate
+  (and before the core is taught), so any example split would anchor the class.
+
 ## Interactive lessons (no submissions)
 - **Pareto optimality** (`paretoLesson`, local `lessonMode="pareto"` + `PZ` state) — an
   instructor-launched, full-screen **payoff-matrix checker** (a teaching visual, not a game;
