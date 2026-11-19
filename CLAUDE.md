@@ -339,6 +339,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     **Leave** only while the group isn't full. Console: ✕ per member (`ngRemoveMember`), **Reset groups** (`ngResetGroups`).
   - **Roles re-dealt every round** (`ngRoles`): the first three members by id, shuffled with `adSeedFloat(roundKey|gid|i)`
     — every phone agrees, no write needed.
+  - **Proposal form**: nothing is pre-selected — "Please select your coalition" over the ABC / AB / AC / BC chips (each with its
+    worth); the share boxes appear only after a tap, with a line saying what it means ("All three of you share 400…" or "B and C
+    share 300; A is left out and gets 0… (Together, all three of you would share 400.)"). Switching coalition clears the shares.
   - **Proposals** `live/<roundKey>/np/<gid>` = `{coal:"ABC"|"AB"|"AC"|"BC", x:{A,B,C}, by, byRole, ts, ok:{<role>:true}}`. Anyone
     in the group proposes (a new proposal replaces the old one; the proposer auto-confirms); every player IN the coalition
     must tap **✓ Confirm this deal**; then it locks (`ngPropDone`). An excluded player sees "This deal leaves you out — make

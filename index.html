@@ -579,7 +579,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-19.002";
+const APP_VERSION = "2026-11-19.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -6278,12 +6278,20 @@ function studentNego(c){
   }
   if(!canAct){ c.append(el("p","sm mut","Three of your group play; help them negotiate.")); return; }
   // proposal form (local draft survives live redraws)
-  const d=ngDraft[curKey+"|"+gid] || (ngDraft[curKey+"|"+gid]={coal:"ABC", x:{}});   // per round: a new round starts with an empty form
+  const d=ngDraft[curKey+"|"+gid] || (ngDraft[curKey+"|"+gid]={coal:null, x:{}});   // per round: a new round starts with an empty form
   const fm=el("div","card"); fm.style.cssText="padding:12px;margin-top:12px";
   fm.append(Object.assign(el("div","tinylabel"),{textContent: p&&p.coal ? "Or propose something else" : "Make a proposal"}));
+  // Nothing is pre-selected: the student picks a coalition first, then the share boxes appear with what that choice means.
+  if(!d.coal) fm.append(Object.assign(el("div"),{textContent:"Please select your coalition",style:"font-weight:700;font-size:1.05rem;margin-top:6px"}));
   const cr=el("div","res-list"); cr.style.marginTop="6px"; cr.append(el("span","tinylabel","Coalition"));
-  NG_COALS.forEach(k=>{ const b=el("button","res-btn"+(d.coal===k?" on":"")); b.type="button"; b.textContent=k+" · "+fmt(ngVal(v,k),2); b.onclick=()=>{ d.coal=k; render(); }; cr.append(b); });
+  NG_COALS.forEach(k=>{ const b=el("button","res-btn"+(d.coal===k?" on":"")); b.type="button"; b.textContent=k+" · "+fmt(ngVal(v,k),2); b.onclick=()=>{ if(d.coal!==k){ d.coal=k; d.x={}; } render(); }; cr.append(b); });
   fm.append(cr);
+  if(!d.coal){ fm.append(Object.assign(el("div","sm mut"),{textContent:"ABC = all three of you together; AB, AC, BC = two of you, leaving the third out. The number is what that coalition is worth.",style:"margin-top:8px"})); c.append(fm); return; }
+  const out=ngOthers(d.coal), w0=ngVal(v,d.coal);
+  fm.append(Object.assign(el("div"),{innerHTML: d.coal==="ABC"
+      ? "<b>All three of you</b> share <b>"+fmt(w0,2)+"</b>. Enter each player's share — together they should add up to "+fmt(w0,2)+"."
+      : "<b>"+d.coal.split("").join(" and ")+"</b> share <b>"+fmt(w0,2)+"</b>; <b>"+out.join(" and ")+"</b> "+(out.length>1?"are":"is")+" left out and get"+(out.length>1?"":"s")+" "+out.map(r=>fmt(ngVal(v,r),2)).join(" / ")+". Enter "+d.coal.split("").join(" and ")+"'s shares. <span style='color:var(--gold)'>(Together, all three of you would share "+fmt(ngVal(v,"ABC"),2)+".)</span>",
+    style:"margin-top:10px;line-height:1.45"}));
   const grid=el("div"); grid.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;align-items:flex-end";
   const sum=el("div","sm"); sum.style.cssText="margin-top:8px;font-weight:600";
   const upd=()=>{ const tot=d.coal.split("").reduce((a,r)=>a+(+d.x[r]||0),0), w=ngVal(v,d.coal);
