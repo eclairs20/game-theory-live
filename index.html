@@ -579,7 +579,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-19.003";
+const APP_VERSION = "2026-11-19.004";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -8793,19 +8793,35 @@ function paramEditor(){
     const st=control.ng && control.ng.rk===curKey ? control.ng : null, L=st ? st.v : C.v;
     const played=runHasData(), rev=control.phase==="revealed", rd=control.round, rdNow=(parseRoundKey(curKey)||{}).round||rd;
     const lockWhy="Round "+rd+" is being played — reveal it (or discard it) first; a change then starts Round "+(rd+1)+".";
-    if(st){ const diff=vKey(L)!==vKey(C.v); const nb=el("div","note-box"+(diff?"":" teal")); nb.style.margin="0 0 8px";
-      nb.innerHTML="Round "+rdNow+" runs <b>"+esc(vName(L))+"</b> — fixed for this round."+(diff?" <b style='color:var(--gold)'>Next round will use "+esc(vName(C.v))+".</b>":" A change below starts with the next round.");
+    const diff=!!st && vKey(L)!==vKey(C.v);
+    const cfgWith=nv=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.v=nv; const conf=Object.assign({},control.config); conf[g]=nc; return conf; };
+    // Parameters already hold different values from the round in play (e.g. picked before this rule existed, or while the
+    // round was open): say so and offer the two ways out — start the next round with them now, or keep the current game.
+    const startNext=()=>{ if(!confirm("Start Round "+(rd+1)+" with "+vName(C.v)+" now?\n\nRound "+rd+" stays as played ("+vName(L)+") and moves to Review. Groups stay the same; roles are re-dealt.")) return;
+      runMove(null, ()=>openMeeting({round:rd+1, config:cfgWith(C.v)})); };
+    if(st){ const nb=el("div","note-box"+(diff?"":" teal")); nb.style.margin="0 0 8px";
+      nb.innerHTML="Round "+rdNow+" runs <b>"+esc(vName(L))+"</b> — fixed for this round."+(diff?" <b style='color:var(--gold)'>"+esc(vName(C.v))+" is set for the next round.</b>":" A change below starts with the next round.");
+      if(diff){ const row=el("div","row"); row.style.cssText="gap:8px;flex-wrap:wrap;margin-top:8px";
+        if(!played){ const b=el("button","btn","Use "+vName(C.v)+" for Round "+rdNow); b.onclick=()=>writeControl({ng:{rk:st.rk, v:Object.assign({},NG_PRESETS.g1.v,C.v)}}); row.append(b); }
+        else { const b=el("button","btn","▶ Start Round "+(rd+1)+" with "+vName(C.v)); b.onclick=startNext; lockIf(b, !rev, lockWhy); row.append(b); }
+        const k=el("button","ghost-btn","Keep "+vName(L)); k.onclick=()=>writeControl({config:cfgWith(Object.assign({},L))}); row.append(k);
+        nb.append(row); }
       wrap.append(nb); }
-    const setV=nv=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.v=nv; const conf=Object.assign({},control.config); conf[g]=nc;
+    const setV=nv=>{ const conf=cfgWith(nv);
       if(!played){ const patch={config:conf}; if(st) patch.ng={rk:st.rk, v:Object.assign({},NG_PRESETS.g1.v,nv)}; writeControl(patch); return true; }
       if(!confirm("Switch to "+vName(nv)+" and start Round "+(rd+1)+" now?\n\nRound "+rd+" stays as played ("+vName(L)+") and moves to Review. Groups stay the same; roles are re-dealt.")) return false;
       runMove(null, ()=>openMeeting({round:rd+1, config:conf})); return true; };
     wrap.append(Object.assign(el("div","tinylabel"),{textContent:"Characteristic function"}));
     const pr=el("div","row"); pr.style.cssText="gap:8px;flex-wrap:wrap;margin-top:4px";
-    Object.keys(NG_PRESETS).forEach(k=>{ const P=NG_PRESETS[k], on=JSON.stringify(Object.assign({},P.v))===cur;
-      const b=el("button","ghost-btn"+(on?" hold-on":""),P.name+": "+["AB","AC","BC","ABC"].map(x=>x+" "+P.v[x]).join(", ")); b.onclick=()=>{ if(!on) setV(Object.assign({},P.v)); };
-      if(!on) lockIf(b, played && !rev, lockWhy); pr.append(b); });
+    Object.keys(NG_PRESETS).forEach(k=>{ const P=NG_PRESETS[k], on=vKey(P.v)===vKey(C.v), running=!!st && vKey(P.v)===vKey(L);
+      const tag= running ? " · ▶ this round" : (on && diff) ? " · next round" : "";
+      const b=el("button","ghost-btn"+(on?" hold-on":""),P.name+": "+["AB","AC","BC","ABC"].map(x=>x+" "+P.v[x]).join(", ")+tag);
+      // tapping the running game while another is queued = keep it; tapping the queued one = start it (same as the note's button)
+      b.onclick=()=>{ if(on){ if(diff && played) startNext(); else if(diff) writeControl({ng:{rk:st.rk, v:Object.assign({},NG_PRESETS.g1.v,C.v)}}); return; }
+        if(running){ writeControl({config:cfgWith(Object.assign({},L))}); return; } setV(Object.assign({},P.v)); };
+      if(!running && (!on || diff)) lockIf(b, played && !rev, lockWhy); pr.append(b); });
     wrap.append(pr);
+    if(diff) wrap.append(Object.assign(el("div","sm"),{textContent:"The values below are for the next round ("+vName(C.v)+").",style:"margin-top:10px;color:var(--gold);font-weight:600"}));
     const grid=el("div","paramgrid"); grid.style.marginTop="10px";
     NG_KEYS.forEach(k=>{ const f=el("div","field"); f.append(Object.assign(el("label"),{textContent:"v("+k+")"}));
       const i=el("input","input mono"); i.type="number"; i.value=C.v[k]; i.style.padding="8px 10px";

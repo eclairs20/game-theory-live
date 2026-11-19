@@ -331,7 +331,11 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   value edit asks "Switch to Game 2 and start Round N+1 now?" and opens it with the new values in one write
   (`openMeeting({round, config})`), with the Run Undo (`runSnap` now also restores `ng`). A note on the card says "Round N runs
   Game 1 — fixed for this round. Next round will use …". (19 Nov sandbox: tapping Game 2 after Reveal only changed Parameters
-  and Run stayed on round 1, which looked like nothing happened.) The proposal draft is per round (`ngDraft[roundKey|gid]`),
+  and Run stayed on round 1, which looked like nothing happened.) When Parameters already differ from the running round (the
+  queued case), the note reads "Game 2 is set for the next round" with **▶ Start Round N+1 with Game 2** (confirm → new round;
+  greyed until Reveal; "Use Game 2 for Round N" instead when the round has no data) and **Keep Game 1** (reverts Parameters);
+  the preset chips are tagged "· ▶ this round" / "· next round" (tapping the queued one = start it, the running one = keep it),
+  and the number boxes are labelled as the next round's values. The proposal draft is per round (`ngDraft[roundKey|gid]`),
   so a new round starts with an empty form. Self-contained `ng*` block.
   - **Groups (meeting-level, kept across rounds)**: `live/<S1A-nego>/ng/<gid>` = `{members:{enc(id):{id,name}}, by, ts}`, pointer
     `nm/<enc(id)>` = gid claimed by **transaction**, size cap by a transaction on `members`. Students tap **Start a group** /
