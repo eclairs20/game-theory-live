@@ -321,6 +321,44 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   On reveal, `analyzeCoord` shows all four results together — one compact card per question
   (`coordQResult`) with the modal answer and % on the **focal** point (`coordFocalNote`). Just
   Open → students play all four → Reveal. No pairing; whole-class.
+- `nego` — **Negotiation Game** (**G13**, "split the pot") — **cooperative games: the core and the Shapley value**. Three
+  players A, B, C and a characteristic function v(S). Config `{ v:{A,B,C,AB,AC,BC,ABC}, showSh }` (`ngCfg()`); presets
+  `NG_PRESETS` **Game 1** (AB 100, AC 200, BC 300, ABC 400 → core A 0–100, B 0–200, C 100–300; Shapley 83.33 / 133.33 /
+  183.33) and **Game 2** (AB 0, AC 0, BC 400, ABC 400 → core: A gets 0; Shapley 0 / 200 / 200), or any custom numbers
+  (`paramEditor`). The round's v is **stamped** by `openMeeting` into `control.ng = {rk, v}` (`ngV()`), so a Parameters
+  change applies from the next round. Self-contained `ng*` block.
+  - **Groups (meeting-level, kept across rounds)**: `live/<S1A-nego>/ng/<gid>` = `{members:{enc(id):{id,name}}, by, ts}`, pointer
+    `nm/<enc(id)>` = gid claimed by **transaction**, size cap by a transaction on `members`. Students tap **Start a group** /
+    **Join (n/3)**; a **4th** can join only once every group is full ("Join as 4th" — watches, role `"O"`, sub `obs:true`).
+    **Leave** only while the group isn't full. Console: ✕ per member (`ngRemoveMember`), **Reset groups** (`ngResetGroups`).
+  - **Roles re-dealt every round** (`ngRoles`): the first three members by id, shuffled with `adSeedFloat(roundKey|gid|i)`
+    — every phone agrees, no write needed.
+  - **Proposals** `live/<roundKey>/np/<gid>` = `{coal:"ABC"|"AB"|"AC"|"BC", x:{A,B,C}, by, byRole, ts, ok:{<role>:true}}`. Anyone
+    in the group proposes (a new proposal replaces the old one; the proposer auto-confirms); every player IN the coalition
+    must tap **✓ Confirm this deal**; then it locks (`ngPropDone`). An excluded player sees "This deal leaves you out — make
+    them a better offer?" and can counter. Validation (`ngCheckSplit`): each share ≥ v(i), sum ≤ v(S).
+  - **"Are you sure?"** (`ngSure`, a `confirm()` before proposing AND before confirming): any coalition other than ABC
+    ("…A is left out and gets 0. Together, all three of you (ABC) are worth 400; coalition BC is worth 300."), and any split
+    that leaves part of the coalition's worth unshared ("…100 is left on the table"). Cancel = keep negotiating.
+  - **Records**: every member writes their OWN sub (lockdown rules) from `ngSync` — a participation record when the group is
+    full (`gid, role, roles, v, gname, coal:null`) and the deal once agreed (`coal, x, pay`); the excluded player's `pay` = v(i).
+    Duplicate writes are skipped by comparing with `mySub()` / `_ngSaved`.
+  - **Live-update rule**: listeners on `ng` and `np` (`ngEnsure`/`ngDetach`, + `visibilitychange` re-read `ngPoll`); `ngRender`
+    checks `ngViewSig()` (lobby: the group list; in a group: only MY group's members + MY group's proposal) against `_drawn.ng`,
+    and waits while a finger is down (`_ptrDown`). `studentSubsSig` → `ngSubsSig` (own record only). The proposal form draws
+    from the local `ngDraft[gid]`, inputs redraw on blur (`rbBlurRedraw`). Load-tested: ~17 writes/s from other groups → 0
+    redraws; chip taps, typing and the partner's proposal (≈10 ms) all register.
+  - Console `ngConsoleCard` (v table, "X of Y groups agreed · N with a proposal on the table", per-group roles, status, split,
+    in/not in core); projector `ngPresentBody` (v table, agreed count). Phones show v as wrapping tiles (`ngVTable(v)`),
+    console/projector as a table (`ngVTable(v,true)`).
+  - `analyzeNego` (`ngOutcomes` dedupes by gid): tiles (groups, grand-coalition %, in-core %, pot); the **imputation triangle**
+    (`ngTriangle`) with the core (`ngCorePoly` = triangle clipped by x_k ≤ v(ABC) − v(ij); shaded, or a thick line / ring when it
+    is a segment or a point, as in Game 2) and one dot per distinct split (green in core / red not; splits summing to less than
+    v(ABC) are listed, not plotted); class average vs core range (`ngCoreRange`) vs Shapley (`ngShapley`); "Which coalition
+    formed?" bars; instructor-only **In-core deals / Deals not in the core** tables (split, coalition, # groups, who) like the
+    slides, and a "For you" Shapley note. **The Shapley value is instructor-only** until Parameters' "Show the Shapley value to
+    students" (`showSh`, read live, so it can be switched on after Reveal). A student sees "You were Player C · you got 150 —
+    in the core ✓". CSV: `ngSubValue` → "Player B · ABC · A 100 · B 150 · C 150 · got 150" / "no deal" / "watched".
 - `publicgoods` — Public Goods ("Maximize your marks") — labelled **G20**. Config `{ E, mult }` (default E=8 marks,
   mult=1.5). The **whole pot is multiplied by `mult` and split equally among the N players**, so
   each player receives `mult·total/N` (your own share of a contributed mark is `mult/N`, which

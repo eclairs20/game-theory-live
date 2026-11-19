@@ -579,7 +579,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-18.002";
+const APP_VERSION = "2026-11-19.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -609,6 +609,8 @@ const GAMES = {
     blurb:"Odd-Even or the Matching Game? Player 2 knows which; Player 1 only knows the odds." },
   placement: { name:"Placement Season", short:"G12", icon:"G12",
     blurb:"Grad or MBA? Candidates signal; recruiter firms decide who gets the Manager role." },
+  nego: { name:"Negotiation Game", short:"G13", icon:"G13",
+    blurb:"Groups of 3 split a pot — which coalition forms, and is the split stable (in the core)?" },
   publicgoods: { name:"Public Goods", short:"G20", icon:"G20",
     blurb:"Contribute to a shared fund that pays everyone." }
 };
@@ -624,6 +626,7 @@ const DEFAULT_CONFIG = {
   robot:{ capMin:5, joinMin:5, buildMin:10, teamMin:4, teamMax:6, teams:15, rounds:100, disc:5, house:true },   // Axelrod Tournament: captains / join / build timers (min), min / max team size, number of teams (0 = no limit), rounds per match, discount rate % per round (scores are NPVs), house robots
   bayes:{ pOdd:25, rounds:20 },          // Bayesian Game: % chance each round is Odd-Even (else the Matching Game); rounds per match
   placement:{ mode:"fixed", variant:"A", firms:5, firmMax:3, recMin:3 },   // Placement Season: "fixed" salaries (role per degree, dealt batches) or "bid" (role + salary in pay bands, shared pool); variant A Classic / B MBA builds skills / C Strong batch / D Online MBA; firms and max recruiters per firm
+  nego:{ v:{A:0,B:0,C:0,AB:100,AC:200,BC:300,ABC:400}, showSh:false },   // Negotiation Game: the characteristic function v(S) (Game 1 by default) + whether students see the Shapley value
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -1150,6 +1153,11 @@ async function openMeeting(patch){
     const rk="S"+(p.session!=null?p.session:curSession())+curMSection()+"-robot-"+(p.round!=null?p.round:(control.round||1));
     if(!(control.robot && control.robot.rk===rk)) p.robot={rk, capEnd: srvNow()+rbCfg().capMin*60000};
   }
+  // Negotiation Game: the round's characteristic function is stamped when it opens (a later Parameters change applies next round)
+  if(control.activeGame==="nego"){
+    const rk="S"+(p.session!=null?p.session:curSession())+curMSection()+"-nego-"+(p.round!=null?p.round:(control.round||1));
+    if(!(control.ng && control.ng.rk===rk)){ const c0=Object.assign({}, cfg("nego"), (p.config&&p.config.nego)||{}); p.ng={rk, v:Object.assign({}, NG_PRESETS.g1.v, c0.v||{})}; }
+  }
   // Placement Season: a new round starts with candidates choosing — or with firm sign-up when this meeting has no firms yet.
   if(control.activeGame==="placement"){
     const rk="S"+(p.session!=null?p.session:curSession())+curMSection()+"-placement-"+(p.round!=null?p.round:(control.round||1));
@@ -1366,7 +1374,7 @@ function onSubGone(snap){ if(snap&&snap.key){ delete allSubs[snap.key]; schedule
    live listener therefore goes through a "view signature" check (studentSubsSig / rbViewSig / studentCtrlSig;
    render() records each in `_drawn`), and the instructor console is throttled to ~1 redraw/s
    (teacherRenderSoon). A new game that shows other people's live data adds its fields to the relevant sig. */
-const _drawn={subs:null, rb:null, ctrl:null, ps:null};
+const _drawn={subs:null, rb:null, ctrl:null, ps:null, ng:null};
 let _teachRT=null, _teachAt=0;
 function teacherRenderSoon(){ if(_teachRT) return;
   _teachRT=setTimeout(()=>{ _teachRT=null; _teachAt=Date.now(); if(lessonMode) return; render(); }, Math.max(60, 1000-(Date.now()-_teachAt))); }
@@ -1377,6 +1385,7 @@ let _subsRenderT=null;
    landed ("can't click after round 10"). Redraw only when what this student sees changed; null = no gating. */
 function studentSubsSig(){
   if(!isTeacher() && control && control.phase==="open" && control.activeGame==="placement") return psSubsSig();
+  if(!isTeacher() && control && control.phase==="open" && control.activeGame==="nego") return ngSubsSig();
   if(isTeacher() || !control || control.phase!=="open" || !liveCtx) return null;
   const pick=x=> x ? [x.seq||"", x.piles||"", x.done, x.partner||"", x.color||"", x.proxy?1:0].join("|") : "-";
   const partner = pairData ? (String(pairData.a)===String(myId)?pairData.b:pairData.a) : null;
@@ -1796,6 +1805,10 @@ function render(){
     && (isTeacher() || (haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class")));
   if(wantPs) psEnsure(psBase(curKey)); else if(psCtx) psDetach();
   if(wantPs && isTeacher()) psDealtEnsure(curKey); else if(_psDealtRk) psDealtDetach();
+  // Negotiation Game groups (meeting-level) + this round's proposals: instructor console, and students on the live class tab.
+  const wantNg = !!(control && control.activeGame==="nego" && curKey && !diagOn()
+    && (isTeacher() ? (presentMode || consoleView==="run") : (control.phase==="open" && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class")));
+  if(wantNg) ngEnsure(ngBase(curKey), curKey); else if(ngCtx||ngRk) ngDetach();
   // Instructor "View as student" diagnostic (read-only) — show exactly what a chosen student
   // sees, wrapped in a picker + exit. Takes precedence over every other screen.
   if(diagOn()){ app.replaceChildren(diagView()); return; }
@@ -1846,7 +1859,7 @@ function render(){
   if(typing && key===lastViewKey) return;
   lastViewKey=key;
   app.replaceChildren(next);
-  _drawn.subs=studentSubsSig(); _drawn.rb=rbViewSig(); _drawn.ctrl=studentCtrlSig(); _drawn.ps=psViewSig();   // what this screen now reflects (LIVE-UPDATE RENDERING RULE)
+  _drawn.subs=studentSubsSig(); _drawn.rb=rbViewSig(); _drawn.ctrl=studentCtrlSig(); _drawn.ps=psViewSig(); _drawn.ng=ngViewSig();   // what this screen now reflects (LIVE-UPDATE RENDERING RULE)
   if(control && control.activeGame==="robot") _rbLastPh=rbPhase();
   if(control && control.activeGame==="placement") _psTU=psTimeUp();   // the 1 s ticker then redraws only when a timer actually flips the phase
 }
@@ -2167,6 +2180,7 @@ function studentView(){
   else if(g==="bayes") studentPair(c,"bayes");
   else if(g==="robot") studentRobot(c);
   else if(g==="placement") studentPlacement(c);
+  else if(g==="nego") studentNego(c);
   else studentPG(c);
   return c;
 }
@@ -6019,6 +6033,403 @@ function analysisView(teacher){
 }
 /* Dispatch the per-game analysis for an arbitrary submission list, so both the live
    reveal (analysisView) and the student hub (historical meetings) share one path. */
+/* ═══════════════════════ G13 · NEGOTIATION GAME (split the pot) ═══════════════════════
+   Cooperative game theory: three players A, B, C with a characteristic function v(S). Students form groups of 3
+   (meeting-level, kept across rounds); every round each group gets fresh roles A/B/C (seeded, so every phone agrees),
+   negotiates, and one member PROPOSES a coalition (ABC, AB, AC or BC) and a split; the other members of that coalition
+   CONFIRM. A proposal that leaves someone out, or doesn't share the coalition's full worth, asks "Are you sure?" first.
+   When everyone in the coalition has confirmed, the agreement locks and every member saves their own record (the excluded
+   player gets v(i)). Results: each group's split on a triangle with the CORE shaded, in-core share, coalitions formed,
+   average share by role vs the core range and the SHAPLEY value (shown to students only when the instructor turns it on).
+   Data: groups live/<S1A-nego>/ng/<gid> = {members:{enc(id):{id,name}}, ts, by}, pointer nm/<enc(id)> = gid (transaction);
+   proposals live/<roundKey>/np/<gid> = {coal, x:{A,B,C}, by, byRole, ts, ok:{A:true,…}}; subs {gid, role, roles, v, coal,
+   x, pay} (coal null until a deal; "O" = a 4th member watching). The round's v is stamped in control.ng = {rk, v}. */
+const NG_PRESETS = {
+  g1:{ name:"Game 1", v:{A:0,B:0,C:0,AB:100,AC:200,BC:300,ABC:400} },
+  g2:{ name:"Game 2", v:{A:0,B:0,C:0,AB:0,AC:0,BC:400,ABC:400} }
+};
+const NG_COALS = ["ABC","AB","AC","BC"];
+const NG_KEYS = ["A","B","C","AB","AC","BC","ABC"];
+const NG_TOL = 0.5;
+function ngCfg(){ const c=cfg("nego"); const v=Object.assign({}, NG_PRESETS.g1.v, c.v||{}); NG_KEYS.forEach(k=>{ v[k]=+v[k]||0; }); return {v, showSh:!!c.showSh}; }
+/* The characteristic function of the round in play (stamped when it opened), else Parameters'. */
+function ngV(){ const p=control && control.ng; return (p && p.rk===curKey && p.v) ? Object.assign({}, p.v) : ngCfg().v; }
+const ngBase = rk=>{ const p=parseRoundKey(rk||curKey); return p ? "S"+p.session+p.section+"-nego" : null; };
+const ngVal = (v,S)=> S ? (+v[S]||0) : 0;
+const ngOthers = coal=> ["A","B","C"].filter(r=>coal.indexOf(r)<0);
+function ngShapley(v){ const r={}, val=S=>ngVal(v,S.split("").sort().join(""));
+  ["A","B","C"].forEach(i=>{ const [j,k]=["A","B","C"].filter(x=>x!==i);
+    r[i]= val(i)/3 + (val(i+j)-val(j))/6 + (val(i+k)-val(k))/6 + (val("ABC")-val(j+k))/3; });
+  return r; }
+function ngInCore(x, v){ const V=ngVal(v,"ABC"), s=x.A+x.B+x.C;
+  if(Math.abs(s-V)>NG_TOL*3) return false;
+  if(["A","B","C"].some(i=>x[i] < ngVal(v,i)-NG_TOL)) return false;
+  return ["AB","AC","BC"].every(S=> x[S[0]]+x[S[1]] >= ngVal(v,S)-NG_TOL); }
+/* The core as a polygon of splits {A,B,C}: the imputation triangle (sum = v(ABC), x_i ≥ v(i)) clipped by every pair's
+   claim x_i + x_j ≥ v(ij) ⟺ x_k ≤ v(ABC) − v(ij). Empty array = empty core. */
+function ngCorePoly(v){ const V=ngVal(v,"ABC"), l={A:ngVal(v,"A"),B:ngVal(v,"B"),C:ngVal(v,"C")};
+  if(V < l.A+l.B+l.C-1e-9) return [];
+  let poly=[[l.A,l.B],[V-l.B-l.C,l.B],[l.A,V-l.A-l.C]];   // (xA, xB); xC = V − xA − xB
+  const clip=(poly,f)=>{ const out=[]; for(let i=0;i<poly.length;i++){ const a=poly[i], b=poly[(i+1)%poly.length], fa=f(a), fb=f(b);
+      if(fa>=-1e-9) out.push(a); if((fa>=-1e-9)!==(fb>=-1e-9)){ const t=fa/(fa-fb); out.push([a[0]+t*(b[0]-a[0]), a[1]+t*(b[1]-a[1])]); } } return out; };
+  poly=clip(poly,p=>V-ngVal(v,"BC")-p[0]); poly=clip(poly,p=>V-ngVal(v,"AC")-p[1]); poly=clip(poly,p=>V-ngVal(v,"AB")-(V-p[0]-p[1]));
+  return poly.map(p=>({A:p[0], B:p[1], C:V-p[0]-p[1]})); }
+/* Each player's range of shares across the core ([lo, hi]; null when the core is empty). */
+function ngCoreRange(v){ const P=ngCorePoly(v), o={};
+  ["A","B","C"].forEach(r=>{ o[r]= P.length ? [Math.min(...P.map(p=>p[r])), Math.max(...P.map(p=>p[r]))] : null; }); return o; }
+
+/* ── live state: groups (meeting-level) + this round's proposals ── */
+let ngCtx=null, ngRk=null, ngGroups={}, _ngGSig="{}", ngProps={}, _ngPSig="{}", _ngVis=false, _ngSaved={}, ngDraft={}, _ngDeferT=null;
+function ngEnsure(base, rk){
+  if(ngCtx!==base){ ngDetachGroups(); ngCtx=base; ngGroups={}; _ngGSig="{}"; psPtrHook();
+    if(!_ngVis){ _ngVis=true; try{ document.addEventListener("visibilitychange",()=>{ if(!document.hidden && ngCtx) ngPoll(); }); }catch(e){} }
+    try{ fb.ref(LIVE_ROOT(base)+"/ng").on("value", s=>ngOnGroups(base,s), ()=>{}); }catch(e){} }
+  if(ngRk!==rk){ if(ngRk) try{ fb.ref(LIVE_ROOT(ngRk)+"/np").off(); }catch(e){}
+    ngRk=rk; ngProps={}; _ngPSig="{}";
+    try{ fb.ref(LIVE_ROOT(rk)+"/np").on("value", s=>ngOnProps(rk,s), ()=>{}); }catch(e){} }
+}
+function ngDetachGroups(){ if(!ngCtx) return; try{ fb.ref(LIVE_ROOT(ngCtx)+"/ng").off(); }catch(e){} ngCtx=null; ngGroups={}; _ngGSig="{}"; }
+function ngDetach(){ ngDetachGroups(); if(ngRk){ try{ fb.ref(LIVE_ROOT(ngRk)+"/np").off(); }catch(e){} } ngRk=null; ngProps={}; _ngPSig="{}"; }
+function ngOnGroups(base,s){ if(ngCtx!==base) return; const v=(s&&s.val())||{}, sg=JSON.stringify(v); if(sg===_ngGSig) return; ngGroups=v; _ngGSig=sg; ngRender(); }
+function ngOnProps(rk,s){ if(ngRk!==rk) return; const v=(s&&s.val())||{}, sg=JSON.stringify(v); if(sg===_ngPSig) return; ngProps=v; _ngPSig=sg; ngRender(); }
+function ngPoll(){ const b=ngCtx, rk=ngRk;
+  if(b) fb.ref(LIVE_ROOT(b)+"/ng").once("value").then(s=>ngOnGroups(b,s)).catch(()=>{});
+  if(rk) fb.ref(LIVE_ROOT(rk)+"/np").once("value").then(s=>ngOnProps(rk,s)).catch(()=>{}); }
+/* LIVE-UPDATE RULE: redraw a student only when what THEY see changed, and never while a finger is down. */
+function ngRender(){ if(isTeacher()){ teacherRenderSoon(); return; } const sg=ngViewSig(); if(sg!==null && sg===_drawn.ng) return;
+  if(_ptrDown){ clearTimeout(_ngDeferT); _ngDeferT=setTimeout(ngRender,150); return; } render(); }
+function ngMembers(g){ return Object.values((g&&g.members)||{}).filter(Boolean).sort((a,b)=>String(a.id).localeCompare(String(b.id))); }
+function ngMyGroup(){ const me=encodeKey(String(myId)); for(const gid in ngGroups){ const g=ngGroups[gid]; if(g && g.members && g.members[me]) return {gid, g}; } return null; }
+function ngGids(){ return Object.keys(ngGroups).filter(gid=>ngMembers(ngGroups[gid]).length).sort((a,b)=>((ngGroups[a].ts||0)-(ngGroups[b].ts||0))||(a<b?-1:1)); }
+function ngGroupName(gid){ const ms=ngMembers(ngGroups[gid]); const f=ms.find(m=>String(m.id)===String((ngGroups[gid]||{}).by))||ms[0]; return f ? (String(f.name).split(" ")[0])+"'s group" : "Group"; }
+/* Roles for this round: the first three members (by id) shuffled with a seed of round + group, so every phone agrees and
+   roles change from round to round. A 4th member watches ("O"). */
+function ngRoles(gid, g, rk){ const ms=ngMembers(g), ids=ms.map(m=>String(m.id)), play=ids.slice(0,3);
+  for(let i=play.length-1;i>0;i--){ const j=Math.floor(adSeedFloat((rk||curKey)+"|ng|"+gid+"|"+i)*(i+1)); const t=play[i]; play[i]=play[j]; play[j]=t; }
+  const by={}, of={}; ["A","B","C"].forEach((r,i)=>{ if(play[i]!=null){ by[r]=play[i]; of[play[i]]=r; } });
+  ids.slice(3).forEach(id=>{ of[id]="O"; });
+  const name={}; ms.forEach(m=>{ name[String(m.id)]=m.name; });
+  return {by, of, name, full: play.length===3}; }
+function ngPropDone(p){ return !!(p && p.coal && p.coal.split("").every(r=>p.ok && p.ok[r])); }
+function ngViewSig(){
+  if(isTeacher() || !ngCtx) return null;
+  const mg=ngMyGroup();
+  if(!mg || ngMembers(mg.g).length<3) return "L|"+(mg?mg.gid:"-")+"|"+ngGids().map(gid=>gid+":"+ngMembers(ngGroups[gid]).map(m=>m.id).join(",")).join(";");
+  return "G|"+mg.gid+"|"+ngMembers(mg.g).map(m=>m.id+"="+m.name).join(",")+"|"+JSON.stringify(ngProps[mg.gid]||null);
+}
+function ngSubsSig(){ const m=mySub(); return "NG#"+(m ? [m.gid||"", m.role||"", m.coal||"", m.pay==null?"":m.pay].join(":") : "-"); }
+
+/* ── group actions ── */
+async function ngCreate(){
+  const base=ngCtx; if(!base) return; const me=encodeKey(String(myId)), gid="g"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  const r=await fb.ref(LIVE_ROOT(base)+"/nm/"+me).transaction(cur=> cur==null ? gid : undefined);
+  if(!r||!r.committed){ toast("You're already in a group"); return; }
+  const members={}; members[me]={id:String(myId), name:myName||String(myId)};
+  try{ await fb.ref(LIVE_ROOT(base)+"/ng/"+gid).set({members, by:String(myId), ts:srvNow()}); }
+  catch(e){ await fb.ref(LIVE_ROOT(base)+"/nm/"+me).remove(); toast("Couldn't start a group — try again"); }
+}
+async function ngJoin(gid, cap){
+  const base=ngCtx; if(!base) return; const me=encodeKey(String(myId));
+  const r=await fb.ref(LIVE_ROOT(base)+"/nm/"+me).transaction(cur=> cur==null ? gid : undefined);
+  if(!r||!r.committed){ toast("You're already in a group"); return; }
+  const r2=await fb.ref(LIVE_ROOT(base)+"/ng/"+gid+"/members").transaction(cur=>{
+    if(cur==null) return undefined; if(cur[me]) return cur; if(Object.keys(cur).length>=cap) return undefined;
+    const nx=Object.assign({},cur); nx[me]={id:String(myId), name:myName||String(myId)}; return nx; });
+  if(!r2||!r2.committed){ await fb.ref(LIVE_ROOT(base)+"/nm/"+me).remove(); toast("That group just filled up — pick another"); }
+}
+async function ngLeave(){
+  const base=ngCtx, mg=ngMyGroup(); if(!base||!mg) return; const me=encodeKey(String(myId));
+  const up={}; up["nm/"+me]=null; up["ng/"+mg.gid+"/members/"+me]=null;
+  if(ngMembers(mg.g).length<=1) up["ng/"+mg.gid]=null;
+  try{ await fb.ref(LIVE_ROOT(base)).update(up); }catch(e){ toast("Couldn't leave — try again"); }
+}
+async function ngRemoveMember(gid, id){
+  const base=ngCtx; if(!base) return; const k=encodeKey(String(id)), g=ngGroups[gid]||{};
+  const up={}; up["nm/"+k]=null;
+  if(ngMembers(g).length<=1) up["ng/"+gid]=null; else up["ng/"+gid+"/members/"+k]=null;
+  try{ await fb.ref(LIVE_ROOT(base)).update(up); }catch(e){ toast("Couldn't remove"); }
+}
+async function ngResetGroups(){
+  const base=ngCtx; if(!base) return;
+  if(!confirm("Remove every group for this meeting? Students will form new groups (records already saved are kept).")) return;
+  try{ await fb.ref(LIVE_ROOT(base)).update({ng:null, nm:null}); toast("Groups cleared"); }catch(e){ toast("Couldn't clear the groups"); }
+}
+
+/* ── proposals ── */
+function ngCheckSplit(v, coal, x){
+  const tot=coal.split("").reduce((a,r)=>a+(+x[r]||0),0), worth=ngVal(v,coal);
+  if(coal.split("").some(r=>x[r]==null || x[r]==="" || isNaN(+x[r]))) return {err:"Enter a share for every player in the coalition."};
+  if(coal.split("").some(r=> +x[r] < ngVal(v,r)-1e-9)) return {err:"Each share must be at least what that player gets alone ("+coal.split("").map(r=>r+" "+fmt(ngVal(v,r),2)).join(", ")+")."};
+  if(tot > worth+1e-6) return {err:"The shares add to "+fmt(tot,2)+" — more than coalition "+coal+" is worth ("+fmt(worth,2)+")."};
+  return {tot, worth, left: worth-tot};
+}
+/* "Are you sure?" — before anyone proposes or confirms a deal that isn't the grand coalition, or leaves part of the
+   coalition's worth unshared. */
+function ngSure(v, coal, x){
+  const out=ngOthers(coal), V=ngVal(v,"ABC"), msgs=[];
+  if(coal!=="ABC") msgs.push("This deal is coalition "+coal+" only — "+out.join(" and ")+(out.length>1?" are":" is")+" left out and get"+(out.length>1?"":"s")+" "+out.map(r=>fmt(ngVal(v,r),2)).join(" / ")+".\nTogether, all three of you (ABC) are worth "+fmt(V,2)+"; coalition "+coal+" is worth "+fmt(ngVal(v,coal),2)+".");
+  const c=ngCheckSplit(v, coal, x); if(c.left>NG_TOL) msgs.push("The shares add to "+fmt(c.tot,2)+", but "+coal+" is worth "+fmt(c.worth,2)+" — "+fmt(c.left,2)+" is left on the table.");
+  if(!msgs.length) return true;
+  return confirm("Are you sure?\n\n"+msgs.join("\n\n")+"\n\nPress OK to go ahead, or Cancel to keep negotiating.");
+}
+async function ngPropose(gid, role, coal, xin){
+  const v=ngV(), x={}; ["A","B","C"].forEach(r=>{ x[r]= coal.indexOf(r)>=0 ? Math.round((+xin[r]||0)*100)/100 : ngVal(v,r); });
+  const c=ngCheckSplit(v, coal, x); if(c.err){ toast(c.err); return false; }
+  if(ngPropDone(ngProps[gid])){ toast("Your group has already agreed."); return false; }
+  if(!ngSure(v, coal, x)) return false;
+  const ok={}; if(coal.indexOf(role)>=0) ok[role]=true;
+  try{ await fb.ref(LIVE_ROOT(curKey)+"/np/"+gid).set({coal, x, by:String(myId), byRole:role, ts:srvNow(), ok}); }
+  catch(e){ toast("Couldn't send — check your connection"); return false; }
+  ngDraft[gid]=null; render(); return true;
+}
+async function ngConfirm(gid, role){
+  const p=ngProps[gid]; if(!p || p.coal.indexOf(role)<0) return;
+  if(!ngSure(ngV(), p.coal, p.x)) return;
+  try{ await fb.ref(LIVE_ROOT(curKey)+"/np/"+gid+"/ok/"+role).set(true); }catch(e){ toast("Couldn't confirm — try again"); }
+}
+/* Every member saves their OWN record (the rules only let a student write their own): a participation record when the
+   group is full, then the deal once it is agreed. */
+function ngSync(gid, R){
+  if(!control || control.phase!=="open" || diagOn()) return;
+  const role=R.of[String(myId)], p=ngProps[gid], v=ngV(), done=ngPropDone(p);
+  const roles={}; ["A","B","C"].forEach(r=>{ if(R.by[r]) roles[r]=R.name[R.by[r]]||R.by[r]; });
+  const doc={gid, role, roles, v, gname:ngGroupName(gid), coal:null, x:null, pay:null};
+  if(role==="O") doc.obs=true;
+  if(done){ doc.coal=p.coal; doc.x=p.x; doc.pay= role==="O" ? null : +p.x[role]; }
+  const sg=JSON.stringify([curKey, doc.gid, doc.role, doc.coal, doc.x, JSON.stringify(roles)]);
+  const m=mySub(); const have= m ? JSON.stringify([m.roundKey, m.gid, m.role, m.coal||null, m.x||null, JSON.stringify(m.roles||{})]) : null;
+  if(have===sg || _ngSaved[curKey]===sg) return;
+  _ngSaved[curKey]=sg; submit(doc);
+}
+
+/* ── small pieces ── */
+function ngVTable(v, big){
+  if(!big){ // phones: wrapping tiles so v(ABC) is never cut off
+    const w=el("div"); w.style.cssText="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px";
+    NG_KEYS.forEach(k=>{ const b=el("div"); b.style.cssText="border:1px solid var(--line);border-radius:8px;padding:4px 9px;text-align:center;min-width:54px;"+(k==="ABC"?"border-color:var(--accent);":"");
+      b.innerHTML="<div class='sm mut' style='font-size:.72rem'>v("+k+")</div><div style='font-family:IBM Plex Mono,monospace;font-weight:"+(k==="ABC"?800:600)+"'>"+fmt(ngVal(v,k),2)+"</div>"; w.append(b); });
+    return w; }
+  const t=el("table","matrix"); t.style.cssText="margin-top:8px;"+(big?"font-size:1.35rem;":"");
+  t.innerHTML="<tr>"+NG_KEYS.map(k=>"<th>v("+k+")</th>").join("")+"</tr><tr>"+NG_KEYS.map(k=>"<td style='font-family:IBM Plex Mono,monospace;font-weight:"+(k==="ABC"?800:600)+"'>"+fmt(ngVal(v,k),2)+"</td>").join("")+"</tr>";
+  const w=el("div","tablescroll"); w.append(t); return w; }
+function ngSplitTxt(x){ return x ? ["A","B","C"].map(r=>r+" "+fmt(+x[r],2)).join(" · ") : "—"; }
+
+/* ── the student's screen ── */
+function studentNego(c){
+  const v=ngV(), h=t=>Object.assign(el("h2"),{textContent:t,style:"font-size:1.4rem;margin:6px 0 4px"});
+  c.append(Object.assign(el("div","sm mut"),{textContent:"Round "+control.round+" · split the pot — how much each coalition is worth:",style:"margin-top:2px"}), ngVTable(v));
+  if(!ngCtx){ c.append(el("p","lead","Connecting…")); return; }
+  const mg=ngMyGroup();
+  if(!mg || ngMembers(mg.g).length<3){
+    // lobby: start a group or join one (groups of 3; a 4th may only join once every group is full)
+    if(mg){ const ms=ngMembers(mg.g);
+      c.append(h("Your group · waiting for "+(3-ms.length)+" more"));
+      c.append(el("p","lead","Ask the people next to you to tap "+ngGroupName(mg.gid)+" on their phones."));
+      c.append(Object.assign(el("div"),{textContent:ms.map(m=>m.name).join(", "),style:"font-weight:600;margin:6px 0"}));
+      const lv=el("button","ghost-btn","Leave this group"); lv.onclick=()=>ngLeave(); c.append(lv);
+    } else {
+      c.append(h("Form a group of 3"));
+      c.append(el("p","lead","Sit with two classmates. One of you starts a group; the other two join it."));
+      const st=el("button","btn","Start a group"); st.onclick=()=>ngCreate(); st.style.marginTop="6px"; c.append(st);
+    }
+    const open=ngGids().filter(gid=>ngMembers(ngGroups[gid]).length<3 && !(mg && mg.gid===gid));
+    const allFull=!ngGids().some(gid=>ngMembers(ngGroups[gid]).length<3);
+    if(!mg){
+      const grid=el("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:12px";
+      open.forEach(gid=>{ const ms=ngMembers(ngGroups[gid]); const card=el("div","card"); card.style.cssText="padding:10px 12px;display:flex;flex-direction:column;gap:6px";
+        card.append(Object.assign(el("div"),{textContent:ngGroupName(gid),style:"font-weight:700"}), Object.assign(el("div","sm mut"),{textContent:ms.map(m=>m.name).join(", ")}));
+        const b=el("button","btn","Join ("+ms.length+"/3)"); b.onclick=()=>ngJoin(gid,3); card.append(b); grid.append(card); });
+      if(allFull && ngGids().length){ c.append(Object.assign(el("div","sm mut"),{textContent:"Every group is full — join one as a 4th member (you'll watch and discuss; three play).",style:"margin-top:12px"}));
+        ngGids().filter(gid=>ngMembers(ngGroups[gid]).length<4).forEach(gid=>{ const card=el("div","card"); card.style.cssText="padding:10px 12px;display:flex;flex-direction:column;gap:6px";
+          card.append(Object.assign(el("div"),{textContent:ngGroupName(gid),style:"font-weight:700"}), Object.assign(el("div","sm mut"),{textContent:ngMembers(ngGroups[gid]).map(m=>m.name).join(", ")}));
+          const b=el("button","ghost-btn","Join as 4th"); b.onclick=()=>ngJoin(gid,4); card.append(b); grid.append(card); }); }
+      if(grid.childNodes.length) c.append(grid);
+    }
+    return;
+  }
+  const gid=mg.gid, R=ngRoles(gid, mg.g, curKey), role=R.of[String(myId)], p=ngProps[gid], done=ngPropDone(p);
+  ngSync(gid, R);
+  const rb=el("div"); rb.style.cssText="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:12px 0 4px";
+  rb.append(Object.assign(el("div"),{textContent: role==="O" ? "You're watching" : "You are Player "+role, style:"font-family:Fraunces,Georgia,serif;font-size:1.7rem;font-weight:650"}));
+  rb.append(Object.assign(el("div","sm"),{innerHTML:["A","B","C"].map(r=>"<b>"+r+"</b> "+esc(R.name[R.by[r]]||"—")+(R.by[r]===String(myId)?" (you)":"")).join(" · ")}));
+  c.append(rb);
+  if(done){
+    const mine= role==="O" ? null : +p.x[role];
+    c.append(h("✓ Deal agreed — coalition "+p.coal));
+    c.append(Object.assign(el("div"),{textContent:ngSplitTxt(p.x),style:"font-family:IBM Plex Mono,monospace;font-size:1.25rem;font-weight:700;margin:4px 0"}));
+    if(mine!=null) c.append(el("p","lead","You get "+fmt(mine,2)+". The results appear when your instructor reveals."));
+    return;
+  }
+  const canAct = role!=="O";
+  if(p && p.coal){
+    const box=el("div","card"); box.style.cssText="padding:12px;margin-top:10px";
+    const out=ngOthers(p.coal);
+    box.append(Object.assign(el("div","tinylabel"),{textContent:"Proposal on the table · from Player "+(p.byRole||"?")}));
+    box.append(Object.assign(el("div"),{innerHTML:"<b>Coalition "+esc(p.coal)+"</b> &nbsp; "+esc(ngSplitTxt(p.x))+(out.length?" <span class='sm mut'>("+out.join(", ")+" left out)</span>":""),style:"font-size:1.1rem;margin:4px 0"}));
+    box.append(Object.assign(el("div","sm"),{textContent:"Confirmed: "+p.coal.split("").map(r=>r+(p.ok&&p.ok[r]?" ✓":" …")).join("   ")}));
+    if(canAct && p.coal.indexOf(role)>=0 && !(p.ok&&p.ok[role])){
+      const cf=el("button","btn","✓ Confirm this deal"); cf.style.cssText="margin-top:10px;width:100%;max-width:420px;padding:13px"; cf.onclick=()=>ngConfirm(gid, role); box.append(cf);
+    } else if(canAct && p.coal.indexOf(role)>=0){
+      box.append(Object.assign(el("div","sm mut"),{textContent:"You've confirmed — waiting for "+p.coal.split("").filter(r=>!(p.ok&&p.ok[r])).join(" and ")+".",style:"margin-top:8px"}));
+    } else if(canAct){
+      box.append(Object.assign(el("div"),{textContent:"This deal leaves you out — you'd get "+fmt(ngVal(v,role),2)+". Make them a better offer?",style:"margin-top:8px;color:var(--bad);font-weight:600"}));
+    }
+    c.append(box);
+  }
+  if(!canAct){ c.append(el("p","sm mut","Three of your group play; help them negotiate.")); return; }
+  // proposal form (local draft survives live redraws)
+  const d=ngDraft[gid] || (ngDraft[gid]={coal:"ABC", x:{}});
+  const fm=el("div","card"); fm.style.cssText="padding:12px;margin-top:12px";
+  fm.append(Object.assign(el("div","tinylabel"),{textContent: p&&p.coal ? "Or propose something else" : "Make a proposal"}));
+  const cr=el("div","res-list"); cr.style.marginTop="6px"; cr.append(el("span","tinylabel","Coalition"));
+  NG_COALS.forEach(k=>{ const b=el("button","res-btn"+(d.coal===k?" on":"")); b.type="button"; b.textContent=k+" · "+fmt(ngVal(v,k),2); b.onclick=()=>{ d.coal=k; render(); }; cr.append(b); });
+  fm.append(cr);
+  const grid=el("div"); grid.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;align-items:flex-end";
+  const sum=el("div","sm"); sum.style.cssText="margin-top:8px;font-weight:600";
+  const upd=()=>{ const tot=d.coal.split("").reduce((a,r)=>a+(+d.x[r]||0),0), w=ngVal(v,d.coal);
+    sum.textContent="Shares add to "+fmt(tot,2)+" of "+fmt(w,2)+(Math.abs(tot-w)<=1e-6?" ✓":tot>w?" — too much":" — "+fmt(w-tot,2)+" not yet shared"); sum.style.color= Math.abs(tot-w)<=1e-6?"var(--good)":tot>w?"var(--bad)":"var(--ink-2)"; };
+  ["A","B","C"].forEach(r=>{ const f=el("div","field"); f.style.minWidth="90px";
+    f.append(Object.assign(el("label"),{textContent:"Player "+r+(r===role?" (you)":"")}));
+    if(d.coal.indexOf(r)>=0){ const i=el("input","input mono"); i.type="number"; i.inputMode="decimal"; i.step="any"; i.value=d.x[r]!=null?d.x[r]:""; i.placeholder="0";
+      i.oninput=()=>{ d.x[r]=i.value; upd(); }; i.onblur=rbBlurRedraw; i.style.cssText="width:110px;padding:8px 10px"; f.append(i); }
+    else f.append(Object.assign(el("div"),{textContent:fmt(ngVal(v,r),2)+" (left out)",style:"padding:8px 2px;color:var(--muted)"}));
+    grid.append(f); });
+  fm.append(grid); upd(); fm.append(sum);
+  const go=el("button","btn","Propose to my group"); go.style.cssText="margin-top:10px;width:100%;max-width:420px;padding:13px";
+  go.onclick=()=>ngPropose(gid, role, d.coal, d.x); fm.append(go);
+  fm.append(Object.assign(el("div","sm mut"),{textContent:"Anyone in the group can propose. A deal locks when every player in the coalition has confirmed it.",style:"margin-top:6px"}));
+  c.append(fm);
+}
+
+/* ── instructor console + projector ── */
+function ngStatus(){
+  const gids=ngGids(), full=gids.filter(g=>ngMembers(ngGroups[g]).length>=3);
+  const agreed=full.filter(g=>ngPropDone(ngProps[g])), proposed=full.filter(g=>ngProps[g]&&ngProps[g].coal&&!ngPropDone(ngProps[g]));
+  const waiting=gids.filter(g=>ngMembers(ngGroups[g]).length<3);
+  return {gids, full, agreed, proposed, waiting, inGroups:gids.reduce((a,g)=>a+ngMembers(ngGroups[g]).length,0)};
+}
+function ngConsoleCard(){
+  const v=ngV(), st=ngStatus(), card=el("div","card stage"), open=isOpenNow();
+  card.append(el("div","eyebrow gold","Negotiation Game · round "+control.round));
+  card.append(ngVTable(v, true));
+  if(!open) card.append(Object.assign(el("p","lead"),{textContent:"Open submissions to start. Students form groups of 3 on their phones (kept for every round of this meeting); each round they get fresh roles A/B/C, negotiate, propose and confirm a deal.",style:"margin-top:8px"}));
+  const line=el("div"); line.style.cssText="font-size:1.1rem;font-weight:600;margin-top:10px";
+  line.textContent=st.agreed.length+" of "+st.full.length+" groups agreed · "+st.proposed.length+" with a proposal on the table · "+st.inGroups+" students in "+st.gids.length+" group"+(st.gids.length===1?"":"s")+(st.waiting.length?" · "+st.waiting.length+" group"+(st.waiting.length===1?"":"s")+" not full yet":"");
+  card.append(line);
+  if(st.gids.length){ const rs=el("button","ghost-btn ab-clear","Reset groups"); rs.style.marginTop="10px"; rs.onclick=()=>ngResetGroups(); card.append(rs); }
+  const grid=el("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-top:10px";
+  st.gids.forEach(gid=>{ const g=ngGroups[gid], R=ngRoles(gid,g,curKey), p=ngProps[gid], done=ngPropDone(p);
+    const b=el("div","card"); b.style.cssText="padding:10px 12px;"+(done?"border-color:var(--good)":"");
+    b.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(ngGroupName(gid))+"</b> <span class='sm mut'>"+ngMembers(g).length+"/3</span>"+(done?" <span class='sm' style='color:var(--good);font-weight:700'>✓ "+esc(p.coal)+"</span>":p&&p.coal?" <span class='sm mut'>proposal: "+esc(p.coal)+"</span>":"")}));
+    if(p&&p.coal) b.append(Object.assign(el("div","sm"),{textContent:ngSplitTxt(p.x)+(done?"":" · confirmed "+Object.keys(p.ok||{}).join(""))+(done&&!ngInCore(p.x,v)?" · not in the core":done?" · in the core":""),style:"margin-top:3px"}));
+    ngMembers(g).forEach(m=>{ const r=el("div"); r.style.cssText="display:flex;justify-content:space-between;gap:6px;align-items:center;font-size:.86rem;margin-top:3px";
+      r.append(Object.assign(el("span"),{textContent:(R.of[String(m.id)]?R.of[String(m.id)]+" · ":"")+m.name}));
+      const x=el("button","linkbtn","✕"); x.type="button"; x.title="Remove from the group"; x.onclick=()=>{ if(confirm("Remove "+m.name+" from "+ngGroupName(gid)+"?")) ngRemoveMember(gid, m.id); }; r.append(x); b.append(r); });
+    grid.append(b); });
+  if(st.gids.length) card.append(grid);
+  return card;
+}
+function ngPresentBody(){
+  const v=ngV(), st=ngStatus(), w=el("div"); w.style.cssText="display:flex;flex-direction:column;gap:14px;flex:1 1 420px;min-width:0";
+  w.append(Object.assign(el("div"),{textContent:"Split the pot",style:"font-family:Fraunces,Georgia,serif;font-size:2rem;font-weight:650"}));
+  w.append(ngVTable(v, true));
+  const n=el("div"); n.style.cssText="font-family:'IBM Plex Mono',monospace;font-size:3rem;font-weight:700;line-height:1"; n.textContent=st.agreed.length+" / "+st.full.length;
+  w.append(n, el("div","sm mut","groups have agreed a deal"+(st.waiting.length?" · "+st.waiting.length+" group"+(st.waiting.length===1?"":"s")+" still forming":"")));
+  w.append(Object.assign(el("div"),{textContent:"Groups of 3 · one proposes a coalition and a split · the others in the coalition confirm",style:"font-weight:600"}));
+  return w;
+}
+
+/* ── results ── */
+/* One outcome per group (every member's record carries the whole deal). */
+function ngOutcomes(list){
+  const by={};
+  list.filter(s=>s && s.game==="nego" && s.gid && !s.obs).forEach(s=>{ const o=by[s.gid]||(by[s.gid]={gid:s.gid, roles:s.roles||{}, v:s.v, coal:null, x:null, gname:s.gname||"", names:{}});
+    if(s.role) o.names[s.role]=s.name||s.studentId;
+    if(s.coal && s.x && !o.coal){ o.coal=s.coal; o.x={A:+s.x.A, B:+s.x.B, C:+s.x.C}; o.v=s.v||o.v; } });
+  return Object.values(by);
+}
+/* The triangle: imputations x_A + x_B + x_C = v(ABC) with x_i ≥ v(i); the core shaded; one dot per distinct split. */
+function ngTriangle(v, outs, sh){
+  const V=ngVal(v,"ABC"), l={A:ngVal(v,"A"),B:ngVal(v,"B"),C:ngVal(v,"C")}, span=V-l.A-l.B-l.C;
+  const W=440,H=400, P={A:[W/2,34], B:[40,H-40], C:[W-40,H-40]};
+  const pt=x=>{ const w={A:(x.A-l.A)/span, B:(x.B-l.B)/span, C:(x.C-l.C)/span}; return [w.A*P.A[0]+w.B*P.B[0]+w.C*P.C[0], w.A*P.A[1]+w.B*P.B[1]+w.C*P.C[1]]; };
+  const svg=svgEl("svg",{viewBox:`0 0 ${W} ${H}`,role:"img"}); svg.style.maxWidth="460px";
+  svg.append(svgEl("polygon",{points:[P.A,P.B,P.C].map(p=>p.join(",")).join(" "),fill:"var(--surface-2, transparent)",stroke:"var(--line)","stroke-width":1.5}));
+  // core: clip the imputation triangle by x_i ≤ u_i (in (xA,xB) coordinates, xC = V − xA − xB)
+  if(span>0){ const poly=ngCorePoly(v);
+    // a core with area is shaded; a core that is a line or a single split (e.g. Game 2: A gets 0) is drawn as a thick line / ring
+    const area= poly.length>=3 ? Math.abs(poly.reduce((a,p,i)=>{ const q=poly[(i+1)%poly.length]; return a+(p.A*q.B-q.A*p.B); },0)) : 0;
+    if(area>1e-6) svg.append(svgEl("polygon",{points:poly.map(p=>pt(p).map(n=>n.toFixed(1)).join(",")).join(" "),fill:"color-mix(in srgb, var(--good) 22%, transparent)",stroke:"var(--good)","stroke-width":2}));
+    else if(poly.length){ const qs=poly.map(pt); const lo=qs.reduce((a,q)=>q[0]+q[1]<a[0]+a[1]?q:a), hi=qs.reduce((a,q)=>q[0]+q[1]>a[0]+a[1]?q:a);
+      if(Math.hypot(hi[0]-lo[0],hi[1]-lo[1])>2) svg.append(svgEl("line",{x1:lo[0],y1:lo[1],x2:hi[0],y2:hi[1],stroke:"var(--good)","stroke-width":7,"stroke-linecap":"round","stroke-opacity":.55}));
+      else svg.append(svgEl("circle",{cx:lo[0],cy:lo[1],r:7,fill:"none",stroke:"var(--good)","stroke-width":3})); } }
+  [["A",P.A,0,-12],["B",P.B,-6,22],["C",P.C,6,22]].forEach(([r,p,dx,dy])=>svg.append(svgEl("text",{x:p[0]+dx,y:p[1]+dy,"text-anchor":"middle","font-size":"13","font-weight":"700",fill:"var(--ink)","font-family":"IBM Plex Sans"},r+" gets "+fmt(V-l.A-l.B-l.C+l[r],0))));
+  const cnt={}; outs.forEach(o=>{ if(!o.x) return; if(Math.abs(o.x.A+o.x.B+o.x.C-V)>NG_TOL*3) return; const k=["A","B","C"].map(r=>Math.round(o.x[r]*10)/10).join("|"); (cnt[k]=cnt[k]||{x:o.x,n:0,core:ngInCore(o.x,v)}).n++; });
+  Object.values(cnt).forEach(c=>{ const q=pt(c.x); svg.append(svgEl("circle",{cx:q[0],cy:q[1],r:Math.min(16,4+3*Math.sqrt(c.n)),fill:c.core?"var(--accent)":"var(--bad)","fill-opacity":.75,stroke:"#fff","stroke-width":1}));
+    if(c.n>1) svg.append(svgEl("text",{x:q[0],y:q[1]+4,"text-anchor":"middle","font-size":"10","font-weight":"700",fill:"#fff"},c.n)); });
+  if(sh){ const q=pt(sh); svg.append(svgEl("path",{d:`M${q[0]} ${q[1]-10} L${q[0]+3} ${q[1]-3} L${q[0]+10} ${q[1]-3} L${q[0]+4} ${q[1]+2} L${q[0]+6} ${q[1]+10} L${q[0]} ${q[1]+5} L${q[0]-6} ${q[1]+10} L${q[0]-4} ${q[1]+2} L${q[0]-10} ${q[1]-3} L${q[0]-3} ${q[1]-3} Z`,fill:"var(--gold)",stroke:"#fff","stroke-width":1})); }
+  return svg;
+}
+function analyzeNego(list, teacher){
+  const wrap=el("div","stack");
+  const outs=ngOutcomes(list); if(!outs.length){ wrap.append(Object.assign(el("div","card stage center mut"),{textContent:"No groups recorded in this round."})); return wrap; }
+  const v=outs.find(o=>o.v)?.v || ngV(), V=ngVal(v,"ABC"), sh=ngShapley(v), showSh = teacher || ngCfg().showSh, cr=ngCoreRange(v);
+  const deals=outs.filter(o=>o.coal), grand=deals.filter(o=>o.coal==="ABC"), inCore=deals.filter(o=>ngInCore(o.x,v));
+  // a student's own result
+  if(!teacher && !_presenting){ const m=list.find(s=>s.studentId===myId && s.game==="nego");
+    if(m){ const o=outs.find(x=>x.gid===m.gid); const c=el("div","card stage");
+      c.append(el("div","eyebrow gold","Your result"));
+      if(m.obs) c.append(el("p","lead","You watched this round."));
+      else if(o && o.coal){ c.append(Object.assign(el("h2"),{textContent:"You were Player "+m.role+" · you got "+fmt(o.x[m.role],2),style:"font-size:1.5rem;margin:6px 0"}));
+        c.append(Object.assign(el("div"),{textContent:"Your group formed "+o.coal+": "+ngSplitTxt(o.x)+" — "+(ngInCore(o.x,v)?"in the core ✓":"not in the core"),style:"font-weight:600"})); }
+      else c.append(el("p","lead","Your group didn't agree a deal — everyone gets what they'd get alone."));
+      wrap.append(c); } }
+  const tiles=el("div","stats");
+  tiles.append(statTile("Groups", String(outs.length), deals.length+" agreed a deal"),
+    statTile("Grand coalition", deals.length?pct(grand.length/deals.length):"—", grand.length+" of "+deals.length+" deals included everyone"),
+    statTile("In the core", deals.length?pct(inCore.length/deals.length):"—", inCore.length+" of "+deals.length+" deals are stable", true),
+    statTile("Pot", fmt(V,2), "v(ABC) — the most the three can share"));
+  wrap.append(tiles);
+  const c1=el("div","card stage");
+  c1.append(el("div","eyebrow","Every group's split · the core is shaded green"));
+  const row=el("div"); row.style.cssText="display:flex;gap:22px;flex-wrap:wrap;align-items:center";
+  row.append(ngTriangle(v, deals, showSh?sh:null));
+  const leg=el("div"); leg.style.cssText="flex:1 1 260px;min-width:0";
+  leg.innerHTML="<div class='sm' style='line-height:1.7'><span style='color:var(--accent)'>●</span> a split in the core &nbsp; <span style='color:var(--bad)'>●</span> not in the core"+(showSh?" &nbsp; <span style='color:var(--gold)'>★</span> Shapley value":"")+"<br>Each corner = one player gets the whole pot. Bigger dots = more groups chose that split.</div>";
+  const ct=el("table","matrix"); ct.style.marginTop="10px";
+  ct.innerHTML="<tr><th style='text-align:left'>Player</th><th>Class average</th><th>Core range</th>"+(showSh?"<th>Shapley</th>":"")+"</tr>"+["A","B","C"].map(r=>{ const xs=deals.map(o=>o.x[r]); const avg=xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;
+    return "<tr><td style='text-align:left'><b>"+r+"</b></td><td>"+fmt(avg,1)+"</td><td>"+(!cr[r]?"—":Math.abs(cr[r][1]-cr[r][0])<1e-6?fmt(cr[r][0],1):fmt(cr[r][0],1)+" – "+fmt(cr[r][1],1))+"</td>"+(showSh?"<td>"+fmt(sh[r],2)+"</td>":"")+"</tr>"; }).join("");
+  leg.append(ct);
+  const coreEmpty=!cr.A;
+  leg.append(Object.assign(el("div","sm mut"),{textContent: coreEmpty ? "This game's core is empty — no split stops some pair from walking away." : "Core: x_A + x_B + x_C = "+fmt(V,2)+", each x_i ≥ v(i), and every pair gets at least what it's worth on its own.",style:"margin-top:8px"}));
+  const off=deals.filter(o=>Math.abs(o.x.A+o.x.B+o.x.C-V)>NG_TOL*3).length;
+  if(off) leg.append(Object.assign(el("div","sm mut"),{textContent:off+" deal"+(off===1?"":"s")+" shared less than "+fmt(V,2)+" in total, so "+(off===1?"it isn't":"they aren't")+" on the triangle.",style:"margin-top:4px"}));
+  row.append(leg); c1.append(row); wrap.append(c1);
+  // coalitions formed
+  const c2=el("div","card stage"); c2.append(el("div","eyebrow","Which coalition formed?"));
+  const cols={ABC:"var(--good)",AB:"var(--accent)",AC:"var(--accent)",BC:"var(--accent)",none:"var(--faint)"};
+  c2.append(barChart(NG_COALS.map(k=>({label:k+" (worth "+fmt(ngVal(v,k),0)+")", value:deals.filter(o=>o.coal===k).length, color:cols[k]})).concat([{label:"No deal", value:outs.length-deals.length, color:cols.none}])));
+  wrap.append(c2);
+  // instructor: the submissions, grouped like the slides
+  if(teacher && !_presenting){
+    const tbl=(title,arr)=>{ const c=el("div","card stage"); c.append(el("div","eyebrow",title+" ("+arr.length+")"));
+      const g={}; arr.forEach(o=>{ const k=["A","B","C"].map(r=>fmt(o.x[r],2)).join("|")+"|"+o.coal; (g[k]=g[k]||{o,n:0,who:[]}).n++; g[k].who.push(["A","B","C"].map(r=>r+": "+(o.names[r]||o.roles[r]||"?")).join(", ")); });
+      const t=el("table","matrix"); t.style.marginTop="8px";
+      t.innerHTML="<tr><th>Share of A</th><th>Share of B</th><th>Share of C</th><th>Coalition</th><th># groups</th><th style='text-align:left'>Who</th></tr>"+Object.values(g).sort((a,b)=>a.o.x.A-b.o.x.A||a.o.x.B-b.o.x.B).map(e=>"<tr><td>"+fmt(e.o.x.A,2)+"</td><td>"+fmt(e.o.x.B,2)+"</td><td>"+fmt(e.o.x.C,2)+"</td><td>"+esc(e.o.coal)+"</td><td>"+e.n+"</td><td style='text-align:left' class='sm'>"+e.who.map(esc).join("<br>")+"</td></tr>").join("");
+      const w=el("div","tablescroll"); w.append(t); c.append(w); return c; };
+    wrap.append(tbl("In-core deals", inCore), tbl("Deals not in the core", deals.filter(o=>!ngInCore(o.x,v))));
+    const nd=outs.filter(o=>!o.coal); if(nd.length) wrap.append(Object.assign(el("div","card stage sm"),{innerHTML:"<b>No deal ("+nd.length+"):</b> "+nd.map(o=>esc(["A","B","C"].map(r=>o.names[r]||o.roles[r]||"?").join(", "))).join(" · ")}));
+    wrap.append(Object.assign(el("div","note-box"),{innerHTML:"<b>For you:</b> Shapley value "+ngSplitTxt(sh)+" — "+(ngInCore(sh,v)?"inside":"outside")+" the core. "+(ngCfg().showSh?"Students can see it.":"Hidden from students — turn on “Show the Shapley value to students” in Parameters when you teach it.")}));
+  }
+  return wrap;
+}
+function ngSubValue(s){
+  if(s.obs) return "watched ("+(s.gname||"group")+")";
+  const r="Player "+(s.role||"?");
+  if(!s.coal) return r+" · no deal";
+  return r+" · "+s.coal+" · "+ngSplitTxt(s.x)+" · got "+fmt(s.pay,2);
+}
+
 function analysisBody(g, list, teacher){
   if(g==="guess23") return analyzeGuess(teacher,list);
   if(g==="pd") return analyzeColor(teacher,list);
@@ -6031,6 +6442,7 @@ function analysisBody(g, list, teacher){
   if(g==="bayes") return analyzeBayes(list, teacher);
   if(g==="robot") return analyzeRobot(list, teacher);
   if(g==="placement") return analyzePlacement(list, teacher);
+  if(g==="nego") return analyzeNego(list, teacher);
   return analyzePG(list);
 }
 function revealNarr(g){
@@ -6045,6 +6457,7 @@ function revealNarr(g){
   if(g==="bayes") return "Did Player 1 play predictably — and did Player 2 use what only they knew?";
   if(g==="robot") return "Which robot strategies earned the most — and which ones got exploited?";
   if(g==="placement") return "Who did an MBA — and did recruiters read the degree right?";
+  if(g==="nego") return "Which coalitions formed — and were the splits stable?";
   return "How close did the group get to the socially optimal outcome?";
 }
 function analyzeGuess(teacher,list){
@@ -6979,6 +7392,7 @@ function presentView(){
   if(g==="robot" && !revealed){ body.append(rbPresentBody()); }
   if(g==="placement"){ const sw=el("div"); sw.style.cssText="flex:1 1 100%;min-width:0"; sw.append(psStepper(true)); body.append(sw); }
   if(g==="placement" && !revealed){ body.append(psPresentBody()); }
+  if(g==="nego" && !revealed){ body.append(ngPresentBody()); }
   const cnt=el("div","present-count");
   const statusTxt = open?"Submissions open" : revealed?"Results revealed" : "Submissions closed";
   const status=el("div","present-status"+(open?" live":"")); status.append(el("span","dot"), document.createTextNode(statusTxt));
@@ -7654,6 +8068,9 @@ function teacherConsole(){
     main.append(w);
   } else if(g==="robot" && control.phase!=="revealed"){
     main.append(rbConsoleCard());
+  } else if(g==="nego" && control.phase!=="revealed"){
+    main.append(ngConsoleCard());
+    if(analysisSubs().length) main.append(analysisView(true));
   } else if(g==="placement" && control.phase!=="revealed"){
     main.append(psConsoleCard());
     if(analysisSubs().length) main.append(analysisView(true));
@@ -8005,6 +8422,7 @@ function subValue(s){
   if(s.game==="robot"){ const b=rbParse(s.robot); return (s.teamName||"Team")+": "+(b.name||"robot")+" ("+rbFamily(b)+")"; }
   if(s.game==="adwar"||s.game==="adfin"){ const seq=rpSeq(s); return "["+seq.join(" ")+"] vs "+(s.partnerName||"?"); }
   if(s.game==="placement") return psSubValue(s);
+  if(s.game==="nego") return ngSubValue(s);
   if(s.game==="bayes") return (s.role||"")+" ["+bgList(s).join(" ")+"] vs "+(s.partnerName||"?");
   return s.value!=null?String(s.value):"—";   // guess23 and default
 }
@@ -8358,6 +8776,25 @@ function paramEditor(){
       +(C.mode==="bid" ? "Bidding war: each firm posts a role and a salary for MBAs and for Grads (Manager 200–250, Analyst 100–150); every candidate goes to the highest salary for their degree; no hiring limit."
         : "Fixed salaries: Manager "+V.salM+", Analyst "+V.salA+"; CVs are dealt to firms in batches that match the class by degree and type, and each firm picks a role per degree. Putting MBAs on Manager pays "+(thr==="always"?"whatever their share of H":thr==="never"?"never":"when more than "+Math.round(thr*100)+"% of them are H")+".")
       +" Flow: Open → 1 choose role (first round of a meeting only) → 2 candidates choose → 3 recruiters decide → Reveal → Next round. Suggested order: A → B → C → D. "+V.lesson,style:"margin-top:8px"})); }
+  else if(g==="nego"){
+    const C=ngCfg(), cur=JSON.stringify(C.v);
+    const setV=nv=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.v=nv; const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
+    wrap.append(Object.assign(el("div","tinylabel"),{textContent:"Characteristic function"}));
+    const pr=el("div","row"); pr.style.cssText="gap:8px;flex-wrap:wrap;margin-top:4px";
+    Object.keys(NG_PRESETS).forEach(k=>{ const P=NG_PRESETS[k], on=JSON.stringify(Object.assign({},P.v))===cur;
+      const b=el("button","ghost-btn"+(on?" hold-on":""),P.name+": "+["AB","AC","BC","ABC"].map(x=>x+" "+P.v[x]).join(", ")); b.onclick=()=>{ if(!on) setV(Object.assign({},P.v)); }; pr.append(b); });
+    wrap.append(pr);
+    const grid=el("div","paramgrid"); grid.style.marginTop="10px";
+    NG_KEYS.forEach(k=>{ const f=el("div","field"); f.append(Object.assign(el("label"),{textContent:"v("+k+")"}));
+      const i=el("input","input mono"); i.type="number"; i.value=C.v[k]; i.style.padding="8px 10px";
+      i.onchange=()=>{ const nv=Object.assign({},C.v); nv[k]=Number(i.value)||0; setV(nv); }; f.append(i); grid.append(f); });
+    wrap.append(grid);
+    const sh=ngShapley(C.v), cr=ngCoreRange(C.v);
+    const shB=el("button","ghost-btn"+(C.showSh?" hold-on":""), C.showSh?"✓ Students see the Shapley value":"Show the Shapley value to students"); shB.style.marginTop="10px";
+    shB.onclick=()=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.showSh=!C.showSh; const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
+    wrap.append(shB);
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Groups of 3 (kept across this meeting's rounds; roles A/B/C re-dealt every round) negotiate, propose a coalition and a split, and the coalition's members confirm. Anything other than the grand coalition — or a split that leaves part of the pot unshared — asks “Are you sure?”. Core: "+(cr.A ? ["A","B","C"].map(r=>r+" "+fmt(cr[r][0],1)+(Math.abs(cr[r][1]-cr[r][0])>1e-6?"–"+fmt(cr[r][1],1):"")).join(", ")+" (summing to "+fmt(C.v.ABC,1)+")" : "empty")+". Shapley: "+ngSplitTxt(sh)+". Results always show the core; the Shapley star is instructor-only until you switch it on.",style:"margin-top:8px"}));
+  }
   else if(g==="adfin"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played (announced to students)","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Same High/Low advertising game as G8, but every pair plays exactly this many rounds and students are told so (\"Round 3 of "+rpFinRounds()+"\", with the final round flagged). Backward induction predicts High in every round; compare the class's play near the end with G8.",style:"margin-top:6px"})); }
