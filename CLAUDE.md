@@ -352,6 +352,12 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     the game open; 20 Nov class: a group locked the wrong deal).
   - **Roles re-dealt every round** (`ngRoles`): the first three members by id, shuffled with `adSeedFloat(roundKey|gid|i)`
     — every phone agrees, no write needed.
+  - **Negotiate first** (`ngNegotiateCard`, 20 Nov request for Game 2): each round a full group first sees **who is Player A, B
+    and C** as three big tiles (theirs highlighted) + "Step 1 · Negotiate first … Nothing to enter yet / Step 2 · Enter the deal:
+    ONE of you taps below" and **✓ We've agreed — enter our deal**; only then does the entry form appear (local per phone, per
+    round: `ngDraft[roundKey|gid].ready`). If a groupmate has already entered a proposal, it shows above (to confirm) and the
+    gate is a **"Propose something different instead"** link. The projector line and the How-to-play demo (now 8 steps, a
+    "Negotiate first" step) say the same.
   - **Proposal form**: nothing is pre-selected — "Please select your coalition" over the ABC / AB / AC / BC chips (each with its
     worth); the share boxes appear only after a tap, with a line saying what it means ("All three of you share 400…" or "B and C
     share 300; A is left out and gets 0… (Together, all three of you would share 400.)"). Switching coalition clears the shares.
@@ -951,7 +957,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   ← → (and PageUp/PageDown for clickers), Esc. Local state `demoGame`/`demoStep`; writes nothing; shared-data redraws are skipped
   while it's open (`teacherRenderSoon`, `onCtrl`), and it clears when the present view closes. `demoHL(node)` rings the button a
   step talks about (`.demo-hl`, pulsing gold). Add a game = one `DEMOS` entry returning `[{title, text, phone:ph=>{…}}]`.
-- **G13 (`ngDemoSteps`, 7 steps):** form a group of 3 → you get a role (the round's v tiles) → pick a coalition → split the pot →
+- **G13 (`ngDemoSteps`, 8 steps):** form a group of 3 → you get a role (the round's v tiles) → negotiate first → pick a coalition → split the pot →
   leaving someone out ("Are you sure?" mock dialog) → everyone in the deal confirms → Deal!. Uses the round's actual v (Game 1/2/
   custom). **No sample split numbers anywhere** — the share boxes show "?" — because the demo runs right before they negotiate
   (and before the core is taught), so any example split would anchor the class.
@@ -1071,6 +1077,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 4. Wait ~1 min for Pages, then hard-refresh (Ctrl+F5) — Pages/browser can cache the old file.
 
 ## Likely next tasks
+- **Form the Government** (voting power: Shapley–Shubik vs Banzhaf, empty core in simple games) — fully designed for next
+  year in `docs/government-game-design.md` (fictional Indian parties, 543/272, three seat maps, portfolios, flow, results,
+  build notes). Not built; dropped for the 2026 course.
 - Add a game (sealed-bid auction, Cournot/Bertrand): extend `GAMES`, `DEFAULT_CONFIG`, add a
   `student<Game>()` view, an `analyze<Game>()` function, and a branch in `paramEditor()`.
   Follow the **Live-update rendering rule** (view signatures + load test) for anything that listens to

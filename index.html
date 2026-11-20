@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-20.003";
+const APP_VERSION = "2026-11-20.004";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -6312,6 +6312,13 @@ function studentNego(c){
   if(!canAct){ c.append(el("p","sm mut","Three of your group play; help them negotiate.")); return; }
   // proposal form (local draft survives live redraws)
   const d=ngDraft[curKey+"|"+gid] || (ngDraft[curKey+"|"+gid]={coal:null, x:{}});   // per round: a new round starts with an empty form
+  // NEGOTIATE FIRST: each round opens on who is Player A, B and C and "talk first"; the entry form appears only after this
+  // phone taps "We've agreed" (local, per round). A proposal a groupmate already entered still shows above (to confirm).
+  if(!d.ready){
+    if(p && p.coal){ const lk=el("button","linkbtn","Propose something different instead"); lk.type="button"; lk.style.marginTop="10px"; lk.onclick=()=>{ d.ready=true; render(); }; c.append(lk); return; }
+    c.append(ngNegotiateCard(R.by, R.name, role, ()=>{ d.ready=true; render(); }));
+    return;
+  }
   const fm=el("div","card"); fm.style.cssText="padding:12px;margin-top:12px";
   fm.append(Object.assign(el("div","tinylabel"),{textContent: p&&p.coal ? "Or propose something else" : "Make a proposal"}));
   // Nothing is pre-selected: the student picks a coalition first, then the share boxes appear with what that choice means.
@@ -6342,6 +6349,24 @@ function studentNego(c){
   c.append(fm);
 }
 
+/* "Negotiate first" card: who is Player A, B and C (big), then the two steps. by: role → id, name: id → name. */
+function ngNegotiateCard(by, name, role, onReady){
+  const c=el("div","card"); c.style.cssText="padding:14px;margin-top:12px";
+  c.append(Object.assign(el("div","tinylabel"),{textContent:"Step 1 · Negotiate first"}));
+  const g=el("div"); g.style.cssText="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:8px";
+  ["A","B","C"].forEach(r=>{ const t=el("div"); const me=r===role;
+    t.style.cssText="border:2px solid "+(me?"var(--accent)":"var(--line)")+";border-radius:12px;padding:10px 6px;text-align:center;background:"+(me?"color-mix(in srgb, var(--accent) 10%, transparent)":"transparent");
+    t.append(Object.assign(el("div"),{textContent:"Player "+r,style:"font-family:Fraunces,Georgia,serif;font-size:1.35rem;font-weight:650"}),
+      Object.assign(el("div","sm"),{textContent:(name[by[r]]||"—")+(me?" (you)":""),style:"margin-top:2px;font-weight:600;overflow-wrap:anywhere"}));
+    g.append(t); });
+  c.append(g);
+  c.append(Object.assign(el("div"),{innerHTML:"Talk with your group now and agree: <b>who is in the deal</b> and <b>how the pot is split</b>. Nothing to enter yet.",style:"margin-top:12px;line-height:1.45"}));
+  c.append(Object.assign(el("div","tinylabel"),{textContent:"Step 2 · Enter the deal",style:"margin-top:12px"}));
+  c.append(Object.assign(el("div","sm"),{textContent:"When you've agreed, ONE of you taps below and types it in; the others confirm on their phones.",style:"margin-top:4px;line-height:1.45"}));
+  const b=el("button","btn","✓ We've agreed — enter our deal"); b.style.cssText="margin-top:10px;width:100%;max-width:420px;padding:13px"; if(onReady) b.onclick=onReady;
+  c.append(b);
+  return c;
+}
 /* ── instructor console + projector ── */
 function ngStatus(){
   const gids=ngGids(), full=gids.filter(g=>ngMembers(ngGroups[g]).length>=3);
@@ -6381,7 +6406,7 @@ function ngPresentBody(){
   w.append(ngVTable(v, true));
   const n=el("div"); n.style.cssText="font-family:'IBM Plex Mono',monospace;font-size:3rem;font-weight:700;line-height:1"; n.textContent=st.agreed.length+" / "+st.full.length;
   w.append(n, el("div","sm mut","groups have agreed a deal"+(st.waiting.length?" · "+st.waiting.length+" group"+(st.waiting.length===1?"":"s")+" still forming":"")));
-  w.append(Object.assign(el("div"),{textContent:"Groups of 3 · one proposes a coalition and a split · the others in the coalition confirm",style:"font-weight:600"}));
+  w.append(Object.assign(el("div"),{textContent:"Groups of 3 · see who is Player A, B, C · negotiate first · then one of you enters the deal · the others in the coalition confirm",style:"font-weight:600"}));
   return w;
 }
 
@@ -6541,7 +6566,9 @@ function ngDemoSteps(){
         const c=el("div","card"); c.append(Object.assign(el("div"),{textContent:"Chen's group",style:"font-weight:700"}), Object.assign(el("div","sm mut"),{textContent:"Chen, Ravi"}), Object.assign(el("div","btn"),{textContent:"Join (2/3)",style:"margin-top:6px"})); ph.append(c); } },
     { title:"You get a role", text:"Each round the app makes you <b>Player A, B or C</b>. The tiles show what each group can earn: alone, in a pair, or all three together (<b>ABC = "+fmt(V,2)+"</b>).",
       phone:ph=>{ top(ph,"Round 1 · how much each coalition is worth:"); ph.append(demoHL(ngVTable(v))); roleHead(ph); } },
-    { title:"Pick a coalition", text:"Talk it over, then anyone can make a proposal. First choose <b>who is in the deal</b>: all three of you (<b>ABC</b>) or just two.",
+    { title:"Negotiate first", text:"Your phone shows who is <b>Player A, B and C</b>. Talk it through and agree <b>who is in the deal</b> and <b>how to split the pot</b>. When you've agreed, <b>one of you</b> taps <b>“We've agreed — enter our deal”</b>.",
+      phone:ph=>{ top(ph); roleHead(ph); const card=ngNegotiateCard({A:"a",B:"b",C:"c"},{a:"Chen",b:"Asha",c:"Ravi"},"B",null); demoHL(card.querySelector(".btn")); ph.append(card); } },
+    { title:"Pick a coalition", text:"Now enter what you agreed. First choose <b>who is in the deal</b>: all three of you (<b>ABC</b>) or just two.",
       phone:ph=>{ top(ph); roleHead(ph); const c=el("div","card"); c.append(Object.assign(el("div","tinylabel"),{textContent:"Make a proposal"}),
           Object.assign(el("div"),{textContent:"Please select your coalition",style:"font-weight:700;margin-top:6px"}), demoHL(chips(null))); ph.append(c); } },
     { title:"Split the pot", text:"Type each player's share. Together they can't add up to more than the coalition is worth. Then tap <b>Propose to my group</b>.",
