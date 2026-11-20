@@ -381,7 +381,7 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     redraws; chip taps, typing and the partner's proposal (≈10 ms) all register.
   - Console `ngConsoleCard` (v table, "X of Y groups agreed · N with a proposal on the table", per-group roles, status, split,
     in/not in core); projector `ngPresentBody` (v table, agreed count). Phones show v as wrapping tiles (`ngVTable(v)`),
-    console/projector as a table (`ngVTable(v,true)`).
+    console as a table (`ngVTable(v,true)`), the projector as a larger table (`ngVTable(v,"present")`: headers 1.25rem, values 2rem).
   - `analyzeNego` (`ngOutcomes` dedupes by gid): tiles (groups, grand-coalition %, in-core %, pot); the **imputation triangle**
     (`ngTriangle`) with the core (`ngCorePoly` = triangle clipped by x_k ≤ v(ABC) − v(ij); shaded, or a thick line / ring when it
     is a segment or a point, as in Game 2) and one dot per distinct split (green in core / red not; splits summing to less than

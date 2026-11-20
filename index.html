@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-20.004";
+const APP_VERSION = "2026-11-20.005";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -6242,8 +6242,10 @@ function ngVTable(v, big){
     NG_KEYS.forEach(k=>{ const b=el("div"); b.style.cssText="border:1px solid var(--line);border-radius:8px;padding:4px 9px;text-align:center;min-width:54px;"+(k==="ABC"?"border-color:var(--accent);":"");
       b.innerHTML="<div class='sm mut' style='font-size:.72rem'>v("+k+")</div><div style='font-family:IBM Plex Mono,monospace;font-weight:"+(k==="ABC"?800:600)+"'>"+fmt(ngVal(v,k),2)+"</div>"; w.append(b); });
     return w; }
-  const t=el("table","matrix"); t.style.cssText="margin-top:8px;"+(big?"font-size:1.35rem;":"");
-  t.innerHTML="<tr>"+NG_KEYS.map(k=>"<th>v("+k+")</th>").join("")+"</tr><tr>"+NG_KEYS.map(k=>"<td style='font-family:IBM Plex Mono,monospace;font-weight:"+(k==="ABC"?800:600)+"'>"+fmt(ngVal(v,k),2)+"</td>").join("")+"</tr>";
+  const pr=big==="present"; // projector: readable from the back row, not huge
+  const t=el("table","matrix"); t.style.cssText="margin-top:8px;"+(pr?"font-size:2rem;":big?"font-size:1.35rem;":"");
+  const thS=pr?" style='font-size:1.25rem;padding:10px 8px'":"", tdS=pr?"padding:12px 8px;":"";
+  t.innerHTML="<tr>"+NG_KEYS.map(k=>"<th"+thS+">v("+k+")</th>").join("")+"</tr><tr>"+NG_KEYS.map(k=>"<td style='"+tdS+"font-family:IBM Plex Mono,monospace;font-weight:"+(k==="ABC"?800:600)+"'>"+fmt(ngVal(v,k),2)+"</td>").join("")+"</tr>";
   const w=el("div","tablescroll"); w.append(t); return w; }
 function ngSplitTxt(x){ return x ? ["A","B","C"].map(r=>r+" "+fmt(+x[r],2)).join(" · ") : "—"; }
 
@@ -6403,7 +6405,7 @@ function ngConsoleCard(){
 function ngPresentBody(){
   const v=ngV(), st=ngStatus(), w=el("div"); w.style.cssText="display:flex;flex-direction:column;gap:14px;flex:1 1 420px;min-width:0";
   w.append(Object.assign(el("div"),{textContent:"Split the pot",style:"font-family:Fraunces,Georgia,serif;font-size:2rem;font-weight:650"}));
-  w.append(ngVTable(v, true));
+  w.append(ngVTable(v, "present"));
   const n=el("div"); n.style.cssText="font-family:'IBM Plex Mono',monospace;font-size:3rem;font-weight:700;line-height:1"; n.textContent=st.agreed.length+" / "+st.full.length;
   w.append(n, el("div","sm mut","groups have agreed a deal"+(st.waiting.length?" · "+st.waiting.length+" group"+(st.waiting.length===1?"":"s")+" still forming":"")));
   w.append(Object.assign(el("div"),{textContent:"Groups of 3 · see who is Player A, B, C · negotiate first · then one of you enters the deal · the others in the coalition confirm",style:"font-weight:600"}));
