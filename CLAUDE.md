@@ -335,7 +335,11 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   queued case), the note reads "Game 2 is set for the next round" with **▶ Start Round N+1 with Game 2** (confirm → new round;
   greyed until Reveal; "Use Game 2 for Round N" instead when the round has no data) and **Keep Game 1** (reverts Parameters);
   the preset chips are tagged "· ▶ this round" / "· next round" (tapping the queued one = start it, the running one = keep it),
-  and the number boxes are labelled as the next round's values. The proposal draft is per round (`ngDraft[roundKey|gid]`),
+  and the number boxes are labelled as the next round's values. **Before a new session's first Open** (`!todayStarted()`)
+  the console still points at the LAST meeting's round, which has data and may be unrevealed — so the card treats Parameters as
+  free (no lock, no stamp change) and says "Today's session (S14) starts at Round 1 with Game 2 when you open submissions" (20 Nov:
+  Game 1 played in S13, Game 2 planned for S14 — the Game 2 chip would otherwise have been greyed until S13 was revealed).
+  **Groups are per meeting** (`ngBase` = session + section), so a new session starts with new groups. The proposal draft is per round (`ngDraft[roundKey|gid]`),
   so a new round starts with an empty form. Self-contained `ng*` block.
   - **Groups (meeting-level, kept across rounds)**: `live/<S1A-nego>/ng/<gid>` = `{members:{enc(id):{id,name}}, by, ts}`, pointer
     `nm/<enc(id)>` = gid claimed by **transaction**, size cap by a transaction on `members`. Students tap **Start a group** /
@@ -374,8 +378,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     (`ngTriangle`) with the core (`ngCorePoly` = triangle clipped by x_k ≤ v(ABC) − v(ij); shaded, or a thick line / ring when it
     is a segment or a point, as in Game 2) and one dot per distinct split (green in core / red not; splits summing to less than
     v(ABC) are listed, not plotted); class average vs core range (`ngCoreRange`) vs Shapley (`ngShapley`); "Which coalition
-    formed?" bars; instructor-only **In-core deals / Deals not in the core** tables (split, coalition, # groups, who) like the
-    slides, and a "For you" Shapley note. **The Shapley value is instructor-only** until Parameters' "Show the Shapley value to
+    formed?" bars; **In core submissions (N) / Non-core submissions (N)** tables like the slides (Share of A · B · C · #
+    Submissions, sorted by A then B; a Coalition column only when a table holds a non-ABC deal, e.g. Game 2's in-core 0/200/200
+    BC deals) shown to **everyone** — students and the projector see them **without names**; the instructor's console adds a
+    **Who** column and the no-deal groups' names — and a "For you" Shapley note (instructor only). **The Shapley value is instructor-only** until Parameters' "Show the Shapley value to
     students" (`showSh`, read live, so it can be switched on after Reveal). A student sees "You were Player C · you got 150 —
     in the core ✓". CSV: `ngSubValue` → "Player B · ABC · A 100 · B 150 · C 150 · got 150" / "no deal" / "watched".
 - `publicgoods` — Public Goods ("Maximize your marks") — labelled **G20**. Config `{ E, mult }` (default E=8 marks,

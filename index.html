@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-20.001";
+const APP_VERSION = "2026-11-20.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -6454,15 +6454,24 @@ function analyzeNego(list, teacher){
   const cols={ABC:"var(--good)",AB:"var(--accent)",AC:"var(--accent)",BC:"var(--accent)",none:"var(--faint)"};
   c2.append(barChart(NG_COALS.map(k=>({label:k+" (worth "+fmt(ngVal(v,k),0)+")", value:deals.filter(o=>o.coal===k).length, color:cols[k]})).concat([{label:"No deal", value:outs.length-deals.length, color:cols.none}])));
   wrap.append(c2);
-  // instructor: the submissions, grouped like the slides
-  if(teacher && !_presenting){
+  // Every submission, grouped like the slides ("In core submissions (25)": Share of A / B / C / # submissions). Students and
+  // the projector see the tables WITHOUT names; the "Who" column is the instructor's console only. A Coalition column appears
+  // only when a table holds a deal that isn't the grand coalition (e.g. Game 2's BC deals at 0 / 200 / 200 are in the core).
+  { const names = teacher && !_presenting;
     const tbl=(title,arr)=>{ const c=el("div","card stage"); c.append(el("div","eyebrow",title+" ("+arr.length+")"));
+      if(!arr.length){ c.append(Object.assign(el("div","sm mut"),{textContent:"None.",style:"margin-top:6px"})); return c; }
+      const showCoal=arr.some(o=>o.coal!=="ABC");
       const g={}; arr.forEach(o=>{ const k=["A","B","C"].map(r=>fmt(o.x[r],2)).join("|")+"|"+o.coal; (g[k]=g[k]||{o,n:0,who:[]}).n++; g[k].who.push(["A","B","C"].map(r=>r+": "+(o.names[r]||o.roles[r]||"?")).join(", ")); });
       const t=el("table","matrix"); t.style.marginTop="8px";
-      t.innerHTML="<tr><th>Share of A</th><th>Share of B</th><th>Share of C</th><th>Coalition</th><th># groups</th><th style='text-align:left'>Who</th></tr>"+Object.values(g).sort((a,b)=>a.o.x.A-b.o.x.A||a.o.x.B-b.o.x.B).map(e=>"<tr><td>"+fmt(e.o.x.A,2)+"</td><td>"+fmt(e.o.x.B,2)+"</td><td>"+fmt(e.o.x.C,2)+"</td><td>"+esc(e.o.coal)+"</td><td>"+e.n+"</td><td style='text-align:left' class='sm'>"+e.who.map(esc).join("<br>")+"</td></tr>").join("");
+      t.innerHTML="<tr><th>Share of A</th><th>Share of B</th><th>Share of C</th>"+(showCoal?"<th>Coalition</th>":"")+"<th># Submissions</th>"+(names?"<th style='text-align:left'>Who</th>":"")+"</tr>"+
+        Object.values(g).sort((a,b)=>a.o.x.A-b.o.x.A||a.o.x.B-b.o.x.B).map(e=>"<tr><td>"+fmt(e.o.x.A,2)+"</td><td>"+fmt(e.o.x.B,2)+"</td><td>"+fmt(e.o.x.C,2)+"</td>"+(showCoal?"<td>"+esc(e.o.coal)+"</td>":"")+"<td>"+e.n+"</td>"+(names?"<td style='text-align:left' class='sm'>"+e.who.map(esc).join("<br>")+"</td>":"")+"</tr>").join("");
       const w=el("div","tablescroll"); w.append(t); c.append(w); return c; };
-    wrap.append(tbl("In-core deals", inCore), tbl("Deals not in the core", deals.filter(o=>!ngInCore(o.x,v))));
-    const nd=outs.filter(o=>!o.coal); if(nd.length) wrap.append(Object.assign(el("div","card stage sm"),{innerHTML:"<b>No deal ("+nd.length+"):</b> "+nd.map(o=>esc(["A","B","C"].map(r=>o.names[r]||o.roles[r]||"?").join(", "))).join(" · ")}));
+    const two=el("div"); two.style.cssText="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;align-items:start";
+    two.append(tbl("In core submissions", inCore), tbl("Non-core submissions", deals.filter(o=>!ngInCore(o.x,v))));
+    wrap.append(two);
+    const nd=outs.filter(o=>!o.coal);
+    if(nd.length) wrap.append(Object.assign(el("div","card stage sm"),{innerHTML:"<b>No deal ("+nd.length+" group"+(nd.length===1?"":"s")+")</b>"+(names?": "+nd.map(o=>esc(["A","B","C"].map(r=>o.names[r]||o.roles[r]||"?").join(", "))).join(" · "):"")})); }
+  if(teacher && !_presenting){
     wrap.append(Object.assign(el("div","note-box"),{innerHTML:"<b>For you:</b> Shapley value "+ngSplitTxt(sh)+" — "+(ngInCore(sh,v)?"inside":"outside")+" the core. "+(ngCfg().showSh?"Students can see it.":"Hidden from students — turn on “Show the Shapley value to students” in Parameters when you teach it.")}));
   }
   return wrap;
@@ -8911,8 +8920,13 @@ function paramEditor(){
     // The values are fixed per round (stamped in control.ng when it opens). Same rule as G12's mode switch: free while Run's
     // round has nothing recorded; greyed while a round with data is being played; after Reveal a change STARTS THE NEXT
     // ROUND with it (after a confirmation) — a round's values never change under it.
-    const st=control.ng && control.ng.rk===curKey ? control.ng : null, L=st ? st.v : C.v;
-    const played=runHasData(), rev=control.phase==="revealed", rd=control.round, rdNow=(parseRoundKey(curKey)||{}).round||rd;
+    // Before today's first Open the console still points at the LAST meeting's round (control.session), but Open will start
+    // today's meeting at round 1 with whatever Parameters say — so that old round neither locks nor shows here.
+    const fresh=!todayStarted();
+    const st=!fresh && control.ng && control.ng.rk===curKey ? control.ng : null, L=st ? st.v : C.v;
+    const played=!fresh && runHasData(), rev=control.phase==="revealed", rd=control.round, rdNow=(parseRoundKey(curKey)||{}).round||rd;
+    if(fresh){ const nb=el("div","note-box teal"); nb.style.margin="0 0 8px";
+      nb.innerHTML="Today's session ("+esc(sessLabel(liveSess()))+") starts at <b>Round 1 with "+esc(vName(C.v))+"</b> when you open submissions. Pick the game below first."; wrap.append(nb); }
     const lockWhy="Round "+rd+" is being played — reveal it (or discard it) first; a change then starts Round "+(rd+1)+".";
     const diff=!!st && vKey(L)!==vKey(C.v);
     const cfgWith=nv=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.v=nv; const conf=Object.assign({},control.config); conf[g]=nc; return conf; };
