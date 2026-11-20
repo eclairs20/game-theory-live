@@ -340,7 +340,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - **Groups (meeting-level, kept across rounds)**: `live/<S1A-nego>/ng/<gid>` = `{members:{enc(id):{id,name}}, by, ts}`, pointer
     `nm/<enc(id)>` = gid claimed by **transaction**, size cap by a transaction on `members`. Students tap **Start a group** /
     **Join (n/3)**; a **4th** can join only once every group is full ("Join as 4th" — watches, role `"O"`, sub `obs:true`).
-    **Leave** only while the group isn't full. Console: ✕ per member (`ngRemoveMember`), **Reset groups** (`ngResetGroups`).
+    **Leave** only while the group isn't full. Console: ✕ per member (`ngRemoveMember`), **Reset groups** (`ngResetGroups`), and on an
+    agreed group **↺ Reopen deal** (`ngReopenDeal`, confirm; removes `np/<gid>` so the group can propose again — each member's
+    phone rewrites its own record to "no deal" via `ngSync`, so it's **locked unless submissions are open** and members should have
+    the game open; 20 Nov class: a group locked the wrong deal).
   - **Roles re-dealt every round** (`ngRoles`): the first three members by id, shuffled with `adSeedFloat(roundKey|gid|i)`
     — every phone agrees, no write needed.
   - **Proposal form**: nothing is pre-selected — "Please select your coalition" over the ABC / AB / AC / BC chips (each with its

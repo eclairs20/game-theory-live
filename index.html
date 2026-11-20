@@ -6172,6 +6172,14 @@ async function ngRemoveMember(gid, id){
   if(ngMembers(g).length<=1) up["ng/"+gid]=null; else up["ng/"+gid+"/members/"+k]=null;
   try{ await fb.ref(LIVE_ROOT(base)).update(up); }catch(e){ toast("Couldn't remove"); }
 }
+/* Instructor: a group locked the wrong deal. Removing its proposal reopens negotiation; each member's phone then rewrites its
+   own record back to "no deal" (ngSync) — the rules only let a student write their own record — so phones must be open. */
+async function ngReopenDeal(gid){
+  const p=ngProps[gid]; if(!p) return;
+  if(!confirm("Reopen the deal for "+ngGroupName(gid)+" ("+ngMembers(ngGroups[gid]).map(m=>m.name).join(", ")+")?\n\nTheir locked deal ("+p.coal+": "+ngSplitTxt(p.x)+") is cleared and they can propose again. Ask all three to keep the game open on their phones — each phone clears its own saved result.")) return;
+  try{ await fb.ref(LIVE_ROOT(curKey)+"/np/"+gid).remove(); toast("Deal reopened for "+ngGroupName(gid)); }
+  catch(e){ toast("Couldn't reopen — try again"); }
+}
 async function ngResetGroups(){
   const base=ngCtx; if(!base) return;
   if(!confirm("Remove every group for this meeting? Students will form new groups (records already saved are kept).")) return;
@@ -6353,6 +6361,11 @@ function ngConsoleCard(){
     const b=el("div","card"); b.style.cssText="padding:10px 12px;"+(done?"border-color:var(--good)":"");
     b.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(ngGroupName(gid))+"</b> <span class='sm mut'>"+ngMembers(g).length+"/3</span>"+(done?" <span class='sm' style='color:var(--good);font-weight:700'>✓ "+esc(p.coal)+"</span>":p&&p.coal?" <span class='sm mut'>proposal: "+esc(p.coal)+"</span>":"")}));
     if(p&&p.coal) b.append(Object.assign(el("div","sm"),{textContent:ngSplitTxt(p.x)+(done?"":" · confirmed "+Object.keys(p.ok||{}).join(""))+(done&&!ngInCore(p.x,v)?" · not in the core":done?" · in the core":""),style:"margin-top:3px"}));
+    if(done){ const ro=el("button","linkbtn","↺ Reopen deal"); ro.type="button"; ro.style.marginTop="4px";
+      ro.title="The group submitted by mistake: clear their locked deal so they can propose again";
+      ro.onclick=()=>ngReopenDeal(gid);
+      lockIf(ro, !isOpenNow(), "Open submissions first — each phone clears its saved deal only while the round is open.");
+      b.append(ro); }
     ngMembers(g).forEach(m=>{ const r=el("div"); r.style.cssText="display:flex;justify-content:space-between;gap:6px;align-items:center;font-size:.86rem;margin-top:3px";
       r.append(Object.assign(el("span"),{textContent:(R.of[String(m.id)]?R.of[String(m.id)]+" · ":"")+m.name}));
       const x=el("button","linkbtn","✕"); x.type="button"; x.title="Remove from the group"; x.onclick=()=>{ if(confirm("Remove "+m.name+" from "+ngGroupName(gid)+"?")) ngRemoveMember(gid, m.id); }; r.append(x); b.append(r); });
