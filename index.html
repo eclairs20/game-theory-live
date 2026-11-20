@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-19.005";
+const APP_VERSION = "2026-11-20.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1826,7 +1826,7 @@ function render(){
   if(wantPs) psEnsure(psBase(curKey)); else if(psCtx) psDetach();
   if(wantPs && isTeacher()) psDealtEnsure(curKey); else if(_psDealtRk) psDealtDetach();
   // Negotiation Game groups (meeting-level) + this round's proposals: instructor console, and students on the live class tab.
-  const wantNg = !!(control && control.activeGame==="nego" && curKey && !diagOn()
+  const wantNg = !!(control && control.activeGame==="nego" && curKey
     && (isTeacher() ? (presentMode || consoleView==="run") : (control.phase==="open" && haveIdentity() && !(REQUIRE_GOOGLE&&!authUser) && curStudentTab()==="class")));
   if(wantNg) ngEnsure(ngBase(curKey), curKey); else if(ngCtx||ngRk) ngDetach();
   // Instructor "View as student" diagnostic (read-only) — show exactly what a chosen student
@@ -6103,7 +6103,9 @@ function ngCoreRange(v){ const P=ngCorePoly(v), o={};
 let ngCtx=null, ngRk=null, ngGroups={}, _ngGSig="{}", ngProps={}, _ngPSig="{}", _ngVis=false, _ngSaved={}, ngDraft={}, _ngDeferT=null;
 function ngEnsure(base, rk){
   if(ngCtx!==base){ ngDetachGroups(); ngCtx=base; ngGroups={}; _ngGSig="{}"; psPtrHook();
-    if(!_ngVis){ _ngVis=true; try{ document.addEventListener("visibilitychange",()=>{ if(!document.hidden && ngCtx) ngPoll(); }); }catch(e){} }
+    if(!_ngVis){ _ngVis=true; try{ document.addEventListener("visibilitychange",()=>{ if(!document.hidden && ngCtx) ngPoll(); }); }catch(e){}
+      // safety net: a phone whose socket dropped (screen locked, tab in the background) re-reads every 6 s; redraws only on a change
+      setInterval(()=>{ if(ngCtx && !document.hidden) ngPoll(); }, 6000); }
     try{ fb.ref(LIVE_ROOT(base)+"/ng").on("value", s=>ngOnGroups(base,s), ()=>{}); }catch(e){} }
   if(ngRk!==rk){ if(ngRk) try{ fb.ref(LIVE_ROOT(ngRk)+"/np").off(); }catch(e){}
     ngRk=rk; ngProps={}; _ngPSig="{}";

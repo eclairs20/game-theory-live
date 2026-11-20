@@ -356,7 +356,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - **Records**: every member writes their OWN sub (lockdown rules) from `ngSync` — a participation record when the group is
     full (`gid, role, roles, v, gname, coal:null`) and the deal once agreed (`coal, x, pay`); the excluded player's `pay` = v(i).
     Duplicate writes are skipped by comparing with `mySub()` / `_ngSaved`.
-  - **Live-update rule**: listeners on `ng` and `np` (`ngEnsure`/`ngDetach`, + `visibilitychange` re-read `ngPoll`); `ngRender`
+  - **Live-update rule**: listeners on `ng` and `np` (`ngEnsure`/`ngDetach`, + `visibilitychange` re-read `ngPoll`, + a **6 s
+    re-read** while the tab is visible — a phone whose socket dropped still catches up; 20 Nov class: a student looked "stuck").
+    G13 also connects in **View as student** (read-only via `guardDb`; `ngSync` skips when `diagOn()`) — it used to be excluded,
+    so that view sat on "Connecting…" forever; `ngRender`
     checks `ngViewSig()` (lobby: the group list; in a group: only MY group's members + MY group's proposal) against `_drawn.ng`,
     and waits while a finger is down (`_ptrDown`). `studentSubsSig` → `ngSubsSig` (own record only). The proposal form draws
     from the local `ngDraft[gid]`, inputs redraw on blur (`rbBlurRedraw`). Load-tested: ~17 writes/s from other groups → 0
