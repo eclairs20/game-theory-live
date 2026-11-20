@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-20.002";
+const APP_VERSION = "2026-11-20.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -6162,8 +6162,10 @@ async function ngJoin(gid, cap){
 }
 async function ngLeave(){
   const base=ngCtx, mg=ngMyGroup(); if(!base||!mg) return; const me=encodeKey(String(myId));
-  const up={}; up["nm/"+me]=null; up["ng/"+mg.gid+"/members/"+me]=null;
-  if(ngMembers(mg.g).length<=1) up["ng/"+mg.gid]=null;
+  // One multi-path update may not touch a path AND something inside it (Firebase rejects the whole write): the last member
+  // removes the group itself, anyone else removes only their own entry. (20 Nov class: a lone member couldn't leave.)
+  const up={}; up["nm/"+me]=null;
+  if(ngMembers(mg.g).length<=1) up["ng/"+mg.gid]=null; else up["ng/"+mg.gid+"/members/"+me]=null;
   try{ await fb.ref(LIVE_ROOT(base)).update(up); }catch(e){ toast("Couldn't leave — try again"); }
 }
 async function ngRemoveMember(gid, id){

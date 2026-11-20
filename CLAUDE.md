@@ -344,7 +344,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   - **Groups (meeting-level, kept across rounds)**: `live/<S1A-nego>/ng/<gid>` = `{members:{enc(id):{id,name}}, by, ts}`, pointer
     `nm/<enc(id)>` = gid claimed by **transaction**, size cap by a transaction on `members`. Students tap **Start a group** /
     **Join (n/3)**; a **4th** can join only once every group is full ("Join as 4th" — watches, role `"O"`, sub `obs:true`).
-    **Leave** only while the group isn't full. Console: ✕ per member (`ngRemoveMember`), **Reset groups** (`ngResetGroups`), and on an
+    **Leave** only while the group isn't full (`ngLeave`: the LAST member deletes the group itself, others delete only their own
+    entry — one multi-path update may not touch a path and its descendant, Firebase rejects it; 20 Nov class: a lone member's
+    Leave failed with "Couldn't leave". The test harness now rejects such updates too). Console: ✕ per member (`ngRemoveMember`), **Reset groups** (`ngResetGroups`), and on an
     agreed group **↺ Reopen deal** (`ngReopenDeal`, confirm; removes `np/<gid>` so the group can propose again — each member's
     phone rewrites its own record to "no deal" via `ngSync`, so it's **locked unless submissions are open** and members should have
     the game open; 20 Nov class: a group locked the wrong deal).
