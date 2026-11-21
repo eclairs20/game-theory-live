@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-21.002";
+const APP_VERSION = "2026-11-21.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -6433,6 +6433,82 @@ function ngPresentBody(){
   return w;
 }
 
+/* ── Review → Edit deal: correct a group's deal after class (a group locked the wrong split, or never entered theirs).
+   Rewrites every member's own record (coal, x, pay) plus the group's proposal node; results, core tables and the CSV are
+   rebuilt from the records. The instructor's account may write any record under the lockdown rules. ── */
+let _ngEdit=null;   // {k: roundKey|gid, coal, x:{A,B,C}} — the deal being edited (local to this console)
+function ngReviewGroups(list){
+  const by={};
+  list.filter(s=>s && s.game==="nego" && s.gid && s.roundKey).forEach(s=>{ const k=s.roundKey+"|"+s.gid;
+    const o=by[k]||(by[k]={k, rk:s.roundKey, gid:s.gid, v:s.v, gname:s.gname||"Group", sec:s.msection||"", names:{}, coal:null, x:null, fixed:null});
+    if(!s.obs && s.role) o.names[s.role]=s.name||s.studentId;
+    if(s.v && !o.v) o.v=s.v;
+    if(s.coal && s.x && !o.coal){ o.coal=s.coal; o.x={A:+s.x.A, B:+s.x.B, C:+s.x.C}; }
+    if(s.fixedBy) o.fixed=s.fixedBy; });
+  return Object.values(by).sort((a,b)=>(a.sec<b.sec?-1:a.sec>b.sec?1:0)||String(a.gname).localeCompare(String(b.gname)));
+}
+async function ngSaveEdit(o, coal, xin){
+  const v=o.v||ngV(); let X=null;
+  if(coal){ X={}; ["A","B","C"].forEach(r=>{ X[r]= coal.indexOf(r)>=0 ? Math.round((+xin[r]||0)*100)/100 : ngVal(v,r); });
+    if(coal.split("").some(r=>xin[r]==null||xin[r]==="")){ toast("Enter a share for every player in "+coal+"."); return; }
+    const c=ngCheckSplit(v, coal, X); if(c.err){ toast(c.err); return; } }
+  const now = o.coal ? o.coal+" · "+ngSplitTxt(o.x) : "no deal", nw = coal ? coal+" · "+ngSplitTxt(X) : "no deal";
+  if(!confirm("Change "+o.gname+"'s deal?\n\nNow: "+now+"\nNew: "+nw+"\n\nEvery member's record is updated, and results, the core tables and the CSV follow.")) return;
+  const up={}, ts=new Date().toISOString();
+  Object.values(allSubs).filter(s=>s && s.roundKey===o.rk && s.gid===o.gid).forEach(s=>{ const k=o.rk+"__"+encodeKey(String(s.studentId));
+    up[k+"/coal"]=coal||null; up[k+"/x"]=X; up[k+"/pay"]=(coal && !s.obs) ? X[s.role] : null; up[k+"/fixedBy"]="instructor "+ts; });
+  try{
+    await fb.ref(SUBS_PATH()).update(up);
+    if(coal){ const ok={}; coal.split("").forEach(r=>{ ok[r]=true; });
+      await fb.ref(LIVE_ROOT(o.rk)+"/np/"+o.gid).set({coal, x:X, by:"instructor", byRole:"", ts:Date.now(), ok}); }
+    else await fb.ref(LIVE_ROOT(o.rk)+"/np/"+o.gid).remove();
+  }catch(e){ toast("Couldn't save — try again"); return; }
+  _ngEdit=null; toast("Deal updated"); render();
+}
+function ngEditCard(list, locked){
+  const card=el("div","card stage"), gs=ngReviewGroups(list);
+  card.append(el("div","eyebrow","Groups' deals · correct a group's deal"));
+  card.append(Object.assign(el("div","sm mut"),{textContent:"A group locked the wrong split, or never entered the one they agreed? Edit it here — every member's record is updated and the results follow.",style:"margin-top:4px"}));
+  if(!gs.length){ card.append(Object.assign(el("div","sm mut"),{textContent:"No groups recorded.",style:"margin-top:8px"})); return card; }
+  const multiSec = new Set(gs.map(o=>o.sec)).size>1;
+  const grid=el("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;margin-top:10px";
+  gs.forEach(o=>{ const v=o.v||ngV(), b=el("div","card"), ed=_ngEdit && _ngEdit.k===o.k;
+    b.dataset.ngEdit=o.k; b.style.cssText="padding:10px 12px;"+(o.coal?"border-color:var(--good)":"");
+    b.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(o.gname)+"</b>"+(multiSec&&o.sec?" <span class='sm mut'>· Section "+esc(o.sec)+"</span>":"")}));
+    b.append(Object.assign(el("div","sm"),{textContent:["A","B","C"].map(r=>r+": "+(o.names[r]||"—")).join(" · "),style:"margin-top:3px"}));
+    b.append(Object.assign(el("div"),{textContent: o.coal ? o.coal+" · "+ngSplitTxt(o.x)+(ngInCore(o.x,v)?" · in the core":" · not in the core") : "No deal",
+      style:"margin-top:5px;font-weight:600;"+(o.coal?"":"color:var(--ink-2)")}));
+    if(o.fixed) b.append(Object.assign(el("div","sm mut"),{textContent:"✎ edited by the instructor"+(()=>{ const t=new Date(String(o.fixed).replace(/^instructor\s*/,"")); return isNaN(t)?"":" · "+t.toLocaleString([], {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); })(),style:"margin-top:2px"}));
+    if(!ed){ const e=el("button","linkbtn","✎ Edit deal"); e.type="button"; e.style.marginTop="6px";
+      e.onclick=()=>{ _ngEdit={k:o.k, coal:o.coal||null, x:o.x?{A:o.x.A,B:o.x.B,C:o.x.C}:{}}; render(); };
+      lockIf(e, locked, "This round is open for submissions in Run — use ↺ Reopen deal there, or close submissions first.");
+      b.append(e); grid.append(b); return; }
+    // the editor
+    const d=_ngEdit, cr=el("div","res-list"); cr.style.marginTop="8px";
+    NG_COALS.forEach(k=>{ const c=el("button","res-btn"+(d.coal===k?" on":"")); c.type="button"; c.textContent=k+" · "+fmt(ngVal(v,k),2);
+      c.onclick=()=>{ if(d.coal!==k){ d.coal=k; d.x={}; } render(); }; cr.append(c); });
+    const nd=el("button","res-btn"+(d.coal===null?" on":"")); nd.type="button"; nd.textContent="No deal"; nd.onclick=()=>{ d.coal=null; d.x={}; render(); }; cr.append(nd);
+    b.append(cr);
+    const sum=el("div","sm"); sum.style.cssText="margin-top:6px;font-weight:600";
+    const upd=()=>{ if(!d.coal){ sum.textContent="The group gets no deal (everyone gets what they'd get alone)."; return; }
+      const tot=d.coal.split("").reduce((a,r)=>a+(+d.x[r]||0),0), w=ngVal(v,d.coal);
+      sum.textContent="Shares add to "+fmt(tot,2)+" of "+fmt(w,2)+(Math.abs(tot-w)<=1e-6?" ✓":tot>w?" — too much":" — "+fmt(w-tot,2)+" left on the table"); };
+    if(d.coal){ const row=el("div"); row.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-end";
+      ["A","B","C"].forEach(r=>{ const f=el("div","field"); f.style.minWidth="80px"; f.append(Object.assign(el("label"),{textContent:"Player "+r}));
+        if(d.coal.indexOf(r)<0){ f.append(Object.assign(el("div"),{textContent:fmt(ngVal(v,r),2)+" (left out)",style:"padding:6px 0"})); }
+        else { const i=el("input"); i.type="number"; i.inputMode="decimal"; i.step="any"; i.style.width="90px"; i.value=d.x[r]!=null?d.x[r]:""; i.placeholder="0";
+          i.oninput=()=>{ d.x[r]=i.value; upd(); }; f.append(i); }
+        row.append(f); });
+      b.append(row); }
+    upd(); b.append(sum);
+    const act=el("div"); act.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px";
+    const sv=el("button","btn","Save deal"); sv.type="button"; sv.onclick=()=>ngSaveEdit(o, d.coal, d.x);
+    const cn=el("button","ghost-btn","Cancel"); cn.type="button"; cn.onclick=()=>{ _ngEdit=null; render(); };
+    act.append(sv,cn); b.append(act); grid.append(b); });
+  card.append(grid);
+  return card;
+}
+
 /* ── results ── */
 /* One outcome per group (every member's record carries the whole deal). */
 function ngOutcomes(list){
@@ -8772,6 +8848,7 @@ function historyPanel(h){
   if(!D.list.length){ c.append(Object.assign(el("div","card stage center mut"),{textContent:"No submissions recorded for this meeting."})); }
   else {
     c.append(histAnalysis(h, D, true));
+    if(h.game==="nego") c.append(ngEditCard(D.list, isLiveOpen));
     const who=el("div","card stage"); who.append(el("div","eyebrow","Who submitted"), submittedTable(D.list,{removable:!isLiveOpen})); c.append(who);
   }
   // Manage data — the only writers in Review, each behind a confirmation that names the meeting.

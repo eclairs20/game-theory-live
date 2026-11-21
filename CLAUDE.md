@@ -383,6 +383,13 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     and waits while a finger is down (`_ptrDown`). `studentSubsSig` → `ngSubsSig` (own record only). The proposal form draws
     from the local `ngDraft[gid]`, inputs redraw on blur (`rbBlurRedraw`). Load-tested: ~17 writes/s from other groups → 0
     redraws; chip taps, typing and the partner's proposal (≈10 ms) all register.
+  - **Review → Edit deal** (`ngEditCard`, under the analysis in `historyPanel` for G13; `ngReviewGroups`, `ngSaveEdit`, local
+    `_ngEdit`): one card per group (roles + names, current deal, in/not in core) with **✎ Edit deal** → coalition chips (incl.
+    **No deal**) + share boxes, validated by `ngCheckSplit` against the round's stamped v, confirm "Now … / New …", then ONE
+    update rewrites every member's sub (`coal`, `x`, `pay` = x[role], watchers' pay null, `fixedBy:"instructor <ISO>"`) and
+    `live/<rk>/np/<gid>` (set as fully confirmed, or removed for No deal); the card shows "✎ edited by the instructor · <time>".
+    Locked while that round is open in Run (use ↺ Reopen deal there). Works in the Both scope (each group keeps its own
+    roundKey). 21 Nov: a group emailed the split they had actually agreed after locking a wrong one.
   - Console `ngConsoleCard` (v table, "X of Y groups agreed · N with a proposal on the table", per-group roles, status, split,
     in/not in core); projector `ngPresentBody` (v table, agreed count). Phones show v as wrapping tiles (`ngVTable(v)`),
     console as a table (`ngVTable(v,true)`), the projector as a larger table (`ngVTable(v,"present")`: headers 1.25rem, values 2rem).
