@@ -367,7 +367,9 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     in the group proposes (a new proposal replaces the old one; the proposer auto-confirms); every player IN the coalition
     must tap **✓ Confirm this deal**; then it locks (`ngPropDone`). An excluded player sees "This deal leaves you out — make
     them a better offer?" and can counter. Validation (`ngCheckSplit`): each share ≥ v(i), sum ≤ v(S).
-  - **"Are you sure?"** (`ngSure`, a `confirm()` before proposing AND before confirming): any coalition other than ABC
+  - **"Are you sure?"** (`ngSure` → `ngAsk`, an **in-page** dialog on `<body>` — never the browser's `confirm()`, which in-app
+    browsers and Chrome's "prevent this page from creating dialogs" silently turn into Cancel, so on 21 Nov no group could
+    propose or confirm a BC deal; before proposing AND before confirming): any coalition other than ABC
     ("…A is left out and gets 0. Together, all three of you (ABC) are worth 400; coalition BC is worth 300."), and any split
     that leaves part of the coalition's worth unshared ("…100 is left on the table"). Cancel = keep negotiating.
   - **Records**: every member writes their OWN sub (lockdown rules) from `ngSync` — a participation record when the group is

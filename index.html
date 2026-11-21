@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-21.001";
+const APP_VERSION = "2026-11-21.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -6205,14 +6205,32 @@ function ngSure(v, coal, x){
   const out=ngOthers(coal), V=ngVal(v,"ABC"), msgs=[];
   if(coal!=="ABC") msgs.push("This deal is coalition "+coal+" only — "+out.join(" and ")+(out.length>1?" are":" is")+" left out and get"+(out.length>1?"":"s")+" "+out.map(r=>fmt(ngVal(v,r),2)).join(" / ")+".\nTogether, all three of you (ABC) are worth "+fmt(V,2)+"; coalition "+coal+" is worth "+fmt(ngVal(v,coal),2)+".");
   const c=ngCheckSplit(v, coal, x); if(c.left>NG_TOL) msgs.push("The shares add to "+fmt(c.tot,2)+", but "+coal+" is worth "+fmt(c.worth,2)+" — "+fmt(c.left,2)+" is left on the table.");
-  if(!msgs.length) return true;
-  return confirm("Are you sure?\n\n"+msgs.join("\n\n")+"\n\nPress OK to go ahead, or Cancel to keep negotiating.");
+  if(!msgs.length) return Promise.resolve(true);
+  return ngAsk("Are you sure?", msgs, "Yes, go ahead", "Keep negotiating");
+}
+/* In-page yes/no dialog. The browser's confirm() is silently suppressed in in-app browsers (WhatsApp, Instagram…) and after
+   "prevent this page from creating dialogs" — it then returns false, so a BC deal could never be proposed or confirmed
+   (21 Nov class). Lives on <body>, outside #app, so a redraw can't remove it. */
+function ngAsk(title, msgs, yes, no){
+  return new Promise(res=>{
+    const old=document.getElementById("ngAsk"); if(old) old.remove();
+    const ov=el("div"); ov.id="ngAsk"; ov.style.cssText="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px";
+    const bx=el("div","card"); bx.style.cssText="max-width:420px;width:100%;padding:18px;background:var(--surface);box-shadow:var(--shadow-lg)";
+    bx.append(Object.assign(el("div"),{textContent:title,style:"font-family:Fraunces,Georgia,serif;font-size:1.4rem;font-weight:650;margin-bottom:8px"}));
+    msgs.forEach(m=>bx.append(Object.assign(el("p"),{textContent:m,style:"margin:0 0 10px;line-height:1.45;white-space:pre-line"})));
+    const row=el("div"); row.style.cssText="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px";
+    const done=v=>{ ov.remove(); res(v); };
+    const y=el("button","btn",yes); y.type="button"; y.onclick=()=>done(true);
+    const n=el("button","ghost-btn",no); n.type="button"; n.onclick=()=>done(false);
+    row.append(y,n); bx.append(row); ov.append(bx); ov.addEventListener("click",e=>{ if(e.target===ov) done(false); });
+    document.body.append(ov); });
 }
 async function ngPropose(gid, role, coal, xin){
   const v=ngV(), x={}; ["A","B","C"].forEach(r=>{ x[r]= coal.indexOf(r)>=0 ? Math.round((+xin[r]||0)*100)/100 : ngVal(v,r); });
   const c=ngCheckSplit(v, coal, x); if(c.err){ toast(c.err); return false; }
   if(ngPropDone(ngProps[gid])){ toast("Your group has already agreed."); return false; }
-  if(!ngSure(v, coal, x)) return false;
+  if(!(await ngSure(v, coal, x))) return false;
+  if(ngPropDone(ngProps[gid])){ toast("Your group has already agreed."); return false; }   // agreed while the dialog was open
   const ok={}; if(coal.indexOf(role)>=0) ok[role]=true;
   try{ await fb.ref(LIVE_ROOT(curKey)+"/np/"+gid).set({coal, x, by:String(myId), byRole:role, ts:srvNow(), ok}); }
   catch(e){ toast("Couldn't send — check your connection"); return false; }
@@ -6220,7 +6238,7 @@ async function ngPropose(gid, role, coal, xin){
 }
 async function ngConfirm(gid, role){
   const p=ngProps[gid]; if(!p || p.coal.indexOf(role)<0) return;
-  if(!ngSure(ngV(), p.coal, p.x)) return;
+  if(!(await ngSure(ngV(), p.coal, p.x))) return;
   try{ await fb.ref(LIVE_ROOT(curKey)+"/np/"+gid+"/ok/"+role).set(true); }catch(e){ toast("Couldn't confirm — try again"); }
 }
 /* Every member saves their OWN record (the rules only let a student write their own): a participation record when the
