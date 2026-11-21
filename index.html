@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-20.005";
+const APP_VERSION = "2026-11-21.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -6127,7 +6127,10 @@ function ngGids(){ return Object.keys(ngGroups).filter(gid=>ngMembers(ngGroups[g
 function ngGroupName(gid){ const ms=ngMembers(ngGroups[gid]); const f=ms.find(m=>String(m.id)===String((ngGroups[gid]||{}).by))||ms[0]; return f ? (String(f.name).split(" ")[0])+"'s group" : "Group"; }
 /* Roles for this round: the first three members (by id) shuffled with a seed of round + group, so every phone agrees and
    roles change from round to round. A 4th member watches ("O"). */
-function ngRoles(gid, g, rk){ const ms=ngMembers(g), ids=ms.map(m=>String(m.id)), play=ids.slice(0,3);
+function ngRoles(gid, g, rk){ const ms=ngMembers(g);
+  // The three who play are the first three to JOIN (join time, then id; entries written before join times existed count as
+  // earliest, so older groups keep their roles). By id alone, a later 4th whose id sorted first took a seat from a player.
+  const ids=ms.slice().sort((a,b)=>((+a.ts||0)-(+b.ts||0))||String(a.id).localeCompare(String(b.id))).map(m=>String(m.id)), play=ids.slice(0,3);
   for(let i=play.length-1;i>0;i--){ const j=Math.floor(adSeedFloat((rk||curKey)+"|ng|"+gid+"|"+i)*(i+1)); const t=play[i]; play[i]=play[j]; play[j]=t; }
   const by={}, of={}; ["A","B","C"].forEach((r,i)=>{ if(play[i]!=null){ by[r]=play[i]; of[play[i]]=r; } });
   ids.slice(3).forEach(id=>{ of[id]="O"; });
@@ -6147,7 +6150,7 @@ async function ngCreate(){
   const base=ngCtx; if(!base) return; const me=encodeKey(String(myId)), gid="g"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
   const r=await fb.ref(LIVE_ROOT(base)+"/nm/"+me).transaction(cur=> cur==null ? gid : undefined);
   if(!r||!r.committed){ toast("You're already in a group"); return; }
-  const members={}; members[me]={id:String(myId), name:myName||String(myId)};
+  const members={}; members[me]={id:String(myId), name:myName||String(myId), ts:srvNow()};
   try{ await fb.ref(LIVE_ROOT(base)+"/ng/"+gid).set({members, by:String(myId), ts:srvNow()}); }
   catch(e){ await fb.ref(LIVE_ROOT(base)+"/nm/"+me).remove(); toast("Couldn't start a group — try again"); }
 }
@@ -6157,7 +6160,7 @@ async function ngJoin(gid, cap){
   if(!r||!r.committed){ toast("You're already in a group"); return; }
   const r2=await fb.ref(LIVE_ROOT(base)+"/ng/"+gid+"/members").transaction(cur=>{
     if(cur==null) return undefined; if(cur[me]) return cur; if(Object.keys(cur).length>=cap) return undefined;
-    const nx=Object.assign({},cur); nx[me]={id:String(myId), name:myName||String(myId)}; return nx; });
+    const nx=Object.assign({},cur); nx[me]={id:String(myId), name:myName||String(myId), ts:srvNow()}; return nx; });
   if(!r2||!r2.committed){ await fb.ref(LIVE_ROOT(base)+"/nm/"+me).remove(); toast("That group just filled up — pick another"); }
 }
 async function ngLeave(){
@@ -6388,7 +6391,7 @@ function ngConsoleCard(){
   const grid=el("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-top:10px";
   st.gids.forEach(gid=>{ const g=ngGroups[gid], R=ngRoles(gid,g,curKey), p=ngProps[gid], done=ngPropDone(p);
     const b=el("div","card"); b.style.cssText="padding:10px 12px;"+(done?"border-color:var(--good)":"");
-    b.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(ngGroupName(gid))+"</b> <span class='sm mut'>"+ngMembers(g).length+"/3</span>"+(done?" <span class='sm' style='color:var(--good);font-weight:700'>✓ "+esc(p.coal)+"</span>":p&&p.coal?" <span class='sm mut'>proposal: "+esc(p.coal)+"</span>":"")}));
+    b.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(ngGroupName(gid))+"</b> <span class='sm mut'>"+Math.min(3,ngMembers(g).length)+"/3"+(ngMembers(g).length>3?" + "+(ngMembers(g).length-3)+" watching":"")+"</span>"+(done?" <span class='sm' style='color:var(--good);font-weight:700'>✓ "+esc(p.coal)+"</span>":p&&p.coal?" <span class='sm mut'>proposal: "+esc(p.coal)+"</span>":"")}));
     if(p&&p.coal) b.append(Object.assign(el("div","sm"),{textContent:ngSplitTxt(p.x)+(done?"":" · confirmed "+Object.keys(p.ok||{}).join(""))+(done&&!ngInCore(p.x,v)?" · not in the core":done?" · in the core":""),style:"margin-top:3px"}));
     if(done){ const ro=el("button","linkbtn","↺ Reopen deal"); ro.type="button"; ro.style.marginTop="4px";
       ro.title="The group submitted by mistake: clear their locked deal so they can propose again";

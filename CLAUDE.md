@@ -350,8 +350,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     agreed group **↺ Reopen deal** (`ngReopenDeal`, confirm; removes `np/<gid>` so the group can propose again — each member's
     phone rewrites its own record to "no deal" via `ngSync`, so it's **locked unless submissions are open** and members should have
     the game open; 20 Nov class: a group locked the wrong deal).
-  - **Roles re-dealt every round** (`ngRoles`): the first three members by id, shuffled with `adSeedFloat(roundKey|gid|i)`
-    — every phone agrees, no write needed.
+  - **Roles re-dealt every round** (`ngRoles`): the first three members **to join** (member entries carry a join `ts`; sorted
+    by ts then id, entries without ts count as earliest so older groups keep their roles), shuffled with
+    `adSeedFloat(roundKey|gid|i)` — every phone agrees, no write needed. (21 Nov class: by id alone, a "Join as 4th" whose
+    id sorted first took a seat from a player mid-round.) The console shows such a group as "3/3 + 1 watching".
   - **Negotiate first** (`ngNegotiateCard`, 20 Nov request for Game 2): each round a full group first sees **who is Player A, B
     and C** as three big tiles (theirs highlighted) + "Step 1 · Negotiate first … Nothing to enter yet / Step 2 · Enter the deal:
     ONE of you taps below" and **✓ We've agreed — enter our deal**; only then does the entry form appear (local per phone, per
