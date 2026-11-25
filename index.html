@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-25.001";
+const APP_VERSION = "2026-11-25.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -7101,6 +7101,11 @@ function gvConsoleCard(){
   const line=el("div"); line.style.cssText="font-size:1.1rem;font-weight:600;margin-top:10px";
   line.textContent=st.formed.length+" of "+st.full.length+" governments formed · "+st.proposed.length+" with a proposal on the table · "+st.inGroups+" students in "+st.gids.length+" group"+(st.gids.length===1?"":"s")+(st.waiting.length?" · "+st.waiting.length+" group"+(st.waiting.length===1?"":"s")+" not full yet":"");
   card.append(line);
+  const J=gvJoinStats();
+  if(J.rosterN){ const nb=el("div","sm"); nb.style.cssText="margin-top:6px;line-height:1.5";
+    nb.innerHTML= J.missing.length ? "<b>Not in a group yet ("+J.missing.length+" of "+J.rosterN+(curMSection()?" in Section "+esc(curMSection()):"")+"):</b> <span class='mut'>"+J.missing.map(e=>esc(e.name||e.email)).join(", ")+"</span> <span class='sm mut'>— from the roster, so it includes anyone who hasn't opened the page.</span>"
+      : "<b style='color:var(--good)'>✓ Everyone on the roster"+(curMSection()?" for Section "+esc(curMSection()):"")+" is in a group.</b>";
+    card.append(nb); }
   if(st.gids.length){ const rs=el("button","ghost-btn ab-clear","Reset groups"); rs.style.marginTop="10px"; rs.onclick=()=>gvResetGroups(); card.append(rs); }
   const grid=el("div"); grid.style.cssText="display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:10px;margin-top:10px";
   st.gids.forEach(gid=>{ const g=gvGroups[gid], D=gvDeal(gid,g,curKey), p=gvProps[gid], done=gvPropDone(p), n=gvMembers(g).length;
@@ -7117,15 +7122,37 @@ function gvConsoleCard(){
   return card;
 }
 function gvPresentBody(){
-  const map=gvMap(), seats=gvSeats(map), st=gvStatus(), w=el("div"); w.style.cssText="display:flex;flex-direction:column;gap:12px;flex:1 1 560px;min-width:0";
+  const map=gvMap(), seats=gvSeats(map), st=gvStatus(), k=gvClock(), w=el("div"); w.style.cssText="display:flex;flex-direction:column;gap:12px;flex:1 1 560px;min-width:0";
   w.append(Object.assign(el("div"),{textContent:"Election "+map+" · the house",style:"font-family:Fraunces,Georgia,serif;font-size:1.8rem;font-weight:650"}));
   w.append(Object.assign(el("div"),{textContent:"Groups of 5 · each of you leads one party · agree a government with 51+ seats and who gets PM, Home and Finance · one of you enters it · every party in it confirms",style:"font-weight:600"}));
+  const big=t=>Object.assign(el("div"),{textContent:t,style:"font-family:'IBM Plex Mono',monospace;font-size:2.4rem;font-weight:700;line-height:1"});
+  const J=gvJoinStats(), grpLine=J.ready+" group"+(J.ready===1?"":"s")+" ready"+(J.forming?" · "+J.forming+" forming":"")+(J.co?" · "+J.co+" co-leader"+(J.co===1?"":"s"):"");
+  if(k.state==="idle"){
+    // forming groups (shown first, above the house): how many have joined vs the section's roster, and which groups need people
+    const jb=el("div"); jb.style.cssText="display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:12px;padding:12px 14px";
+    jb.append(big(J.inGroups+" students in groups"), el("div","sm mut", (J.rosterN ? "of "+J.rosterN+" "+(curMSection()?"in Section "+curMSection():"enrolled")+" · " : "")+grpLine));
+    if(J.rosterN){ const pr=el("div","present-prog"); pr.style.marginTop="0"; const bar=el("span"); bar.style.width=Math.min(100,Math.round(100*J.inGroups/J.rosterN))+"%"; pr.append(bar); jb.append(pr); }
+    if(st.gids.length){ const chips=el("div"); chips.style.cssText="display:flex;flex-wrap:wrap;gap:8px";
+      st.gids.forEach(gid=>{ const n=gvMembers(gvGroups[gid]).length, ok=n>=5, c=el("span");
+        c.style.cssText="border:2px solid "+(ok?"var(--good)":"var(--gold)")+";border-radius:999px;padding:4px 12px;font-weight:700;font-size:1.05rem;"+(ok?"":"background:color-mix(in srgb, var(--gold) 12%, transparent)");
+        c.textContent=gvGroupName(gid)+" "+Math.min(5,n)+"/5"+(ok?" ✓":" — needs "+(5-n))+(n>5?" +"+(n-5):""); chips.append(c); });
+      jb.append(chips); }
+    w.append(jb);
+  }
   w.append(gvBoard(seats, {big:true}));
   w.append(gvPostsLine(true));
-  const k=gvClock(), cl=gvClockLine(true); cl.style.fontSize="2rem"; w.append(cl);
-  const n=el("div"); n.style.cssText="font-family:'IBM Plex Mono',monospace;font-size:2.4rem;font-weight:700;line-height:1"; n.textContent=st.formed.length+" / "+st.full.length;
-  w.append(n, el("div","sm mut","governments formed"+(st.waiting.length?" · "+st.waiting.length+" group"+(st.waiting.length===1?"":"s")+" still forming":"")+(k.state==="closed"?" · time's up":"")));
+  const cl=gvClockLine(true); cl.style.fontSize="2rem"; w.append(cl);
+  if(k.state!=="idle") w.append(big(st.formed.length+" / "+st.full.length), el("div","sm mut","governments formed"+(k.state==="closed"?" · time's up":"")+" · "+J.inGroups+" students in groups · "+grpLine));
   return w;
+}
+/* Who has joined: students in groups (incl. co-leaders), full / forming groups, and — from the section's enrolled roster —
+   who isn't in any group yet (matched on either roster address). */
+function gvJoinStats(){
+  const st=gvStatus(), ids=new Set(); let co=0;
+  st.gids.forEach(gid=>{ const ms=gvMembers(gvGroups[gid]); ms.forEach(m=>ids.add(String(m.id).toLowerCase())); if(ms.length>5) co+=ms.length-5; });
+  const sec=curMSection(), rl=(curMSection() ? enrolledRoster().filter(e=>e.section===sec) : enrolledRoster());
+  const missing=rl.filter(e=>!ids.has(String(e.email||"").toLowerCase()) && !(e.email2 && ids.has(String(e.email2).toLowerCase())));
+  return {inGroups:st.inGroups, ready:st.full.length, forming:st.waiting.length, co, rosterN:rl.length, missing};
 }
 
 /* ── results ── */

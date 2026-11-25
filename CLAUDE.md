@@ -429,8 +429,11 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     winning), a coalition party with no post, or you get 0%. Negotiate-first gate as G13.
   - **Records** (each student writes their own, `gvSync`): `{gid, party, co, map, seats, names, gname, coal, posts, share,
     hung, byParty, n}`. Console `gvConsoleCard` (power table — instructor only —, clock + buttons, counts, group cards with
-    ✕ / ↺ Reopen government / Reset groups); projector `gvPresentBody` (the house with seats only, posts, big clock,
-    governments formed, QR). Live-update rule: `gvViewSig` (lobby list / my group + my group's proposal), `gvSubsSig`;
+    ✕ / ↺ Reopen government / Reset groups, and **"Not in a group yet (N of M in Section A): names"** from the section's
+    enrolled roster, matched on either address — `gvJoinStats`); projector `gvPresentBody`: while the clock hasn't started, a
+    **group-formation block on top** ("38 students in groups — of 60 in Section A" + progress bar, "7 groups ready · 1 forming ·
+    2 co-leaders", a chip per group "Asha's group 5/5 ✓" / "Dev's group 3/5 — needs 2"), then the house (seats only), posts,
+    clock; once it runs, "governments formed X / Y" with the join line small (25 Nov: the first build showed no join count). Live-update rule: `gvViewSig` (lobby list / my group + my group's proposal), `gvSubsSig`;
     load-tested (~15 writes/s from other groups → 0 redraws; party, post and confirm taps all register).
   - `analyzeGov` per election: tiles (governments formed, minimal winning %, proposals per group), **grouped bars per party:
     seat share vs average power won vs Shapley–Shubik vs Banzhaf** (`gvBars`, `gvPower` exact), table (in government, got PM),
