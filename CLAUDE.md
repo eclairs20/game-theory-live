@@ -407,10 +407,20 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
   100 seats, **51 govern** (v = 100% of power, else 0); the power to share is three posts **PM 50% · Home 30% · Finance 20%**
   (`GV_POSTS`). Self-contained `gv*` block (modelled on G13). Config `{ base:6, ext:2, reopen:2, showPow:false }` (`gvCfg()`).
   - **Fixed parties for the whole class** (`GV_PARTY`, fictional: A Navbharat Vikas Party, B Lok Ekta Party, C Jan Pragati
-    Morcha, D Kisan Shakti Party, E Yuva Jan Manch, each a colour); **round 1 = Election 1 `GV_MAPS[1]` 27/26/25/12/10**
-    (SS = Banzhaf = ⅓ ⅓ ⅓ 0 0: D and E are dummies), **round 2 = Election 2 `GV_MAPS[2]` 40/20/15/15/10** (SS 55 / 13.3 ×3 / 5,
-    Banzhaf 56.5 / 13.0 ×3 / 4.3; A+E = 50, one short); later rounds alternate (`gvMapFor`). `openMeeting` stamps
-    `control.gv = {rk, map}`. The ONLY randomness is which student leads which party.
+    Morcha, D Kisan Shakti Party, E Yuva Jan Manch, each a colour); **Election 1 `GV_MAPS[1]` 27/26/25/12/10**
+    (SS = Banzhaf = ⅓ ⅓ ⅓ 0 0: D and E are dummies), **Election 2 `GV_MAPS[2]` 40/20/15/15/10** (SS 55 / 13.3 ×3 / 5,
+    Banzhaf 56.5 / 13.0 ×3 / 4.3; A+E = 50, one short). Which one a round plays (`gvMapAt`): the first election actually
+    **played** in the meeting is Election 1, the next Election 2, alternating — counted from earlier rounds with records, so a
+    **discarded** round doesn't count (a Discard used to skip a round number and flip the map). `openMeeting` stamps
+    `control.gv = {rk, map}` (`patch.gvMap` forces it). The ONLY randomness is which student leads which party.
+  - **The class plays each election once:** when Election 1's clock closes (or the round is closed/revealed),
+    **▶ Start Election 2** (`gvNextBtn`, projector controls + console card) asks once and opens it straight away
+    (`runMove` → `openMeeting({round:+1, gvMap:2})`: same groups, parties re-dealt, clock idle) — nothing is revealed, so both
+    results can wait for the next session. `runSnap`/`runUndo` include `gv`.
+  - **Review → "Both elections side by side"** (`gvCompareCard(h)`, in `historyPanel` for G14 when a meeting has both): per
+    election the `gvBars` chart + table (seats, SS, Banzhaf, power won, in government; `gvSummary`), **📽 Project both
+    elections** (`_gvBothPresent` → `reviewPresentView`), and a toggle for **showing the power indices** on the projector and
+    to students (`showPow`; power columns are hidden on the projector until it's on).
   - **Groups of 5** (meeting-level, kept across rounds): `live/<S1A-gov>/gg/<gid>` + pointer `gm/<enc(id)>` (transactions, as
     G13). `gvDeal` deals A–E to the first five to JOIN (members carry `ts`), shuffled by `adSeedFloat(rk|gv|gid|i)` — re-dealt
     each round; extra students (once every group is full, "Join as co-leader", up to 7) **co-lead** a party (a second seeded

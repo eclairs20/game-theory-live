@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-25.002";
+const APP_VERSION = "2026-11-25.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1180,11 +1180,13 @@ async function openMeeting(patch){
     const rk="S"+(p.session!=null?p.session:curSession())+curMSection()+"-nego-"+(p.round!=null?p.round:(control.round||1));
     if(!(control.ng && control.ng.rk===rk)){ const c0=Object.assign({}, cfg("nego"), (p.config&&p.config.nego)||{}); p.ng={rk, v:Object.assign({}, NG_PRESETS.g1.v, c0.v||{})}; }
   }
-  // Form the Government: the round's seat map (odd rounds Map 1, even Map 2); the clock starts later, on the instructor's tap.
+  // Form the Government: the round's seat map (first election played in the meeting = Election 1, next = Election 2; a
+  // "Start Election 2" tap forces 2); the clock starts later, on the instructor's tap.
   if(control.activeGame==="gov"){
-    const rd=(p.round!=null?p.round:(control.round||1)), rk="S"+(p.session!=null?p.session:curSession())+curMSection()+"-gov-"+rd;
-    if(!(control.gv && control.gv.rk===rk)) p.gv={rk, map:gvMapFor(rd)};
+    const rd=(p.round!=null?p.round:(control.round||1)), ss=(p.session!=null?p.session:curSession()), rk="S"+ss+curMSection()+"-gov-"+rd;
+    if(!(control.gv && control.gv.rk===rk)) p.gv={rk, map: p.gvMap || gvMapAt(ss, curMSection(), rd)};
   }
+  if(p.gvMap!==undefined) delete p.gvMap;
   // Placement Season: a new round starts with candidates choosing — or with firm sign-up when this meeting has no firms yet.
   if(control.activeGame==="placement"){
     const rk="S"+(p.session!=null?p.session:curSession())+curMSection()+"-placement-"+(p.round!=null?p.round:(control.round||1));
@@ -1243,7 +1245,7 @@ async function runMove(question, doIt){
 }
 function runUndoOn(){ if(!_runUndo) return false; if(curKey===_runUndo.fromKey || runHasData()){ _runUndo=null; return false; } return true; }
 async function runUndo(){ const u=_runUndo; if(!u) return; _runUndo=null; const x=u.snap;
-  await writeControl({activeGame:x.activeGame, section:x.section, round:x.round, session:x.session, phase:x.phase, ps:x.ps, robot:x.robot, ng:x.ng||null, config:x.config});
+  await writeControl({activeGame:x.activeGame, section:x.section, round:x.round, session:x.session, phase:x.phase, ps:x.ps, robot:x.robot, ng:x.ng||null, gv:x.gv||null, config:x.config});
   toast("Back to "+u.label); }
 /* Next round → from Run (console or projector). Moving on from a round that wasn't revealed asks first. */
 async function runNextRound(){
@@ -6737,10 +6739,16 @@ const GV_Q = 51;
 const GV_POSTS = [{k:"PM",name:"Prime Minister",pct:50},{k:"HM",name:"Home",pct:30},{k:"FM",name:"Finance",pct:20}];
 function gvCfg(){ const c=cfg("gov"), n=(x,d)=>{ x=Number(x); return isNaN(x)?d:x; };
   return {base:Math.max(1,n(c.base,6)), ext:Math.max(0,Math.min(5,n(c.ext,2))), reopen:Math.max(1,n(c.reopen,2)), showPow:!!c.showPow}; }
-const gvMapFor = round => ((+round||1)%2===1) ? 1 : 2;
+/* Which election a round plays: the first election actually PLAYED in a meeting (session + section) is Election 1, the next
+   Election 2, then they alternate. Counted from earlier rounds with records — a discarded round doesn't count (isDone). */
+function gvMapAt(sess, sec, rd){
+  const pre="S"+sess+(sec||"")+"-gov-", played=new Set();
+  Object.values(allSubs).forEach(s=>{ if(!s || s.game!=="gov" || !s.roundKey || s.roundKey.indexOf(pre)!==0) return;
+    const r=+s.roundKey.slice(pre.length); if(r<rd && isDone(s)) played.add(r); });
+  return (played.size%2===0) ? 1 : 2; }
 const gvBase = rk=>{ const p=parseRoundKey(rk||curKey); return p ? "S"+p.session+p.section+"-gov" : null; };
 function gvCtl(){ const g=control && control.gv; return (g && g.rk===curKey) ? g : null; }
-function gvMap(){ const g=gvCtl(); return g && g.map ? g.map : gvMapFor(control && control.round); }
+function gvMap(){ const g=gvCtl(); return g && g.map ? g.map : gvMapAt(curSession(), curMSection(), (control && control.round)||1); }
 function gvSeats(map){ return Object.assign({}, GV_MAPS[map||gvMap()]||GV_MAPS[1]); }
 const gvPName = L => L+" · "+((GV_PARTY[L]||{}).name||L);
 const gvSum = (coal, seats)=> String(coal||"").split("").reduce((a,k)=>a+(+seats[k]||0),0);
@@ -7096,7 +7104,7 @@ function gvConsoleCard(){
   card.append(gvPowerTable(seats, true));
   card.append(Object.assign(el("div","sm mut"),{textContent:"Power indices are for you — students see seats only"+(C.showPow?" (and the indices after Reveal)":"")+".",style:"margin-top:4px"}));
   const clk=el("div"); clk.style.cssText="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px";
-  const cl=gvClockLine(true); cl.style.marginTop="0"; clk.append(cl); gvClockButtons(clk); card.append(clk);
+  const cl=gvClockLine(true); cl.style.marginTop="0"; clk.append(cl); gvClockButtons(clk); const nx=gvNextBtn(); if(nx) clk.append(nx); card.append(clk);
   if(k.state==="idle") card.append(Object.assign(el("div","sm mut"),{textContent:"Open submissions so students can form groups of 5 and see their party; start the clock once the groups are ready. It runs "+C.base+" min, then adds 1 min automatically (up to "+C.ext+"×) while any group has no government, then closes.",style:"margin-top:6px"}));
   const line=el("div"); line.style.cssText="font-size:1.1rem;font-weight:600;margin-top:10px";
   line.textContent=st.formed.length+" of "+st.full.length+" governments formed · "+st.proposed.length+" with a proposal on the table · "+st.inGroups+" students in "+st.gids.length+" group"+(st.gids.length===1?"":"s")+(st.waiting.length?" · "+st.waiting.length+" group"+(st.waiting.length===1?"":"s")+" not full yet":"");
@@ -7154,6 +7162,52 @@ function gvJoinStats(){
   const missing=rl.filter(e=>!ids.has(String(e.email||"").toLowerCase()) && !(e.email2 && ids.has(String(e.email2).toLowerCase())));
   return {inGroups:st.inGroups, ready:st.full.length, forming:st.waiting.length, co, rosterN:rl.length, missing};
 }
+
+/* "▶ Start Election 2": once Election 1's clock has closed (or the round was closed / revealed), move straight on — same groups,
+   parties re-dealt with Election 2's seats, nothing revealed (results stay in Review for the next session). */
+function gvNextBtn(){
+  if(!control || control.activeGame!=="gov" || !gvCtl() || gvMap()!==1) return null;
+  if(!(gvClock().state==="closed" || control.phase!=="open")) return null;
+  const b=el("button","btn","▶ Start Election 2");
+  b.onclick=()=>{ if(!confirm("Start Election 2 now?\n\nElection 1 is closed and saved — reveal its results whenever you like (Review → this session shows both elections side by side). Groups stay the same; parties are re-dealt with Election 2's seats.")) return;
+    runMove(null, ()=>openMeeting({round:(control.round||1)+1, gvMap:2})); };
+  return b; }
+/* One election's numbers from its groups: average power won per party (hung parliaments count as 0), times in government,
+   times PM, governments formed. */
+function gvSummary(O){
+  const won={}, inGov={}, pm={}; GV_L.forEach(L=>{ won[L]=0; inGov[L]=0; pm[L]=0; });
+  O.forEach(o=>{ const sh=o.coal?gvShares(o.posts):{}; GV_L.forEach(L=>{ won[L]+=(sh[L]||0)/O.length; if(o.coal && o.coal.indexOf(L)>=0) inGov[L]++; }); if(o.coal && o.posts.PM) pm[o.posts.PM]++; });
+  return {won, inGov, pm, n:O.length, formed:O.filter(o=>o.coal).length}; }
+/* Review: both elections of a meeting side by side (seat share vs power won vs Shapley–Shubik vs Banzhaf), for the debrief.
+   null when the meeting has fewer than two elections. present=true draws it for the projector. */
+let _gvBothPresent=false;
+function gvCompareCard(h, present){
+  const all=Object.values(allSubs).filter(s=>{ if(!s || s.game!=="gov" || s.bot || !isDone(s)) return false; const pk=parseRoundKey(s.roundKey);
+    return pk && pk.game==="gov" && pk.session===h.session && (h.scope==="BOTH" || pk.section===h.scope); });
+  const outs=gvOutcomes(all), maps=[...new Set(outs.map(o=>o.map).filter(Boolean))].sort();
+  if(maps.length<2) return present ? Object.assign(el("div","card stage center mut"),{textContent:"This meeting has only one election recorded."}) : null;
+  const showPow = (!present && isTeacher()) || gvCfg().showPow;
+  const card=el("div","card stage");
+  card.append(el("div","eyebrow gold","Both elections side by side · "+sessLabel(h.session)+(h.scope==="BOTH"?" · both sections":h.scope?" · Section "+h.scope:"")));
+  card.append(Object.assign(el("div","sm mut"),{textContent:"Same five parties, two elections. Does the power the class won follow the seats — or the power indices?",style:"margin-top:4px"}));
+  const grid=el("div","grid-even"); grid.style.cssText="margin-top:10px;gap:16px";
+  maps.forEach(map=>{ const O=outs.filter(o=>o.map===map), seats=O[0].seats||gvSeats(map), pw=gvPower(seats), S=gvSummary(O), col=el("div");
+    col.append(Object.assign(el("div"),{textContent:"Election "+map+" · "+GV_L.map(L=>seats[L]).join(" / "),style:"font-family:Fraunces,Georgia,serif;font-size:1.3rem;font-weight:650"}),
+      Object.assign(el("div","sm mut"),{textContent:S.formed+" of "+S.n+" groups formed a government"}));
+    col.append(gvBars(seats, S.won, showPow?pw:null));
+    const t=el("table","matrix"); t.style.marginTop="8px";
+    t.innerHTML="<tr><th>Party</th><th>Seats</th>"+(showPow?"<th>SS</th><th>Banzhaf</th>":"")+"<th>Won</th><th>In gov.</th></tr>"+GV_L.map(L=>"<tr><td style='text-align:left;border-left:5px solid "+GV_PARTY[L].col+"'>"+L+"</td><td class='cell'>"+seats[L]+"</td>"+(showPow?"<td class='cell'>"+Math.round(pw.ss[L]*1000)/10+"%</td><td class='cell'>"+Math.round(pw.bz[L]*1000)/10+"%</td>":"")+"<td class='cell'><b>"+fmt(S.won[L],1)+"%</b></td><td class='cell'>"+S.inGov[L]+"/"+S.n+"</td></tr>").join("");
+    const tw=el("div","tablescroll"); tw.append(t); col.append(tw);
+    grid.append(col); });
+  card.append(grid);
+  if(!present){
+    const row=el("div"); row.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px";
+    const pj=el("button","btn","📽 Project both elections"); pj.onclick=()=>{ _gvBothPresent=true; presentMode=true; render(); }; row.append(pj);
+    const C=gvCfg(), sp=el("button","ghost-btn"+(C.showPow?" hold-on":""), C.showPow?"✓ Power indices shown on the projector and to students":"Show the power indices on the projector and to students");
+    sp.onclick=()=>{ const nc=Object.assign({},(control.config&&control.config.gov)||{}); nc.showPow=!C.showPow; const conf=Object.assign({},control.config); conf.gov=nc; writeControl({config:conf}); };
+    row.append(sp); card.append(row);
+  }
+  return card; }
 
 /* ── results ── */
 /* One outcome per group (every member's record carries the government). */
@@ -8307,11 +8361,12 @@ function presentView(){
       else if(st==="choose"){ const b=el("button","btn","3 · Recruiters decide ▶"); b.onclick=()=>psAdvance("recruit"); ctr.append(b); }
       else { const t1=el("button","ghost-btn","+1 min"); t1.onclick=()=>psAddTime(1); ctr.append(t1);
         const b=el("button","btn gold","Reveal results"); b.onclick=()=>psReveal(); ctr.append(b); } }
-    if(g==="gov") gvClockButtons(ctr, true);
+    if(g==="gov"){ gvClockButtons(ctr, true); const nx=gvNextBtn(); if(nx) ctr.append(nx); }
     const close=el("button","btn neutral","Close submissions"); close.onclick=()=>writeControl({phase:"waiting"});
     ctr.append(close);
   } else if(revealed){
     // Results are showing here (class level) and on students' screens. Offer to hide or move on.
+    if(g==="gov"){ const nx=gvNextBtn(); if(nx) ctr.append(nx); }
     const hide=el("button","btn neutral","Hide results"); hide.onclick=()=>writeControl({phase:"waiting"});
     const nextR=el("button","btn","Next round →"); nextR.onclick=()=>runNextRound();
     ctr.append(hide,nextR);
@@ -8319,6 +8374,7 @@ function presentView(){
     const reveal=el("button","btn gold","Reveal results"); reveal.onclick=()=>{ doReveal(); };
     const reopen=el("button","btn","Reopen"); reopen.onclick=()=>openMeeting({});
     ctr.append(reveal,reopen);
+    if(g==="gov"){ const nx=gvNextBtn(); if(nx) ctr.append(nx); }
   }
   if(DEMOS[g] && !revealed){ const hp=el("button","ghost-btn","▶ How to play"); hp.title="A click-through walkthrough of the student screens (← / → keys)"; hp.onclick=()=>demoOpen(g); ctr.append(hp); }
   const fs=el("button","ghost-btn","⛶ Fullscreen"); fs.onclick=toggleFullscreen;
@@ -9460,7 +9516,7 @@ function historyPanel(h){
     Object.assign(el("div","sm mut"),{textContent:sessLabel(h.session)+D.scLbl+(meetDate(D.ts)?" · "+meetDate(D.ts):"")+" · Round "+h.round+" · "+D.list.length+" response"+(D.list.length===1?"":"s"),style:"margin-top:2px"}));
   const acts=el("div"); acts.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px";
   const pj=el("button","btn","📽 Project this"); pj.title="Show these results full-screen on the projector (class level, no names). The live class is not touched.";
-  pj.onclick=()=>{ presentMode=true; render(); };
+  pj.onclick=()=>{ _gvBothPresent=false; presentMode=true; render(); };
   lockIf(pj, isLiveOpen, "This round is open for submissions right now — its results stay hidden until you reveal it in Run.");
   lockIf(pj, !D.list.length, "Nothing recorded to show.");
   acts.append(pj); head.append(acts);
@@ -9470,7 +9526,7 @@ function historyPanel(h){
   else {
     c.append(histAnalysis(h, D, true));
     if(h.game==="nego") c.append(ngEditCard(D.list, isLiveOpen));
-    if(h.game==="gov") c.append(gvEditCard(D.list, isLiveOpen));
+    if(h.game==="gov"){ const cc=gvCompareCard(h, false); if(cc) c.append(cc); c.append(gvEditCard(D.list, isLiveOpen)); }
     const who=el("div","card stage"); who.append(el("div","eyebrow","Who submitted"), submittedTable(D.list,{removable:!isLiveOpen})); c.append(who);
   }
   // Manage data — the only writers in Review, each behind a confirmation that names the meeting.
@@ -9507,14 +9563,14 @@ function reviewPresentView(){
   const body=el("div","present-body"); body.style.alignItems="flex-start";
   const box=el("div"); box.style.cssText="flex:1 1 100%;min-width:0;max-width:1240px;margin:0 auto;text-align:left";
   box.append(Object.assign(el("div","present-numlabel"),{textContent:D.list.length+" "+(D.list.length===1?"response":"responses")+". "+revealNarr(h.game),style:"text-align:center;margin:0 0 14px"}));
-  _presenting=true; try{ box.append(histAnalysis(h, D, false)); } finally{ _presenting=false; }
+  _presenting=true; try{ box.append(h.game==="gov" && _gvBothPresent ? gvCompareCard(h, true) : histAnalysis(h, D, false)); } finally{ _presenting=false; }
   body.append(box); wrap.append(body);
   const sk="rev|"+(D.rk||h.game+h.session+h.round+h.scope);
   if(_presScroll.k===sk){ const y=_presScroll.y; setTimeout(()=>{ if(wrap.isConnected) wrap.scrollTop=y; },0); } else _presScroll={k:sk, y:0};
   wrap.addEventListener("scroll",()=>{ if(_presScroll.k===sk) _presScroll.y=wrap.scrollTop; });
   const ctr=el("div","present-controls");
   const fs=el("button","ghost-btn","⛶ Fullscreen"); fs.onclick=toggleFullscreen;
-  const ex=el("button","btn neutral","← Back to Review"); ex.onclick=()=>{ presentMode=false; render(); };
+  const ex=el("button","btn neutral","← Back to Review"); ex.onclick=()=>{ presentMode=false; _gvBothPresent=false; render(); };
   ctr.append(fs, ex); wrap.append(ctr);
   return wrap;
 }
@@ -9728,7 +9784,7 @@ function paramEditor(){
     const sp=el("button","ghost-btn"+(C.showPow?" hold-on":""), C.showPow?"✓ Students see the power indices after Reveal":"Show the power indices to students after Reveal"); sp.style.marginTop="10px";
     sp.onclick=()=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.showPow=!C.showPow; const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
     wrap.append(sp);
-    wrap.append(Object.assign(el("div","sm mut"),{textContent:"Round 1 = Election 1 (A–E: 27 / 26 / 25 / 12 / 10), Round 2 = Election 2 (40 / 20 / 15 / 15 / 10); later rounds alternate. Same five parties for the whole class ("+GV_L.map(L=>L+" "+GV_PARTY[L].name).join(", ")+"); only which student leads which party is random. 51 of 100 seats govern; the power to share is PM 50%, Home 30%, Finance 20%. Open → groups of 5 form (extra students co-lead a party) → tap Start the clock → "+C.base+" min, +1 min automatically up to "+C.ext+"× while any group has no government → closes (no government = hung parliament, 0%) → Reveal → Next round (same groups, parties re-dealt).",style:"margin-top:8px"})); }
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"The first election played in a meeting is Election 1 (A–E: 27 / 26 / 25 / 12 / 10), the next Election 2 (40 / 20 / 15 / 15 / 10) — a discarded round doesn't count. When Election 1's clock closes, “▶ Start Election 2” (projector and console) moves straight on without revealing. Same five parties for the whole class ("+GV_L.map(L=>L+" "+GV_PARTY[L].name).join(", ")+"); only which student leads which party is random. 51 of 100 seats govern; the power to share is PM 50%, Home 30%, Finance 20%. Open → groups of 5 form (extra students co-lead a party) → tap Start the clock → "+C.base+" min, +1 min automatically up to "+C.ext+"× while any group has no government → closes (no government = hung parliament, 0%) → ▶ Start Election 2 (same groups, parties re-dealt) → Reveal when you like; Review shows both elections side by side.",style:"margin-top:8px"})); }
   else if(g==="adfin"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played (announced to students)","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Same High/Low advertising game as G8, but every pair plays exactly this many rounds and students are told so (\"Round 3 of "+rpFinRounds()+"\", with the final round flagged). Backward induction predicts High in every round; compare the class's play near the end with G8.",style:"margin-top:6px"})); }
