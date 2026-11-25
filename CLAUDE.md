@@ -413,7 +413,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     **played** in the meeting is Election 1, the next Election 2, alternating — counted from earlier rounds with records, so a
     **discarded** round doesn't count (a Discard used to skip a round number and flip the map). `openMeeting` stamps
     `control.gv = {rk, map}` (`patch.gvMap` forces it). The ONLY randomness is which student leads which party.
-  - **The class plays each election once:** when Election 1's clock closes (or the round is closed/revealed),
+  - **The class plays each election once (Election 1 is NOT revealed before Election 2):** when Election 1's clock closes,
+    as soon as **every full group has locked a government** (no need to wait out the clock), or once the round is closed/revealed,
     **▶ Start Election 2** (`gvNextBtn`, projector controls + console card) asks once and opens it straight away
     (`runMove` → `openMeeting({round:+1, gvMap:2})`: same groups, parties re-dealt, clock idle) — nothing is revealed, so both
     results can wait for the next session. `runSnap`/`runUndo` include `gv`.

@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-25.003";
+const APP_VERSION = "2026-11-25.004";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -7163,11 +7163,14 @@ function gvJoinStats(){
   return {inGroups:st.inGroups, ready:st.full.length, forming:st.waiting.length, co, rosterN:rl.length, missing};
 }
 
-/* "▶ Start Election 2": once Election 1's clock has closed (or the round was closed / revealed), move straight on — same groups,
+/* "▶ Start Election 2": once Election 1's clock has closed, every group has locked a government, or the round was closed /
+   revealed — move straight on — same groups,
    parties re-dealt with Election 2's seats, nothing revealed (results stay in Review for the next session). */
 function gvNextBtn(){
   if(!control || control.activeGame!=="gov" || !gvCtl() || gvMap()!==1) return null;
-  if(!(gvClock().state==="closed" || control.phase!=="open")) return null;
+  // after the clock closes — or as soon as every full group has locked a government (no need to wait out the clock)
+  const st=gvStatus(), allIn = st.full.length>0 && st.formed.length===st.full.length;
+  if(!(gvClock().state==="closed" || control.phase!=="open" || allIn)) return null;
   const b=el("button","btn","▶ Start Election 2");
   b.onclick=()=>{ if(!confirm("Start Election 2 now?\n\nElection 1 is closed and saved — reveal its results whenever you like (Review → this session shows both elections side by side). Groups stay the same; parties are re-dealt with Election 2's seats.")) return;
     runMove(null, ()=>openMeeting({round:(control.round||1)+1, gvMap:2})); };
