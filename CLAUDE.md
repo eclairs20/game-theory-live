@@ -417,7 +417,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     as soon as **every full group has locked a government** (no need to wait out the clock), or once the round is closed/revealed,
     **▶ Start Election 2** (`gvNextBtn`, projector controls + console card) asks once and opens it straight away
     (`runMove` → `openMeeting({round:+1, gvMap:2})`: same groups, parties re-dealt, clock idle) — nothing is revealed, so both
-    results can wait for the next session. `runSnap`/`runUndo` include `gv`.
+    results can wait for the next session. `runSnap`/`runUndo` include `gv`. **No loop back:** G14 has no generic Next round on
+    the projector — after a Reveal it shows Start Election 2 (Election 1) or "Both elections played — results are in Review"
+    (`gvBothPlayed`); the console's round-bar Next round reads "Start Election 2 →" during Election 1 and is locked after
+    Election 2 (it used to open a Round 3 = Election 1 again).
   - **Review → "Both elections side by side"** (`gvCompareCard(h)`, in `historyPanel` for G14 when a meeting has both): per
     election the `gvBars` chart + table (seats, SS, Banzhaf, power won, in government; `gvSummary`), **📽 Project both
     elections** (`_gvBothPresent` → `reviewPresentView`), and a toggle for **showing the power indices** on the projector and
