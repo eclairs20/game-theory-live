@@ -403,6 +403,41 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     **Who** column and the no-deal groups' names — and a "For you" Shapley note (instructor only). **The Shapley value is instructor-only** until Parameters' "Show the Shapley value to
     students" (`showSh`, read live, so it can be switched on after Reveal). A student sees "You were Player C · you got 150 —
     in the core ✓". CSV: `ngSubValue` → "Player B · ABC · A 100 · B 150 · C 150 · got 150" / "no deal" / "watched".
+- `gov` — **Form the Government** (**G14**, voting power: seats ≠ power, dummies, empty core) — a **simple game**: 5 parties,
+  100 seats, **51 govern** (v = 100% of power, else 0); the power to share is three posts **PM 50% · Home 30% · Finance 20%**
+  (`GV_POSTS`). Self-contained `gv*` block (modelled on G13). Config `{ base:6, ext:2, reopen:2, showPow:false }` (`gvCfg()`).
+  - **Fixed parties for the whole class** (`GV_PARTY`, fictional: A Navbharat Vikas Party, B Lok Ekta Party, C Jan Pragati
+    Morcha, D Kisan Shakti Party, E Yuva Jan Manch, each a colour); **round 1 = Election 1 `GV_MAPS[1]` 27/26/25/12/10**
+    (SS = Banzhaf = ⅓ ⅓ ⅓ 0 0: D and E are dummies), **round 2 = Election 2 `GV_MAPS[2]` 40/20/15/15/10** (SS 55 / 13.3 ×3 / 5,
+    Banzhaf 56.5 / 13.0 ×3 / 4.3; A+E = 50, one short); later rounds alternate (`gvMapFor`). `openMeeting` stamps
+    `control.gv = {rk, map}`. The ONLY randomness is which student leads which party.
+  - **Groups of 5** (meeting-level, kept across rounds): `live/<S1A-gov>/gg/<gid>` + pointer `gm/<enc(id)>` (transactions, as
+    G13). `gvDeal` deals A–E to the first five to JOIN (members carry `ts`), shuffled by `adSeedFloat(rk|gv|gid|i)` — re-dealt
+    each round; extra students (once every group is full, "Join as co-leader", up to 7) **co-lead** a party (a second seeded
+    order) — same screen, either can propose/confirm, same result (`co:true` on their record). Leave only while the group
+    isn't full (a hint tells a stuck group of 4 to leave and co-lead).
+  - **Class clock** (`control.gv` `{start, end, ext, maxExt, closed, reopened}`, `gvClock`): the instructor taps **▶ Start the
+    clock** (console card + projector controls) once groups are ready — entering deals is off until then ("Negotiate now").
+    `base` min; when time is up the instructor's screen (`gvAutoClock`, from the 1 s `rbTick`) adds **+1 min automatically**
+    while any full group has no government, up to `ext` times (6 → 7 → 8), then closes. **■ Stop now** closes early;
+    **↺ Reopen for N min** (`reopen`) gives unlocked groups another window (no auto-extension after a Reopen). Countdowns
+    `[data-gvcd]` update in place. Closed without a government = **hung parliament** (everyone 0%, `hung:true`).
+  - **Proposals** `live/<rk>/gp/<gid>` = `{coal:"AB", posts:{PM,HM,FM}, by, byParty, ts, ok:{A:true}, n}` — one on the table per
+    group (a new one replaces it; `n` counts proposals = how often deals broke). Form: tap parties (live seat total, 51 needed),
+    then a holder for each post (coalition members only; one party may hold several), live "Power: A 70% · B 30%". Every party
+    in it confirms → locks (`gvPropDone`). In-page **"Are you sure?"** (`ngAsk`): a party it doesn't need (not minimal
+    winning), a coalition party with no post, or you get 0%. Negotiate-first gate as G13.
+  - **Records** (each student writes their own, `gvSync`): `{gid, party, co, map, seats, names, gname, coal, posts, share,
+    hung, byParty, n}`. Console `gvConsoleCard` (power table — instructor only —, clock + buttons, counts, group cards with
+    ✕ / ↺ Reopen government / Reset groups); projector `gvPresentBody` (the house with seats only, posts, big clock,
+    governments formed, QR). Live-update rule: `gvViewSig` (lobby list / my group + my group's proposal), `gvSubsSig`;
+    load-tested (~15 writes/s from other groups → 0 redraws; party, post and confirm taps all register).
+  - `analyzeGov` per election: tiles (governments formed, minimal winning %, proposals per group), **grouped bars per party:
+    seat share vs average power won vs Shapley–Shubik vs Banzhaf** (`gvBars`, `gvPower` exact), table (in government, got PM),
+    which governments formed, every government with **"could be blocked by"** (`gvObjection`: a minimal winning coalition
+    holding < 100% now — the empty core with the class's own deals), proposer advantage, lesson note. Power numbers reach
+    students/projector only with Parameters' **Show the power indices to students** (`showPow`). Student line: "You led
+    Party B … in government with Home: 30%". Review **✎ Edit result** (`gvEditCard`/`gvSaveEdit`, like G13). CSV `gvSubValue`.
 - `publicgoods` — Public Goods ("Maximize your marks") — labelled **G20**. Config `{ E, mult }` (default E=8 marks,
   mult=1.5). The **whole pot is multiplied by `mult` and split equally among the N players**, so
   each player receives `mult·total/N` (your own share of a contributed mark is `mult/N`, which
@@ -1088,9 +1123,8 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 4. Wait ~1 min for Pages, then hard-refresh (Ctrl+F5) — Pages/browser can cache the old file.
 
 ## Likely next tasks
-- **Form the Government** (voting power: Shapley–Shubik vs Banzhaf, empty core in simple games) — fully designed for next
-  year in `docs/government-game-design.md` (fictional Indian parties, 543/272, three seat maps, portfolios, flow, results,
-  build notes). Not built; dropped for the 2026 course.
+- **Form the Government, full version** (543/272, three houses, 13 portfolios) — designed in `docs/government-game-design.md`;
+  the 2026 course plays the simplified **G14** (5 parties, 100 seats, 3 posts).
 - Add a game (sealed-bid auction, Cournot/Bertrand): extend `GAMES`, `DEFAULT_CONFIG`, add a
   `student<Game>()` view, an `analyze<Game>()` function, and a branch in `paramEditor()`.
   Follow the **Live-update rendering rule** (view signatures + load test) for anything that listens to

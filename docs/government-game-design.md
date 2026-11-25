@@ -1,7 +1,10 @@
 # Form the Government — design for next year (not built)
 
-Status: **designed, not built.** Planned as G14 for the 2026 course (after G13 Negotiation Game), then dropped for this
-year on 20 Nov 2026. This file keeps the design and the decisions made so far, so it can be built for the next batch.
+Status: **the full version below is designed, not built.** On 25 Nov 2026 a simplified version was built and played as
+**G14** instead: groups of 5 students, one party each (fixed fictional parties A–E), 100 seats with 51 to govern, only three
+posts (PM 50%, Home 30%, Finance 20% of the power — so it stays a simple game), round 1 = 27/26/25/12/10, round 2 =
+40/20/15/15/10, a 6-minute class clock with up to two automatic +1-minute extensions (see CLAUDE.md, `gov`). The full version
+here remains the plan for a later batch.
 Everything here was discussed with the instructor; items marked **OPEN** still need a decision.
 
 ## Teaching goal and place in the course
