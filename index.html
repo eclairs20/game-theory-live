@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-26.001";
+const APP_VERSION = "2026-11-26.002";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -1184,7 +1184,7 @@ async function openMeeting(patch){
   // "Start Election 2" tap forces 2); the clock starts later, on the instructor's tap.
   if(control.activeGame==="gov"){
     const rd=(p.round!=null?p.round:(control.round||1)), ss=(p.session!=null?p.session:curSession()), rk="S"+ss+curMSection()+"-gov-"+rd;
-    if(!(control.gv && control.gv.rk===rk)) p.gv={rk, map: p.gvMap || gvMapAt(ss, curMSection(), rd)};
+    if(!(control.gv && control.gv.rk===rk)) p.gv={rk, map: p.gvMap || gvMapAt(ss, curMSection(), rd), pv: gvCfg().posts};
   }
   if(p.gvMap!==undefined) delete p.gvMap;
   // Placement Season: a new round starts with candidates choosing — or with firm sign-up when this meeting has no firms yet.
@@ -6720,7 +6720,7 @@ function ngSubValue(s){
    (meeting-level, kept across rounds; extra students join a full group as CO-LEADERS of a party). Each round every group
    gets the SAME seat map — round 1 = Map 1 (27/26/25/12/10), round 2 = Map 2 (40/20/15/15/10), alternating after — and
    the five fixed, fictional parties are dealt to its students at random (seeded, so every phone agrees). The power to
-   share is three posts: Prime Minister 50%, Home 30%, Finance 20%. One proposal on the table per group (a new one replaces
+   share is three posts: Prime Minister 50%, Home 30%, Finance 20% (or 40 / 30 / 30 — Parameters, stamped per round). One proposal on the table per group (a new one replaces
    it); every party in the proposed government confirms; then it locks. A class-wide clock (control.gv) starts when the
    instructor taps Start: `base` minutes, then +1 min automatically while any full group has no government, up to `ext`
    times; then it closes (no government = hung parliament, 0% for all). The instructor can Stop early or Reopen for `reopen`
@@ -6739,8 +6739,16 @@ const GV_L = ["A","B","C","D","E"];
 const GV_MAPS = { 1:{A:27,B:26,C:25,D:12,E:10}, 2:{A:40,B:20,C:15,D:15,E:10} };
 const GV_Q = 51;
 const GV_POSTS = [{k:"PM",name:"Prime Minister",pct:50},{k:"HM",name:"Home",pct:30},{k:"FM",name:"Finance",pct:20}];
+/* Post values ("power mix") — a Parameters choice, stamped per round in control.gv.pv (like the election map). A government's
+   posts object carries the mix it was agreed under (posts.pv), so records and results never change when Parameters do;
+   records without it (built before the setting existed) are 50 / 30 / 20. */
+const GV_MIX = { "50-30-20":{PM:50,HM:30,FM:20}, "40-30-30":{PM:40,HM:30,FM:30} };
+const gvMixKey = k => GV_MIX[k] ? k : "50-30-20";
+const gvMixTxt = k => { const m=GV_MIX[gvMixKey(k)]; return "PM "+m.PM+" · Home "+m.HM+" · Finance "+m.FM; };
+function gvPV(){ const g=gvCtl(); return gvMixKey(g && g.pv ? g.pv : gvCfg().posts); }
+function gvPostsOf(pv){ const m=GV_MIX[gvMixKey(pv)]; return GV_POSTS.map(P=>Object.assign({},P,{pct:m[P.k]})); }
 function gvCfg(){ const c=cfg("gov"), n=(x,d)=>{ x=Number(x); return isNaN(x)?d:x; };
-  return {base:Math.max(1,n(c.base,6)), ext:Math.max(0,Math.min(5,n(c.ext,2))), reopen:Math.max(1,n(c.reopen,2)), showPow:!!c.showPow}; }
+  return {base:Math.max(1,n(c.base,6)), ext:Math.max(0,Math.min(5,n(c.ext,2))), reopen:Math.max(1,n(c.reopen,2)), showPow:!!c.showPow, posts:gvMixKey(c.posts)}; }
 /* Which election a round plays: the first election actually PLAYED in a meeting (session + section) is Election 1, the next
    Election 2, then they alternate. Counted from earlier rounds with records — a discarded round doesn't count (isDone). */
 function gvMapAt(sess, sec, rd){
@@ -6756,7 +6764,7 @@ const gvPName = L => gvAb(L)+" · "+((GV_PARTY[L]||{}).name||L);
 const gvSum = (coal, seats)=> String(coal||"").split("").reduce((a,k)=>a+(+seats[k]||0),0);
 const gvUnneeded = (coal, seats)=>{ const t=gvSum(coal,seats); return String(coal||"").split("").filter(k=> t-(+seats[k]||0) >= GV_Q); };
 const gvMinimal = (coal, seats)=> gvSum(coal,seats)>=GV_Q && !gvUnneeded(coal,seats).length;
-function gvShares(posts){ const o={}; GV_L.forEach(k=>{ o[k]=0; }); GV_POSTS.forEach(P=>{ const h=posts&&posts[P.k]; if(h && o[h]!=null) o[h]+=P.pct; }); return o; }
+function gvShares(posts, pv){ const o={}; GV_L.forEach(k=>{ o[k]=0; }); gvPostsOf(pv || (posts && posts.pv)).forEach(P=>{ const h=posts&&posts[P.k]; if(h && o[h]!=null) o[h]+=P.pct; }); return o; }
 function gvPostsTxt(posts){ return posts ? GV_POSTS.map(P=>P.name.replace("Prime Minister","PM")+" "+(posts[P.k]?gvAb(posts[P.k]):"—")).join(" · ") : "—"; }
 const gvCoalTxt = coal => String(coal||"").split("").map(gvAb).join(" + ");
 /* Exact voting power: Shapley–Shubik (share of the 120 orderings in which a party is pivotal) and Banzhaf (share of all
@@ -6907,7 +6915,7 @@ function gvCheck(seats, coal, posts){
   for(const P of GV_POSTS){ const h=posts&&posts[P.k]; if(!h) return {err:"Give the "+P.name+" post to a party."}; if(coal.indexOf(h)<0) return {err:P.name+" must go to a party in the government."}; }
   return {seats:s}; }
 function gvSureMsgs(seats, coal, posts, me){
-  const msgs=[], sh=gvShares(posts), un=gvUnneeded(coal,seats), t=gvSum(coal,seats);
+  const msgs=[], sh=gvShares(posts, gvPV()), un=gvUnneeded(coal,seats), t=gvSum(coal,seats);
   un.forEach(k=>msgs.push(gvAb(k)+" isn't needed: without it you'd still have "+(t-seats[k])+" seats — and it may want a post."));
   const zero=coal.split("").filter(k=>!sh[k] && k!==me);
   if(zero.length) msgs.push(zero.map(gvAb).join(" and ")+(zero.length>1?" get":" gets")+" no post (0%) — would "+(zero.length>1?"they":"it")+" really confirm?");
@@ -6922,7 +6930,7 @@ async function gvPropose(gid, party, coal, posts){
   if(msgs.length && !(await ngAsk("Are you sure?", msgs, "Yes, propose it", "Keep negotiating"))) return false;
   if(gvPropDone(gvProps[gid])){ toast("Your group has already formed a government."); return false; }
   const ok={}; if(coal.indexOf(party)>=0) ok[party]=true;
-  const P={}; GV_POSTS.forEach(x=>{ P[x.k]=posts[x.k]; });
+  const P={pv:gvPV()}; GV_POSTS.forEach(x=>{ P[x.k]=posts[x.k]; });
   try{ await fb.ref(LIVE_ROOT(curKey)+"/gp/"+gid).set({coal, posts:P, by:String(myId), byParty:party, ts:srvNow(), ok, n:(+((gvProps[gid]||{}).n)||0)+1}); }
   catch(e){ toast("Couldn't send — check your connection"); return false; }
   gvDraft[curKey+"|"+gid]={ready:true, coal:"", posts:{}}; render(); return true;
@@ -6942,7 +6950,7 @@ function gvSync(gid, D){
   const party=D.of[String(myId)]; if(!party) return;
   const p=gvProps[gid], done=gvPropDone(p), closed=gvClock().state==="closed", map=gvMap(), seats=gvSeats(map);
   const names={}; GV_L.forEach(L=>{ names[L]=gvNamesOf(D,L); });
-  const doc={gid, party, co:(D.by[party]||[])[0]!==String(myId), map, seats, names, gname:gvGroupName(gid), coal:null, posts:null, share:null, hung:null, byParty:null, n:(p&&+p.n)||0};
+  const doc={gid, party, co:(D.by[party]||[])[0]!==String(myId), map, pv:gvPV(), seats, names, gname:gvGroupName(gid), coal:null, posts:null, share:null, hung:null, byParty:null, n:(p&&+p.n)||0};
   if(done){ doc.coal=p.coal; doc.posts=p.posts; doc.share=gvShares(p.posts)[party]; doc.byParty=p.byParty||null; }
   else if(closed){ doc.hung=true; doc.share=0; }
   const sig=d=>JSON.stringify([d.roundKey||curKey, d.gid, d.party, !!d.co, d.map, d.coal||null, d.posts||null, d.share==null?null:d.share, !!d.hung, JSON.stringify(d.names||{}), +d.n||0]);
@@ -6967,7 +6975,7 @@ function gvBoard(seats, opts){
   w.append(Object.assign(el("div","sm"),{textContent:"100 seats · "+GV_Q+" or more form a government",style:"font-weight:600;"+(opts.big?"font-size:1.05rem;":"")+"margin-top:2px"}));
   return w; }
 function gvPostsLine(big){ const w=el("div"); w.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px";
-  GV_POSTS.forEach(P=>{ const b=el("div"); b.style.cssText="border:1px solid var(--line);border-radius:10px;padding:"+(big?"8px 14px":"4px 10px")+";text-align:center";
+  gvPostsOf(gvPV()).forEach(P=>{ const b=el("div"); b.style.cssText="border:1px solid var(--line);border-radius:10px;padding:"+(big?"8px 14px":"4px 10px")+";text-align:center";
     b.innerHTML="<div class='sm mut'>"+esc(P.name)+"</div><div style='font-family:IBM Plex Mono,monospace;font-weight:700;"+(big?"font-size:1.5rem":"")+"'>"+P.pct+"%</div>"; w.append(b); });
   return w; }
 
@@ -7069,12 +7077,12 @@ function studentGov(c){
   fm.append(Object.assign(el("div","sm"),{textContent: d.coal ? "Seats: "+t+(t>=GV_Q?" ✓ (51 needed)":" — "+(GV_Q-t)+" short of 51") : "Tap the parties in your government.",style:"margin-top:6px;font-weight:600;color:"+(d.coal?(t>=GV_Q?"var(--good)":"var(--bad)"):"var(--ink-2)")}));
   if(d.coal){
     fm.append(Object.assign(el("div"),{textContent:"2 · Who gets each post?",style:"font-weight:700;margin-top:12px"}));
-    GV_POSTS.forEach(X=>{ const row=el("div"); row.style.cssText="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px";
+    gvPostsOf(gvPV()).forEach(X=>{ const row=el("div"); row.style.cssText="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px";
       row.append(Object.assign(el("div"),{textContent:X.name+" · "+X.pct+"%",style:"min-width:150px;font-weight:600"}));
       d.coal.split("").forEach(L=>{ const b=el("button","res-btn"+(d.posts[X.k]===L?" on":"")); b.type="button"; b.textContent=gvAb(L); b.style.borderLeft="5px solid "+GV_PARTY[L].col;
         b.onclick=()=>{ d.posts[X.k]=L; render(); }; row.append(b); });
       fm.append(row); });
-    const sh=gvShares(d.posts);
+    const sh=gvShares(d.posts, gvPV());
     fm.append(Object.assign(el("div","sm"),{textContent:"Power: "+d.coal.split("").map(L=>gvAb(L)+" "+sh[L]+"%").join(" · "),style:"margin-top:8px;font-weight:600"}));
     const go=el("button","btn","Propose to my group"); go.style.cssText="margin-top:10px;width:100%;max-width:420px;padding:13px";
     go.onclick=()=>gvPropose(gid, me, d.coal, d.posts); fm.append(go);
@@ -7221,10 +7229,12 @@ function gvCompareCard(h, present){
 function gvOutcomes(list){
   const by={};
   list.filter(s=>s && s.game==="gov" && s.gid && s.party).forEach(s=>{ const k=(s.roundKey||"")+"|"+s.gid;
-    const o=by[k]||(by[k]={k, rk:s.roundKey, gid:s.gid, map:s.map, seats:s.seats||gvSeats(s.map), names:{}, gname:s.gname||"Group", coal:null, posts:null, byParty:null, n:0, hung:false, sec:s.msection||"", fixed:null});
+    const o=by[k]||(by[k]={k, rk:s.roundKey, gid:s.gid, map:s.map, seats:s.seats||gvSeats(s.map), names:{}, gname:s.gname||"Group", coal:null, posts:null, byParty:null, n:0, hung:false, sec:s.msection||"", fixed:null, pv:null});
     if(!s.co) o.names[s.party]=s.name||s.studentId;
+    if(!o.pv) o.pv = (s.posts && s.posts.pv) || s.pv || null;
     if(s.coal && s.posts && !o.coal){ o.coal=s.coal; o.posts=s.posts; o.byParty=s.byParty||null; }
     if(s.hung) o.hung=true; o.n=Math.max(o.n, +s.n||0); if(s.fixedBy) o.fixed=s.fixedBy; });
+  Object.values(by).forEach(o=>{ o.pv=gvMixKey(o.pv); });
   return Object.values(by).sort((a,b)=>(a.sec<b.sec?-1:a.sec>b.sec?1:0)||String(a.gname).localeCompare(String(b.gname)));
 }
 /* Grouped bars per party: seat share, average power won, and (when shown) Shapley–Shubik and Banzhaf. */
@@ -7289,7 +7299,7 @@ function analyzeGov(list, teacher){
       const gt=el("div","card stage"); gt.append(el("div","eyebrow","Every government — and who could have objected"));
       const who= teacher && !_presenting;
       const tb=el("table","matrix"); tb.style.marginTop="8px";
-      tb.innerHTML="<tr><th>Government</th><th>PM 50%</th><th>Home 30%</th><th>Finance 20%</th><th>Proposed by</th><th>Proposals</th><th>Could be blocked by</th>"+(who?"<th>Who</th>":"")+"</tr>"+govs.map(o=>{ const sh=gvShares(o.posts), ob=gvObjection(o.coal, sh, seats);
+      tb.innerHTML="<tr><th>Government</th>"+gvPostsOf(govs[0]&&govs[0].pv).map(P=>"<th>"+P.name.replace("Prime Minister","PM")+" "+P.pct+"%</th>").join("")+"<th>Proposed by</th><th>Proposals</th><th>Could be blocked by</th>"+(who?"<th>Who</th>":"")+"</tr>"+govs.map(o=>{ const sh=gvShares(o.posts), ob=gvObjection(o.coal, sh, seats);
         return "<tr><td style='text-align:left'><b>"+esc(gvCoalTxt(o.coal))+"</b> <span class='sm mut'>"+gvSum(o.coal,seats)+"</span>"+(gvMinimal(o.coal,seats)?"":" <span class='sm' style='color:var(--gold)'>not minimal</span>")+"</td><td class='cell'>"+esc(o.posts.PM?gvAb(o.posts.PM):"—")+"</td><td class='cell'>"+esc(o.posts.HM?gvAb(o.posts.HM):"—")+"</td><td class='cell'>"+esc(o.posts.FM?gvAb(o.posts.FM):"—")+"</td><td class='cell'>"+esc(o.byParty?gvAb(o.byParty):"—")+"</td><td class='cell'>"+(o.n||1)+"</td><td style='text-align:left' class='sm'>"+(ob?esc(gvCoalTxt(ob.T))+" ("+gvSum(ob.T,seats)+" seats) hold "+ob.have+"% now — split 100% and all gain":"nobody")+"</td>"+(who?"<td style='text-align:left' class='sm'>"+esc(GV_L.map(L=>gvAb(L)+": "+(o.names[L]||"—")).join(" · "))+"</td>":"")+"</tr>"; }).join("");
       const tbw=el("div","tablescroll"); tbw.append(tb); gt.append(tbw);
       const prop=govs.filter(o=>o.byParty && o.coal.indexOf(o.byParty)>=0);
@@ -7320,7 +7330,7 @@ let _gvEdit=null;   // {k: roundKey|gid, coal, posts}
 async function gvSaveEdit(o, coal, posts){
   const seats=o.seats||gvSeats(o.map);
   if(coal){ coal=GV_L.filter(k=>coal.indexOf(k)>=0).join(""); const ck=gvCheck(seats, coal, posts); if(ck.err){ toast(ck.err); return; } }
-  const P = coal ? {PM:posts.PM, HM:posts.HM, FM:posts.FM} : null, sh = coal ? gvShares(P) : null;
+  const P = coal ? {pv:o.pv||"50-30-20", PM:posts.PM, HM:posts.HM, FM:posts.FM} : null, sh = coal ? gvShares(P) : null;
   const now = o.coal ? gvCoalTxt(o.coal)+" · "+gvPostsTxt(o.posts) : "no government", nw = coal ? gvCoalTxt(coal)+" · "+gvPostsTxt(P) : "no government (hung)";
   if(!confirm("Change "+o.gname+"'s result?\n\nNow: "+now+"\nNew: "+nw+"\n\nEvery member's record is updated and the results follow.")) return;
   const up={}, ts=new Date().toISOString();
@@ -7356,7 +7366,7 @@ function gvEditCard(list, locked){
     const nd=el("button","res-btn"+(!d.coal?" on":"")); nd.type="button"; nd.textContent="No government"; nd.onclick=()=>{ d.coal=""; d.posts={}; render(); }; cr.append(nd);
     b.append(cr);
     if(d.coal){ const t=gvSum(d.coal,seats); b.append(Object.assign(el("div","sm"),{textContent:"Seats: "+t+(t>=GV_Q?" ✓":" — short of 51"),style:"margin-top:4px;font-weight:600"}));
-      GV_POSTS.forEach(P=>{ const row=el("div"); row.style.cssText="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:5px";
+      gvPostsOf(o.pv).forEach(P=>{ const row=el("div"); row.style.cssText="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:5px";
         row.append(Object.assign(el("span","sm"),{textContent:P.name+" "+P.pct+"%",style:"min-width:130px;font-weight:600"}));
         d.coal.split("").forEach(L=>{ const x=el("button","res-btn"+(d.posts[P.k]===L?" on":"")); x.type="button"; x.textContent=gvAb(L); x.onclick=()=>{ d.posts[P.k]=L; render(); }; row.append(x); });
         b.append(row); }); }
@@ -9791,10 +9801,21 @@ function paramEditor(){
   else if(g==="gov"){
     const C=gvCfg(), grid=el("div","paramgrid");
     grid.append(mk("Clock (minutes)","base",C.base,"0.5"), mk("Automatic +1-minute extensions","ext",C.ext), mk("Reopen window (minutes)","reopen",C.reopen,"0.5")); wrap.append(grid);
+    // Power mix: the value of the three posts. Stamped into control.gv.pv when a round opens; changing it updates the open
+    // round only while its clock hasn't started (no deal can exist yet) — otherwise it applies from the next round.
+    const st=gvCtl(), clockIdle=!!st && gvClock().state==="idle";
+    const mixRow=el("div"); mixRow.style.cssText="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px";
+    mixRow.append(Object.assign(el("span","sm"),{textContent:"Power of the posts:",style:"font-weight:600"}));
+    Object.keys(GV_MIX).forEach(k=>{ const b=el("button","res-btn"+(C.posts===k?" on":"")); b.type="button"; b.textContent=gvMixTxt(k)+(st&&st.pv===k?"  · this round":"");
+      b.onclick=()=>{ if(C.posts===k) return; const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.posts=k; const conf=Object.assign({},control.config); conf[g]=nc;
+        const patch={config:conf}; if(clockIdle) patch.gv=Object.assign({}, control.gv, {pv:k}); writeControl(patch); };
+      lockIf(b, isOpenNow() && !clockIdle, OPEN_LOCK("change the post values")); mixRow.append(b); });
+    wrap.append(mixRow);
+    if(st && gvMixKey(st.pv)!==C.posts) wrap.append(Object.assign(el("div","sm"),{textContent:"Round "+(control.round||1)+" runs "+gvMixTxt(st.pv)+" — fixed for this round (its clock has started). The next round uses "+gvMixTxt(C.posts)+".",style:"margin-top:6px;color:var(--gold);font-weight:600"}));
     const sp=el("button","ghost-btn"+(C.showPow?" hold-on":""), C.showPow?"✓ Students see the power indices after Reveal":"Show the power indices to students after Reveal"); sp.style.marginTop="10px";
     sp.onclick=()=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.showPow=!C.showPow; const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
     wrap.append(sp);
-    wrap.append(Object.assign(el("div","sm mut"),{textContent:"The first election played in a meeting is Election 1 (CFP / TIO / PEP / TMA / UBS: 27 / 26 / 25 / 12 / 10), the next Election 2 (40 / 20 / 15 / 15 / 10) — a discarded round doesn't count. When Election 1's clock closes, “▶ Start Election 2” (projector and console) moves straight on without revealing. Same five parties for the whole class ("+GV_L.map(L=>gvAb(L)+" "+GV_PARTY[L].name).join(", ")+"); only which student leads which party is random. 51 of 100 seats govern; the power to share is PM 50%, Home 30%, Finance 20%. Open → groups of 5 form (extra students co-lead a party) → tap Start the clock → "+C.base+" min, +1 min automatically up to "+C.ext+"× while any group has no government → closes (no government = hung parliament, 0%) → ▶ Start Election 2 (same groups, parties re-dealt) → Reveal when you like; Review shows both elections side by side.",style:"margin-top:8px"})); }
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"The first election played in a meeting is Election 1 (CFP / TIO / PEP / TMA / UBS: 27 / 26 / 25 / 12 / 10), the next Election 2 (40 / 20 / 15 / 15 / 10) — a discarded round doesn't count. When Election 1's clock closes, “▶ Start Election 2” (projector and console) moves straight on without revealing. Same five parties for the whole class ("+GV_L.map(L=>gvAb(L)+" "+GV_PARTY[L].name).join(", ")+"); only which student leads which party is random. 51 of 100 seats govern; the power to share is "+gvMixTxt(C.posts)+" (% of power). Open → groups of 5 form (extra students co-lead a party) → tap Start the clock → "+C.base+" min, +1 min automatically up to "+C.ext+"× while any group has no government → closes (no government = hung parliament, 0%) → ▶ Start Election 2 (same groups, parties re-dealt) → Reveal when you like; Review shows both elections side by side.",style:"margin-top:8px"})); }
   else if(g==="adfin"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played (announced to students)","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Same High/Low advertising game as G8, but every pair plays exactly this many rounds and students are told so (\"Round 3 of "+rpFinRounds()+"\", with the final round flagged). Backward induction predicts High in every round; compare the class's play near the end with G8.",style:"margin-top:6px"})); }

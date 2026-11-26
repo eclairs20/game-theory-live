@@ -405,7 +405,15 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     in the core ✓". CSV: `ngSubValue` → "Player B · ABC · A 100 · B 150 · C 150 · got 150" / "no deal" / "watched".
 - `gov` — **Form the Government** (**G14**, voting power: seats ≠ power, dummies, empty core) — a **simple game**: 5 parties,
   100 seats, **51 govern** (v = 100% of power, else 0); the power to share is three posts **PM 50% · Home 30% · Finance 20%**
-  (`GV_POSTS`). Self-contained `gv*` block (modelled on G13). Config `{ base:6, ext:2, reopen:2, showPow:false }` (`gvCfg()`).
+  (`GV_POSTS`). Self-contained `gv*` block (modelled on G13). Config `{ base:6, ext:2, reopen:2, showPow:false, posts:"50-30-20" }` (`gvCfg()`).
+  - **Post values ("power mix") are a Parameters choice** (`GV_MIX`: `"50-30-20"` PM 50 · Home 30 · Finance 20, or `"40-30-30"`;
+    `gvMixTxt`, `gvPostsOf(pv)`). `openMeeting` stamps it into `control.gv.pv`; `gvPV()` = the round's stamp (else Parameters).
+    Changing it while the round's clock hasn't started also updates the stamp; once the clock has run it applies from the next
+    round (the card says "Round N runs … — fixed for this round"). Parameters are frozen while submissions are open (as for every
+    game), so set it before Open. Every agreed `posts` object carries `pv` (proposals, records, Review edits) and each record has
+    `pv`, so `gvShares(posts)` and all results use the mix the deal was made under; records without it count as 50/30/20. Post
+    tiles, the proposal form, the "Every government" table header and the Review edit card all show the round's values. The
+    power indices don't depend on it (seats and quota only).
   - **Fixed parties for the whole class** (`GV_PARTY`, fictional, tongue-in-cheek: A **CFP** Completely Fair Party, B **TIO**
     Totally Impartial Organization, C **PEP** Perfect Equilibrium Party, D **TMA** Typical Managers Association, E **UBS** Usual
     Business Society, each a colour). Keys stay A–E in every record (coal "AB", posts, `party`); everything shown uses the
