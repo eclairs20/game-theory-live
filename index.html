@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-25.005";
+const APP_VERSION = "2026-11-26.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -6728,11 +6728,13 @@ function ngSubValue(s){
    proposals live/<roundKey>/gp/<gid> = {coal:"AB…", posts:{PM,HM,FM}, by, byParty, ts, ok:{A:true}, n}; each student's
    own sub {gid, party, co, map, seats, names, gname, coal, posts, share, hung, byParty, n}. */
 const GV_PARTY = {
-  A:{name:"Navbharat Vikas Party", short:"NVP", col:"#0d9488"},
-  B:{name:"Lok Ekta Party",        short:"LEP", col:"#6366f1"},
-  C:{name:"Jan Pragati Morcha",    short:"JPM", col:"#d97706"},
-  D:{name:"Kisan Shakti Party",    short:"KSP", col:"#db2777"},
-  E:{name:"Yuva Jan Manch",        short:"YJM", col:"#64748b"} };
+  A:{name:"Completely Fair Party",         short:"CFP", col:"#0d9488"},
+  B:{name:"Totally Impartial Organization", short:"TIO", col:"#6366f1"},
+  C:{name:"Perfect Equilibrium Party",     short:"PEP", col:"#d97706"},
+  D:{name:"Typical Managers Association",  short:"TMA", col:"#db2777"},
+  E:{name:"Usual Business Society",        short:"UBS", col:"#64748b"} };
+/* Keys stay A–E in every record; students only ever see the acronym (gvAb) or acronym · full name (gvPName). */
+const gvAb = L => (GV_PARTY[L]||{}).short||L;
 const GV_L = ["A","B","C","D","E"];
 const GV_MAPS = { 1:{A:27,B:26,C:25,D:12,E:10}, 2:{A:40,B:20,C:15,D:15,E:10} };
 const GV_Q = 51;
@@ -6750,13 +6752,13 @@ const gvBase = rk=>{ const p=parseRoundKey(rk||curKey); return p ? "S"+p.session
 function gvCtl(){ const g=control && control.gv; return (g && g.rk===curKey) ? g : null; }
 function gvMap(){ const g=gvCtl(); return g && g.map ? g.map : gvMapAt(curSession(), curMSection(), (control && control.round)||1); }
 function gvSeats(map){ return Object.assign({}, GV_MAPS[map||gvMap()]||GV_MAPS[1]); }
-const gvPName = L => L+" · "+((GV_PARTY[L]||{}).name||L);
+const gvPName = L => gvAb(L)+" · "+((GV_PARTY[L]||{}).name||L);
 const gvSum = (coal, seats)=> String(coal||"").split("").reduce((a,k)=>a+(+seats[k]||0),0);
 const gvUnneeded = (coal, seats)=>{ const t=gvSum(coal,seats); return String(coal||"").split("").filter(k=> t-(+seats[k]||0) >= GV_Q); };
 const gvMinimal = (coal, seats)=> gvSum(coal,seats)>=GV_Q && !gvUnneeded(coal,seats).length;
 function gvShares(posts){ const o={}; GV_L.forEach(k=>{ o[k]=0; }); GV_POSTS.forEach(P=>{ const h=posts&&posts[P.k]; if(h && o[h]!=null) o[h]+=P.pct; }); return o; }
-function gvPostsTxt(posts){ return posts ? GV_POSTS.map(P=>P.name.replace("Prime Minister","PM")+" "+(posts[P.k]||"—")).join(" · ") : "—"; }
-const gvCoalTxt = coal => String(coal||"").split("").join(" + ");
+function gvPostsTxt(posts){ return posts ? GV_POSTS.map(P=>P.name.replace("Prime Minister","PM")+" "+(posts[P.k]?gvAb(posts[P.k]):"—")).join(" · ") : "—"; }
+const gvCoalTxt = coal => String(coal||"").split("").map(gvAb).join(" + ");
 /* Exact voting power: Shapley–Shubik (share of the 120 orderings in which a party is pivotal) and Banzhaf (share of all
    swings; raw = swings / 16). */
 const _gvPowC={};
@@ -6906,9 +6908,9 @@ function gvCheck(seats, coal, posts){
   return {seats:s}; }
 function gvSureMsgs(seats, coal, posts, me){
   const msgs=[], sh=gvShares(posts), un=gvUnneeded(coal,seats), t=gvSum(coal,seats);
-  un.forEach(k=>msgs.push("Party "+k+" isn't needed: without it you'd still have "+(t-seats[k])+" seats — and it may want a post."));
+  un.forEach(k=>msgs.push(gvAb(k)+" isn't needed: without it you'd still have "+(t-seats[k])+" seats — and it may want a post."));
   const zero=coal.split("").filter(k=>!sh[k] && k!==me);
-  if(zero.length) msgs.push("Party "+zero.join(" and Party ")+(zero.length>1?" get":" gets")+" no post (0%) — would "+(zero.length>1?"they":"it")+" really confirm?");
+  if(zero.length) msgs.push(zero.map(gvAb).join(" and ")+(zero.length>1?" get":" gets")+" no post (0%) — would "+(zero.length>1?"they":"it")+" really confirm?");
   if(me && coal.indexOf(me)>=0 && !sh[me]) msgs.push("You get no post in this government (0%).");
   return msgs; }
 async function gvPropose(gid, party, coal, posts){
@@ -6956,7 +6958,7 @@ function gvBoard(seats, opts){
   GV_L.forEach(L=>{ const P=GV_PARTY[L], s=+seats[L]||0, me=opts.me===L, inC=opts.coal && opts.coal.indexOf(L)>=0;
     const r=el("div"); r.style.cssText="display:grid;grid-template-columns:"+(opts.big?"minmax(0,1fr) 70px 220px":"minmax(0,1fr) 44px 70px")+";gap:8px;align-items:center;border-left:6px solid "+P.col+";border-radius:6px;padding:"+(opts.big?"6px 12px":"5px 8px")+";background:"+(me?"color-mix(in srgb, var(--accent) 12%, transparent)":inC?"color-mix(in srgb, var(--good) 10%, transparent)":"var(--surface-2, transparent)");
     const nm=el("div"); nm.style.minWidth="0";
-    nm.append(Object.assign(el("div"),{textContent:L+" · "+P.name+(me?" (you)":""),style:"font-weight:700;"+(opts.big?"font-size:1.25rem;":"font-size:.92rem;")+"overflow-wrap:anywhere"}));
+    nm.append(Object.assign(el("div"),{textContent:gvPName(L)+(me?" (you)":""),style:"font-weight:700;"+(opts.big?"font-size:1.25rem;":"font-size:.92rem;")+"overflow-wrap:anywhere"}));
     if(opts.names && opts.names[L]) nm.append(Object.assign(el("div","sm mut"),{textContent:opts.names[L],style:"overflow-wrap:anywhere"}));
     const sv=el("div"); sv.textContent=s; sv.style.cssText="font-family:'IBM Plex Mono',monospace;font-weight:700;text-align:right;"+(opts.big?"font-size:1.6rem;":"");
     const bar=el("div"); bar.style.cssText="height:"+(opts.big?"14px":"9px")+";border-radius:5px;background:var(--line);overflow:hidden";
@@ -7007,7 +7009,7 @@ function studentGov(c){
   gvSync(gid, D);
   const P=GV_PARTY[me]||{}, co=(D.by[me]||[])[0]!==String(myId);
   const rb=el("div"); rb.style.cssText="margin:12px 0 2px;border-left:8px solid "+(P.col||"var(--accent)")+";padding-left:10px";
-  rb.append(Object.assign(el("div"),{textContent:"You lead Party "+me+(co?" (co-leader)":""),style:"font-family:Fraunces,Georgia,serif;font-size:1.6rem;font-weight:650"}),
+  rb.append(Object.assign(el("div"),{textContent:"You lead "+gvAb(me)+(co?" (co-leader)":""),style:"font-family:Fraunces,Georgia,serif;font-size:1.6rem;font-weight:650"}),
     Object.assign(el("div"),{textContent:(P.name||"")+" · "+seats[me]+" seats",style:"font-weight:700;font-size:1.05rem"}));
   c.append(rb);
   const names={}; GV_L.forEach(L=>{ names[L]=gvNamesOf(D,L); });
@@ -7028,16 +7030,16 @@ function studentGov(c){
   }
   if(p && p.coal){
     const box=el("div","card"); box.style.cssText="padding:12px;margin-top:10px";
-    box.append(Object.assign(el("div","tinylabel"),{textContent:"Proposal on the table · from Party "+(p.byParty||"?")}));
+    box.append(Object.assign(el("div","tinylabel"),{textContent:"Proposal on the table · from "+(p.byParty?gvAb(p.byParty):"?")}));
     box.append(Object.assign(el("div"),{innerHTML:"<b>Government "+esc(gvCoalTxt(p.coal))+"</b> <span class='sm mut'>("+gvSum(p.coal,seats)+" seats)</span>",style:"font-size:1.1rem;margin:4px 0"}));
     box.append(Object.assign(el("div"),{textContent:gvPostsTxt(p.posts),style:"font-family:IBM Plex Mono,monospace;font-weight:600"}));
     const sh=gvShares(p.posts);
-    box.append(Object.assign(el("div","sm"),{textContent:"Power: "+p.coal.split("").map(L=>L+" "+sh[L]+"%").join(" · ")+" · Confirmed: "+p.coal.split("").map(L=>L+(p.ok&&p.ok[L]?" ✓":" …")).join("  "),style:"margin-top:4px"}));
+    box.append(Object.assign(el("div","sm"),{textContent:"Power: "+p.coal.split("").map(L=>gvAb(L)+" "+sh[L]+"%").join(" · ")+" · Confirmed: "+p.coal.split("").map(L=>gvAb(L)+(p.ok&&p.ok[L]?" ✓":" …")).join("  "),style:"margin-top:4px"}));
     if(p.coal.indexOf(me)>=0 && !(p.ok&&p.ok[me])){
       const cf=el("button","btn","✓ Confirm this government"); cf.style.cssText="margin-top:10px;width:100%;max-width:420px;padding:13px"; cf.onclick=()=>gvConfirm(gid, me);
       lockIf(cf, k.state!=="running", "The clock starts when your instructor says go."); box.append(cf);
     } else if(p.coal.indexOf(me)>=0){
-      box.append(Object.assign(el("div","sm mut"),{textContent:"Your party has confirmed — waiting for "+p.coal.split("").filter(L=>!(p.ok&&p.ok[L])).map(L=>"Party "+L).join(" and ")+".",style:"margin-top:8px"}));
+      box.append(Object.assign(el("div","sm mut"),{textContent:"Your party has confirmed — waiting for "+p.coal.split("").filter(L=>!(p.ok&&p.ok[L])).map(gvAb).join(" and ")+".",style:"margin-top:8px"}));
     } else {
       box.append(Object.assign(el("div"),{textContent:"This leaves your party in opposition (0%). Make a better offer?",style:"margin-top:8px;color:var(--bad);font-weight:600"}));
     }
@@ -7059,7 +7061,7 @@ function studentGov(c){
   fm.append(Object.assign(el("div","tinylabel"),{textContent: p&&p.coal ? "Or propose a different government" : "Propose a government"}));
   fm.append(Object.assign(el("div"),{textContent:"1 · Which parties are in it?",style:"font-weight:700;margin-top:6px"}));
   const cr=el("div","res-list"); cr.style.marginTop="6px";
-  GV_L.forEach(L=>{ const on=d.coal.indexOf(L)>=0, b=el("button","res-btn"+(on?" on":"")); b.type="button"; b.textContent=L+" · "+seats[L]; b.style.borderLeft="5px solid "+GV_PARTY[L].col;
+  GV_L.forEach(L=>{ const on=d.coal.indexOf(L)>=0, b=el("button","res-btn"+(on?" on":"")); b.type="button"; b.textContent=gvAb(L)+" · "+seats[L]; b.style.borderLeft="5px solid "+GV_PARTY[L].col;
     b.onclick=()=>{ if(on){ d.coal=d.coal.replace(L,""); GV_POSTS.forEach(x=>{ if(d.posts[x.k]===L) delete d.posts[x.k]; }); } else d.coal=GV_L.filter(k=>d.coal.indexOf(k)>=0||k===L).join(""); render(); };
     cr.append(b); });
   fm.append(cr);
@@ -7069,11 +7071,11 @@ function studentGov(c){
     fm.append(Object.assign(el("div"),{textContent:"2 · Who gets each post?",style:"font-weight:700;margin-top:12px"}));
     GV_POSTS.forEach(X=>{ const row=el("div"); row.style.cssText="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px";
       row.append(Object.assign(el("div"),{textContent:X.name+" · "+X.pct+"%",style:"min-width:150px;font-weight:600"}));
-      d.coal.split("").forEach(L=>{ const b=el("button","res-btn"+(d.posts[X.k]===L?" on":"")); b.type="button"; b.textContent=L; b.style.borderLeft="5px solid "+GV_PARTY[L].col;
+      d.coal.split("").forEach(L=>{ const b=el("button","res-btn"+(d.posts[X.k]===L?" on":"")); b.type="button"; b.textContent=gvAb(L); b.style.borderLeft="5px solid "+GV_PARTY[L].col;
         b.onclick=()=>{ d.posts[X.k]=L; render(); }; row.append(b); });
       fm.append(row); });
     const sh=gvShares(d.posts);
-    fm.append(Object.assign(el("div","sm"),{textContent:"Power: "+d.coal.split("").map(L=>L+" "+sh[L]+"%").join(" · "),style:"margin-top:8px;font-weight:600"}));
+    fm.append(Object.assign(el("div","sm"),{textContent:"Power: "+d.coal.split("").map(L=>gvAb(L)+" "+sh[L]+"%").join(" · "),style:"margin-top:8px;font-weight:600"}));
     const go=el("button","btn","Propose to my group"); go.style.cssText="margin-top:10px;width:100%;max-width:420px;padding:13px";
     go.onclick=()=>gvPropose(gid, me, d.coal, d.posts); fm.append(go);
   }
@@ -7096,7 +7098,7 @@ function gvClockButtons(row, big){
 }
 function gvPowerTable(seats, showNames){
   const pw=gvPower(seats), t=el("table","matrix"); t.style.marginTop="8px";
-  t.innerHTML="<tr><th>Party</th><th>Seats</th><th>Shapley–Shubik</th><th>Banzhaf</th></tr>"+GV_L.map(L=>"<tr><td style='text-align:left;border-left:5px solid "+GV_PARTY[L].col+"'>"+esc(showNames?gvPName(L):L)+"</td><td class='cell'>"+seats[L]+"</td><td class='cell'>"+Math.round(pw.ss[L]*1000)/10+"%</td><td class='cell'>"+Math.round(pw.bz[L]*1000)/10+"%</td></tr>").join("");
+  t.innerHTML="<tr><th>Party</th><th>Seats</th><th>Shapley–Shubik</th><th>Banzhaf</th></tr>"+GV_L.map(L=>"<tr><td style='text-align:left;border-left:5px solid "+GV_PARTY[L].col+"'>"+esc(showNames?gvPName(L):gvAb(L))+"</td><td class='cell'>"+seats[L]+"</td><td class='cell'>"+Math.round(pw.ss[L]*1000)/10+"%</td><td class='cell'>"+Math.round(pw.bz[L]*1000)/10+"%</td></tr>").join("");
   const w=el("div","tablescroll"); w.append(t); return w; }
 function gvConsoleCard(){
   const map=gvMap(), seats=gvSeats(map), st=gvStatus(), card=el("div","card stage"), k=gvClock(), C=gvCfg();
@@ -7119,11 +7121,11 @@ function gvConsoleCard(){
   st.gids.forEach(gid=>{ const g=gvGroups[gid], D=gvDeal(gid,g,curKey), p=gvProps[gid], done=gvPropDone(p), n=gvMembers(g).length;
     const b=el("div","card"); b.style.cssText="padding:10px 12px;"+(done?"border-color:var(--good)":"");
     b.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(gvGroupName(gid))+"</b> <span class='sm mut'>"+Math.min(5,n)+"/5"+(n>5?" + "+(n-5)+" co-leader"+(n-5===1?"":"s"):"")+"</span>"+(done?" <span class='sm' style='color:var(--good);font-weight:700'>✓ "+esc(gvCoalTxt(p.coal))+"</span>":p&&p.coal?" <span class='sm mut'>proposal: "+esc(gvCoalTxt(p.coal))+"</span>":"")}));
-    if(p&&p.coal) b.append(Object.assign(el("div","sm"),{textContent:gvPostsTxt(p.posts)+(done?"":" · confirmed "+Object.keys(p.ok||{}).sort().join(""))+(p.n>1?" · proposal #"+p.n:""),style:"margin-top:3px"}));
+    if(p&&p.coal) b.append(Object.assign(el("div","sm"),{textContent:gvPostsTxt(p.posts)+(done?"":" · confirmed "+Object.keys(p.ok||{}).sort().map(gvAb).join(", "))+(p.n>1?" · proposal #"+p.n:""),style:"margin-top:3px"}));
     if(done){ const ro=el("button","linkbtn","↺ Reopen government"); ro.type="button"; ro.style.marginTop="4px"; ro.title="They locked the wrong deal: clear it so they can propose again";
       ro.onclick=()=>gvReopenDeal(gid); lockIf(ro, !isOpenNow() || k.state!=="running", "Only while the clock is running (Reopen the clock first if it has closed)."); b.append(ro); }
     gvMembers(g).forEach(m=>{ const r=el("div"); r.style.cssText="display:flex;justify-content:space-between;gap:6px;align-items:center;font-size:.86rem;margin-top:3px";
-      const L=D.of[String(m.id)]; r.append(Object.assign(el("span"),{textContent:(L&&n>=5?L+" · ":"")+m.name+((D.by[L]||[])[0]!==String(m.id)&&L&&n>=5?" (co-leader)":"")}));
+      const L=D.of[String(m.id)]; r.append(Object.assign(el("span"),{textContent:(L&&n>=5?gvAb(L)+" · ":"")+m.name+((D.by[L]||[])[0]!==String(m.id)&&L&&n>=5?" (co-leader)":"")}));
       const x=el("button","linkbtn","✕"); x.type="button"; x.title="Remove from the group"; x.onclick=()=>{ if(confirm("Remove "+m.name+" from "+gvGroupName(gid)+"?"+(n<=5?"\n\nThe group's parties are re-dealt when it fills again.":""))) gvRemoveMember(gid, m.id); }; r.append(x); b.append(r); });
     grid.append(b); });
   if(st.gids.length) card.append(grid);
@@ -7201,7 +7203,7 @@ function gvCompareCard(h, present){
       Object.assign(el("div","sm mut"),{textContent:S.formed+" of "+S.n+" groups formed a government"}));
     col.append(gvBars(seats, S.won, showPow?pw:null));
     const t=el("table","matrix"); t.style.marginTop="8px";
-    t.innerHTML="<tr><th>Party</th><th>Seats</th>"+(showPow?"<th>SS</th><th>Banzhaf</th>":"")+"<th>Won</th><th>In gov.</th></tr>"+GV_L.map(L=>"<tr><td style='text-align:left;border-left:5px solid "+GV_PARTY[L].col+"'>"+L+"</td><td class='cell'>"+seats[L]+"</td>"+(showPow?"<td class='cell'>"+Math.round(pw.ss[L]*1000)/10+"%</td><td class='cell'>"+Math.round(pw.bz[L]*1000)/10+"%</td>":"")+"<td class='cell'><b>"+fmt(S.won[L],1)+"%</b></td><td class='cell'>"+S.inGov[L]+"/"+S.n+"</td></tr>").join("");
+    t.innerHTML="<tr><th>Party</th><th>Seats</th>"+(showPow?"<th>SS</th><th>Banzhaf</th>":"")+"<th>Won</th><th>In gov.</th></tr>"+GV_L.map(L=>"<tr><td style='text-align:left;border-left:5px solid "+GV_PARTY[L].col+"'>"+gvAb(L)+"</td><td class='cell'>"+seats[L]+"</td>"+(showPow?"<td class='cell'>"+Math.round(pw.ss[L]*1000)/10+"%</td><td class='cell'>"+Math.round(pw.bz[L]*1000)/10+"%</td>":"")+"<td class='cell'><b>"+fmt(S.won[L],1)+"%</b></td><td class='cell'>"+S.inGov[L]+"/"+S.n+"</td></tr>").join("");
     const tw=el("div","tablescroll"); tw.append(t); col.append(tw);
     grid.append(col); });
   card.append(grid);
@@ -7239,7 +7241,7 @@ function gvBars(seats, won, pw){
     series.forEach((s,j)=>{ const v=val(L,s.k), h=(v/max)*ih;
       svg.append(svgEl("rect",{x:x0+j*bw,y:pt+ih-h,width:bw-3,height:Math.max(0,h),rx:3,fill:s.col}));
       svg.append(svgEl("text",{x:x0+j*bw+(bw-3)/2,y:pt+ih-h-3,"text-anchor":"middle",fill:"var(--ink-2)","font-size":"9","font-family":"IBM Plex Mono"},String(Math.round(v)))); });
-    svg.append(svgEl("text",{x:pl+i*gw+gw/2,y:H-pb+16,"text-anchor":"middle",fill:"var(--ink)","font-size":"13","font-weight":"700","font-family":"IBM Plex Sans"},L+" ("+seats[L]+")")); });
+    svg.append(svgEl("text",{x:pl+i*gw+gw/2,y:H-pb+16,"text-anchor":"middle",fill:"var(--ink)","font-size":"13","font-weight":"700","font-family":"IBM Plex Sans"},gvAb(L)+" ("+seats[L]+")")); });
   const wrap=el("div"); wrap.append(svg);
   const lg=el("div","sm"); lg.style.cssText="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px";
   series.forEach(s=>{ const it=el("span"); it.innerHTML="<span style='display:inline-block;width:12px;height:12px;border-radius:3px;background:"+s.col+";vertical-align:-1px;margin-right:5px'></span>"+esc(s.label); lg.append(it); });
@@ -7260,7 +7262,7 @@ function analyzeGov(list, teacher){
     const mine=!teacher && list.find(s=>s && s.game==="gov" && String(s.studentId)===String(myId) && s.map===map);
     if(mine){ const o=O.find(x=>x.gid===mine.gid), L=mine.party, P=GV_PARTY[L]||{};
       const box=el("div","note-box teal"); box.style.marginTop="8px";
-      box.innerHTML="You led <b>Party "+esc(L)+" · "+esc(P.name||"")+"</b> ("+(seats[L]||"?")+" seats). "+(o && o.coal ? (o.coal.indexOf(L)>=0 ? "Your party was in government ("+esc(gvCoalTxt(o.coal))+")"+(gvShares(o.posts)[L] ? " with "+esc(GV_POSTS.filter(x=>o.posts[x.k]===L).map(x=>x.name).join(" + "))+": <b>"+gvShares(o.posts)[L]+"%</b> of the power." : " but held no post: <b>0%</b>.") : "Your party was in opposition: <b>0%</b>. Government: "+esc(gvCoalTxt(o.coal))+".") : "No government was formed in your group (hung parliament): <b>0%</b>.");
+      box.innerHTML="You led <b>"+esc(gvPName(L))+"</b> ("+(seats[L]||"?")+" seats). "+(o && o.coal ? (o.coal.indexOf(L)>=0 ? "Your party was in government ("+esc(gvCoalTxt(o.coal))+")"+(gvShares(o.posts)[L] ? " with "+esc(GV_POSTS.filter(x=>o.posts[x.k]===L).map(x=>x.name).join(" + "))+": <b>"+gvShares(o.posts)[L]+"%</b> of the power." : " but held no post: <b>0%</b>.") : "Your party was in opposition: <b>0%</b>. Government: "+esc(gvCoalTxt(o.coal))+".") : "No government was formed in your group (hung parliament): <b>0%</b>.");
       head.append(box); }
     const tiles=el("div","stats"); tiles.style.marginTop="10px";
     tiles.append(statTile("Groups",String(O.length)), statTile("Governments formed",govs.length+" of "+O.length, hung.length?hung.length+" hung parliament"+(hung.length===1?"":"s"):"none hung"),
@@ -7288,7 +7290,7 @@ function analyzeGov(list, teacher){
       const who= teacher && !_presenting;
       const tb=el("table","matrix"); tb.style.marginTop="8px";
       tb.innerHTML="<tr><th>Government</th><th>PM 50%</th><th>Home 30%</th><th>Finance 20%</th><th>Proposed by</th><th>Proposals</th><th>Could be blocked by</th>"+(who?"<th>Who</th>":"")+"</tr>"+govs.map(o=>{ const sh=gvShares(o.posts), ob=gvObjection(o.coal, sh, seats);
-        return "<tr><td style='text-align:left'><b>"+esc(gvCoalTxt(o.coal))+"</b> <span class='sm mut'>"+gvSum(o.coal,seats)+"</span>"+(gvMinimal(o.coal,seats)?"":" <span class='sm' style='color:var(--gold)'>not minimal</span>")+"</td><td class='cell'>"+esc(o.posts.PM||"—")+"</td><td class='cell'>"+esc(o.posts.HM||"—")+"</td><td class='cell'>"+esc(o.posts.FM||"—")+"</td><td class='cell'>"+esc(o.byParty||"—")+"</td><td class='cell'>"+(o.n||1)+"</td><td style='text-align:left' class='sm'>"+(ob?esc(gvCoalTxt(ob.T))+" ("+gvSum(ob.T,seats)+" seats) hold "+ob.have+"% now — split 100% and all gain":"nobody")+"</td>"+(who?"<td style='text-align:left' class='sm'>"+esc(GV_L.map(L=>L+": "+(o.names[L]||"—")).join(" · "))+"</td>":"")+"</tr>"; }).join("");
+        return "<tr><td style='text-align:left'><b>"+esc(gvCoalTxt(o.coal))+"</b> <span class='sm mut'>"+gvSum(o.coal,seats)+"</span>"+(gvMinimal(o.coal,seats)?"":" <span class='sm' style='color:var(--gold)'>not minimal</span>")+"</td><td class='cell'>"+esc(o.posts.PM?gvAb(o.posts.PM):"—")+"</td><td class='cell'>"+esc(o.posts.HM?gvAb(o.posts.HM):"—")+"</td><td class='cell'>"+esc(o.posts.FM?gvAb(o.posts.FM):"—")+"</td><td class='cell'>"+esc(o.byParty?gvAb(o.byParty):"—")+"</td><td class='cell'>"+(o.n||1)+"</td><td style='text-align:left' class='sm'>"+(ob?esc(gvCoalTxt(ob.T))+" ("+gvSum(ob.T,seats)+" seats) hold "+ob.have+"% now — split 100% and all gain":"nobody")+"</td>"+(who?"<td style='text-align:left' class='sm'>"+esc(GV_L.map(L=>gvAb(L)+": "+(o.names[L]||"—")).join(" · "))+"</td>":"")+"</tr>"; }).join("");
       const tbw=el("div","tablescroll"); tbw.append(tb); gt.append(tbw);
       const prop=govs.filter(o=>o.byParty && o.coal.indexOf(o.byParty)>=0);
       if(prop.length){ const ps=prop.reduce((a,o)=>a+gvShares(o.posts)[o.byParty],0)/prop.length;
@@ -7299,15 +7301,15 @@ function analyzeGov(list, teacher){
     }
     if(teacher && hung.length && !_presenting) c.append(Object.assign(el("div","note-box"),{textContent:"Hung parliaments: "+hung.map(o=>o.gname+" ("+GV_L.map(L=>o.names[L]||"").filter(Boolean).join(", ")+")").join("; ")}));
     if(showPow){ const ln=el("div","note-box teal");
-      ln.innerHTML= map===1 ? "<b>The lesson.</b> Any two of A, B and C make 51+; D and E can never turn a losing coalition into a winning one — they are <b>dummies</b> with 22% of the seats and 0% of the power, while 27, 26 and 25 seats carry equal power (⅓ each). Both indices agree here."
-        : "<b>The lesson.</b> A has 40% of the seats but about 55% of the power: it sits in three of the four minimal winning coalitions (A+B, A+C, A+D). B's 20 seats are worth exactly as much as C's and D's 15. E (10 seats) swings only in B+C+D+E — and A+E is 50, one seat short. No party is a veto player, so the core is empty. Here the indices differ slightly: Shapley–Shubik 55 / 13.3 / 13.3 / 13.3 / 5, Banzhaf 56.5 / 13.0 / 13.0 / 13.0 / 4.3.";
+      ln.innerHTML= map===1 ? "<b>The lesson.</b> Any two of CFP, TIO and PEP make 51+; TMA and UBS can never turn a losing coalition into a winning one — they are <b>dummies</b> with 22% of the seats and 0% of the power, while 27, 26 and 25 seats carry equal power (⅓ each). Both indices agree here."
+        : "<b>The lesson.</b> CFP has 40% of the seats but about 55% of the power: it sits in three of the four minimal winning coalitions (CFP+TIO, CFP+PEP, CFP+TMA). TIO's 20 seats are worth exactly as much as PEP's and TMA's 15. UBS (10 seats) swings only in TIO+PEP+TMA+UBS — and CFP+UBS is 50, one seat short. No party is a veto player, so the core is empty. Here the indices differ slightly: Shapley–Shubik 55 / 13.3 / 13.3 / 13.3 / 5, Banzhaf 56.5 / 13.0 / 13.0 / 13.0 / 4.3.";
       c.append(ln); }
   });
   return c;
 }
 function gvSubValue(s){
   const L=s.party||"?", seats=s.seats||gvSeats(s.map);
-  const head="Party "+L+" ("+(seats[L]!=null?seats[L]:"?")+" seats, Election "+(s.map||"?")+")";
+  const head=gvAb(L)+" ("+(seats[L]!=null?seats[L]:"?")+" seats, Election "+(s.map||"?")+")";
   if(s.coal && s.posts) return head+" · Government "+gvCoalTxt(s.coal)+" · "+gvPostsTxt(s.posts)+" · got "+(s.share!=null?s.share:gvShares(s.posts)[L])+"%";
   if(s.hung) return head+" · hung parliament · 0%";
   return head+" · no government yet";
@@ -7340,7 +7342,7 @@ function gvEditCard(list, locked){
   outs.forEach(o=>{ const seats=o.seats||gvSeats(o.map), b=el("div","card"), ed=_gvEdit && _gvEdit.k===o.k;
     b.dataset.gvEdit=o.k; b.style.cssText="padding:10px 12px;"+(o.coal?"border-color:var(--good)":"");
     b.append(Object.assign(el("div"),{innerHTML:"<b>"+esc(o.gname)+"</b>"+(multiSec&&o.sec?" <span class='sm mut'>· Section "+esc(o.sec)+"</span>":"")}));
-    b.append(Object.assign(el("div","sm"),{textContent:GV_L.map(L=>L+": "+(o.names[L]||"—")).join(" · "),style:"margin-top:3px"}));
+    b.append(Object.assign(el("div","sm"),{textContent:GV_L.map(L=>gvAb(L)+": "+(o.names[L]||"—")).join(" · "),style:"margin-top:3px"}));
     b.append(Object.assign(el("div"),{textContent: o.coal ? gvCoalTxt(o.coal)+" · "+gvPostsTxt(o.posts) : "No government (hung)",style:"margin-top:5px;font-weight:600;"+(o.coal?"":"color:var(--ink-2)")}));
     if(o.fixed) b.append(Object.assign(el("div","sm mut"),{textContent:"✎ edited by the instructor"+(()=>{ const t=new Date(String(o.fixed).replace(/^instructor\s*/,"")); return isNaN(t)?"":" · "+t.toLocaleString([], {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); })(),style:"margin-top:2px"}));
     if(!ed){ const e=el("button","linkbtn","✎ Edit result"); e.type="button"; e.style.marginTop="6px";
@@ -7348,7 +7350,7 @@ function gvEditCard(list, locked){
       lockIf(e, locked, "This round is open for submissions in Run — use ↺ Reopen government there, or close submissions first.");
       b.append(e); grid.append(b); return; }
     const d=_gvEdit, cr=el("div","res-list"); cr.style.marginTop="8px";
-    GV_L.forEach(L=>{ const on=d.coal.indexOf(L)>=0, x=el("button","res-btn"+(on?" on":"")); x.type="button"; x.textContent=L+" · "+seats[L];
+    GV_L.forEach(L=>{ const on=d.coal.indexOf(L)>=0, x=el("button","res-btn"+(on?" on":"")); x.type="button"; x.textContent=gvAb(L)+" · "+seats[L];
       x.onclick=()=>{ if(on){ d.coal=d.coal.replace(L,""); GV_POSTS.forEach(P=>{ if(d.posts[P.k]===L) delete d.posts[P.k]; }); } else d.coal=GV_L.filter(k=>d.coal.indexOf(k)>=0||k===L).join(""); render(); };
       cr.append(x); });
     const nd=el("button","res-btn"+(!d.coal?" on":"")); nd.type="button"; nd.textContent="No government"; nd.onclick=()=>{ d.coal=""; d.posts={}; render(); }; cr.append(nd);
@@ -7356,7 +7358,7 @@ function gvEditCard(list, locked){
     if(d.coal){ const t=gvSum(d.coal,seats); b.append(Object.assign(el("div","sm"),{textContent:"Seats: "+t+(t>=GV_Q?" ✓":" — short of 51"),style:"margin-top:4px;font-weight:600"}));
       GV_POSTS.forEach(P=>{ const row=el("div"); row.style.cssText="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:5px";
         row.append(Object.assign(el("span","sm"),{textContent:P.name+" "+P.pct+"%",style:"min-width:130px;font-weight:600"}));
-        d.coal.split("").forEach(L=>{ const x=el("button","res-btn"+(d.posts[P.k]===L?" on":"")); x.type="button"; x.textContent=L; x.onclick=()=>{ d.posts[P.k]=L; render(); }; row.append(x); });
+        d.coal.split("").forEach(L=>{ const x=el("button","res-btn"+(d.posts[P.k]===L?" on":"")); x.type="button"; x.textContent=gvAb(L); x.onclick=()=>{ d.posts[P.k]=L; render(); }; row.append(x); });
         b.append(row); }); }
     const act=el("div"); act.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px";
     const sv=el("button","btn","Save"); sv.type="button"; sv.onclick=()=>gvSaveEdit(o, d.coal, d.posts);
@@ -9792,7 +9794,7 @@ function paramEditor(){
     const sp=el("button","ghost-btn"+(C.showPow?" hold-on":""), C.showPow?"✓ Students see the power indices after Reveal":"Show the power indices to students after Reveal"); sp.style.marginTop="10px";
     sp.onclick=()=>{ const nc=Object.assign({},(control.config&&control.config[g])||{}); nc.showPow=!C.showPow; const conf=Object.assign({},control.config); conf[g]=nc; writeControl({config:conf}); };
     wrap.append(sp);
-    wrap.append(Object.assign(el("div","sm mut"),{textContent:"The first election played in a meeting is Election 1 (A–E: 27 / 26 / 25 / 12 / 10), the next Election 2 (40 / 20 / 15 / 15 / 10) — a discarded round doesn't count. When Election 1's clock closes, “▶ Start Election 2” (projector and console) moves straight on without revealing. Same five parties for the whole class ("+GV_L.map(L=>L+" "+GV_PARTY[L].name).join(", ")+"); only which student leads which party is random. 51 of 100 seats govern; the power to share is PM 50%, Home 30%, Finance 20%. Open → groups of 5 form (extra students co-lead a party) → tap Start the clock → "+C.base+" min, +1 min automatically up to "+C.ext+"× while any group has no government → closes (no government = hung parliament, 0%) → ▶ Start Election 2 (same groups, parties re-dealt) → Reveal when you like; Review shows both elections side by side.",style:"margin-top:8px"})); }
+    wrap.append(Object.assign(el("div","sm mut"),{textContent:"The first election played in a meeting is Election 1 (CFP / TIO / PEP / TMA / UBS: 27 / 26 / 25 / 12 / 10), the next Election 2 (40 / 20 / 15 / 15 / 10) — a discarded round doesn't count. When Election 1's clock closes, “▶ Start Election 2” (projector and console) moves straight on without revealing. Same five parties for the whole class ("+GV_L.map(L=>gvAb(L)+" "+GV_PARTY[L].name).join(", ")+"); only which student leads which party is random. 51 of 100 seats govern; the power to share is PM 50%, Home 30%, Finance 20%. Open → groups of 5 form (extra students co-lead a party) → tap Start the clock → "+C.base+" min, +1 min automatically up to "+C.ext+"× while any group has no government → closes (no government = hung parliament, 0%) → ▶ Start Election 2 (same groups, parties re-dealt) → Reveal when you like; Review shows both elections side by side.",style:"margin-top:8px"})); }
   else if(g==="adfin"){
     const grid=el("div","paramgrid"); grid.append(mk("Rounds played (announced to students)","rounds",cf.rounds)); wrap.append(grid);
     wrap.append(Object.assign(el("div","sm mut"),{textContent:"Same High/Low advertising game as G8, but every pair plays exactly this many rounds and students are told so (\"Round 3 of "+rpFinRounds()+"\", with the final round flagged). Backward induction predicts High in every round; compare the class's play near the end with G8.",style:"margin-top:6px"})); }

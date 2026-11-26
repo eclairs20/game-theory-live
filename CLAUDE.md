@@ -406,8 +406,10 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
 - `gov` — **Form the Government** (**G14**, voting power: seats ≠ power, dummies, empty core) — a **simple game**: 5 parties,
   100 seats, **51 govern** (v = 100% of power, else 0); the power to share is three posts **PM 50% · Home 30% · Finance 20%**
   (`GV_POSTS`). Self-contained `gv*` block (modelled on G13). Config `{ base:6, ext:2, reopen:2, showPow:false }` (`gvCfg()`).
-  - **Fixed parties for the whole class** (`GV_PARTY`, fictional: A Navbharat Vikas Party, B Lok Ekta Party, C Jan Pragati
-    Morcha, D Kisan Shakti Party, E Yuva Jan Manch, each a colour); **Election 1 `GV_MAPS[1]` 27/26/25/12/10**
+  - **Fixed parties for the whole class** (`GV_PARTY`, fictional, tongue-in-cheek: A **CFP** Completely Fair Party, B **TIO**
+    Totally Impartial Organization, C **PEP** Perfect Equilibrium Party, D **TMA** Typical Managers Association, E **UBS** Usual
+    Business Society, each a colour). Keys stay A–E in every record (coal "AB", posts, `party`); everything shown uses the
+    acronym (`gvAb(L)`) or "CFP · Completely Fair Party" (`gvPName`) — chips, posts, coalitions, tables, CSV; **Election 1 `GV_MAPS[1]` 27/26/25/12/10**
     (SS = Banzhaf = ⅓ ⅓ ⅓ 0 0: D and E are dummies), **Election 2 `GV_MAPS[2]` 40/20/15/15/10** (SS 55 / 13.3 ×3 / 5,
     Banzhaf 56.5 / 13.0 ×3 / 4.3; A+E = 50, one short). Which one a round plays (`gvMapAt`): the first election actually
     **played** in the meeting is Election 1, the next Election 2, alternating — counted from earlier rounds with records, so a
