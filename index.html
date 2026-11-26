@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-26.002";
+const APP_VERSION = "2026-11-26.003";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -648,7 +648,7 @@ const DEFAULT_CONFIG = {
   bayes:{ pOdd:25, rounds:20 },          // Bayesian Game: % chance each round is Odd-Even (else the Matching Game); rounds per match
   placement:{ mode:"fixed", variant:"A", firms:5, firmMax:3, recMin:3 },   // Placement Season: "fixed" salaries (role per degree, dealt batches) or "bid" (role + salary in pay bands, shared pool); variant A Classic / B MBA builds skills / C Strong batch / D Online MBA; firms and max recruiters per firm
   nego:{ v:{A:0,B:0,C:0,AB:100,AC:200,BC:300,ABC:400}, showSh:false },   // Negotiation Game: the characteristic function v(S) (Game 1 by default) + whether students see the Shapley value
-  gov:{ base:6, ext:2, reopen:2, showPow:false },   // Form the Government: clock minutes, automatic +1-min extensions, Reopen minutes, students see power indices after Reveal
+  gov:{ base:6, ext:2, reopen:2, showPow:false, posts:"40-30-30" },   // Form the Government: clock minutes, automatic +1-min extensions, Reopen minutes, students see power indices after Reveal, post values (PM-Home-Finance %)
   publicgoods:{ E:8, mult:1.5 }
 };
 /* The four coordination questions, answered back-to-back in ONE submission (no rounds).
@@ -6741,14 +6741,15 @@ const GV_Q = 51;
 const GV_POSTS = [{k:"PM",name:"Prime Minister",pct:50},{k:"HM",name:"Home",pct:30},{k:"FM",name:"Finance",pct:20}];
 /* Post values ("power mix") — a Parameters choice, stamped per round in control.gv.pv (like the election map). A government's
    posts object carries the mix it was agreed under (posts.pv), so records and results never change when Parameters do;
-   records without it (built before the setting existed) are 50 / 30 / 20. */
-const GV_MIX = { "50-30-20":{PM:50,HM:30,FM:20}, "40-30-30":{PM:40,HM:30,FM:30} };
+   records without it (built before the setting existed) are 50 / 30 / 20. Default for new rounds: 40 / 30 / 30. */
+const GV_MIX = { "40-30-30":{PM:40,HM:30,FM:30}, "50-30-20":{PM:50,HM:30,FM:20} };
+const GV_MIX_DEFAULT = "40-30-30";   // new rounds; records saved without a mix are 50/30/20 (gvMixKey)
 const gvMixKey = k => GV_MIX[k] ? k : "50-30-20";
 const gvMixTxt = k => { const m=GV_MIX[gvMixKey(k)]; return "PM "+m.PM+" · Home "+m.HM+" · Finance "+m.FM; };
 function gvPV(){ const g=gvCtl(); return gvMixKey(g && g.pv ? g.pv : gvCfg().posts); }
 function gvPostsOf(pv){ const m=GV_MIX[gvMixKey(pv)]; return GV_POSTS.map(P=>Object.assign({},P,{pct:m[P.k]})); }
 function gvCfg(){ const c=cfg("gov"), n=(x,d)=>{ x=Number(x); return isNaN(x)?d:x; };
-  return {base:Math.max(1,n(c.base,6)), ext:Math.max(0,Math.min(5,n(c.ext,2))), reopen:Math.max(1,n(c.reopen,2)), showPow:!!c.showPow, posts:gvMixKey(c.posts)}; }
+  return {base:Math.max(1,n(c.base,6)), ext:Math.max(0,Math.min(5,n(c.ext,2))), reopen:Math.max(1,n(c.reopen,2)), showPow:!!c.showPow, posts:(GV_MIX[c.posts] ? c.posts : GV_MIX_DEFAULT)}; }
 /* Which election a round plays: the first election actually PLAYED in a meeting (session + section) is Election 1, the next
    Election 2, then they alternate. Counted from earlier rounds with records — a discarded round doesn't count (isDone). */
 function gvMapAt(sess, sec, rd){
