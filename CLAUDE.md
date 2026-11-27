@@ -432,6 +432,11 @@ on a projector. Built for Prof. Sonia (IIM Lucknow); codebase managed by Ankit (
     the projector — after a Reveal it shows Start Election 2 (Election 1) or "Both elections played — results are in Review"
     (`gvBothPlayed`); the console's round-bar Next round reads "Start Election 2 →" during Election 1 and is locked after
     Election 2 (it used to open a Round 3 = Election 1 again).
+  - **Run shows both elections (27 Nov):** Election 2's results in Run — console, projector (`presentResults`) and students'
+    reveal (`analysisView`) — are drawn from `gvWithElection1(list, scope)`: the round's records plus the same session's latest
+    earlier round that played Election 1 (per section; discarded rounds skipped; the Both scope adds each section's), so
+    `analyzeGov` shows Election 1 then Election 2 with a one-line note (`gvBothNote`). Counts ("N responses") still use the
+    round's own list. Election 1's own round is unchanged. (27 Nov class: Run showed only round 2 at reveal.)
   - **Review → "Both elections side by side"** (`gvCompareCard(h)`, in `historyPanel` for G14 when a meeting has both): per
     election the `gvBars` chart + table (seats, SS, Banzhaf, power won, in government; `gvSummary`), **📽 Project both
     elections** (`_gvBothPresent` → `reviewPresentView`), and a toggle for **showing the power indices** on the projector and

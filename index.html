@@ -598,7 +598,7 @@ const REQUIRE_GOOGLE = true;
    e.g. 2026-10-03.002). An instructor loading a newer build writes it to control.appVersion; any
    client whose embedded APP_VERSION is older then shows a "new version — Refresh" banner so a
    returning student on a GitHub-Pages-cached copy can pull the latest. Never auto-reloads. */
-const APP_VERSION = "2026-11-26.003";
+const APP_VERSION = "2026-11-27.001";
 const isInstructorEmail = e => !!e && INSTRUCTOR_EMAILS.some(x=>x.toLowerCase()===String(e).toLowerCase());
 /* A friendly display name from an email local-part (ankit.khandelwal → "Ankit Khandelwal"). */
 const emailName = e => String(e||"").split("@")[0].replace(/[._-]+/g," ").trim().replace(/\b\w/g,c=>c.toUpperCase()) || String(e||"");
@@ -6070,6 +6070,7 @@ function analysisView(teacher){
   head.append(el("p","lead", n+" "+(n===1?"response":"responses")+" in"+scLbl+". "+revealNarr(g)));
   c.append(head);
   if(n===0){ const e=el("div","card stage center mut"); e.textContent = sc==="BOTH"?"No submissions in either section for this round.":sc?("No Section "+sc+" submissions in this round."):"No submissions to analyze yet."; c.append(e); return c; }
+  if(g==="gov"){ const both=gvWithElection1(list, teacher ? sc : curMSection()); if(both!==list){ c.append(gvBothNote()); c.append(analysisBody(g, both, teacher)); return c; } }
   c.append(analysisBody(g, list, teacher));
   return c;
 }
@@ -7257,6 +7258,19 @@ function gvBars(seats, won, pw){
   const lg=el("div","sm"); lg.style.cssText="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px";
   series.forEach(s=>{ const it=el("span"); it.innerHTML="<span style='display:inline-block;width:12px;height:12px;border-radius:3px;background:"+s.col+";vertical-align:-1px;margin-right:5px'></span>"+esc(s.label); lg.append(it); });
   wrap.append(lg); return wrap; }
+/* Run's results for Election 2 also include the same session's Election 1 (27 Nov request): the class plays Election 1,
+   moves straight on without revealing, and reveals both together. Adds the latest earlier round of the meeting that played
+   Election 1 (per section; discarded rounds skipped by isDone). Results only — counts keep using the round's own list. */
+function gvWithElection1(list, sc){
+  if(!list.length || !list.some(s=>s && s.game==="gov" && +s.map===2)) return list;
+  const s0=list.find(s=>s && s.game==="gov"), sess=s0.session, rd=s0.round, best={};
+  const secOK = x => sc==="BOTH" || String(x.msection||"").toUpperCase()===String(sc||"").toUpperCase();
+  const prev=Object.values(allSubs).filter(x=> x && x.game==="gov" && x.session===sess && x.round<rd && +x.map===1 && !x.bot && isDone(x) && secOK(x));
+  prev.forEach(x=>{ const k=String(x.msection||""); if(best[k]==null || x.round>best[k]) best[k]=x.round; });
+  const add=prev.filter(x=>x.round===best[String(x.msection||"")]);
+  return add.length ? add.concat(list) : list;
+}
+const gvBothNote = ()=> Object.assign(el("div","sm mut"),{textContent:"Both elections of this session, one after the other: Election 1, then Election 2.",style:"margin:2px 0 8px"});
 function analyzeGov(list, teacher){
   const c=el("div","stack"), outs=gvOutcomes(list);
   const maps=[...new Set(outs.map(o=>o.map).filter(Boolean))];
@@ -8096,7 +8110,7 @@ function roundActionBar(){
   const nextR=el("button","ghost-btn","Next round →"); nextR.onclick=()=>runNextRound();
   lockIf(nextR, open, OPEN_LOCK("move to the next round (Reveal, then Next round)"));
   lockIf(nextR, !open && !started, "Today's meeting starts at round 1 — use Open submissions.");
-  if(control.activeGame==="gov"){ lockIf(nextR, gvBothPlayed(), "Both elections have been played — the results are in Review (📊 Review results → this session).");
+  if(control.activeGame==="gov"){ lockIf(nextR, gvBothPlayed(), "Both elections have been played — Reveal shows both here, Election 1 first (also in 📊 Review results → this session).");
     if(!gvBothPlayed() && gvMap()===1) nextR.textContent="Start Election 2 →"; }
   const presentBtn=el("button","ghost-btn","Present ⛶"); presentBtn.title="Show the class the full-screen collection screen (no results)";
   presentBtn.onclick=()=>{ presentMode=true; render(); };
@@ -8325,7 +8339,7 @@ function presentResults(g){
   box.append(lead);
   if(!n){ box.append(Object.assign(el("div","card stage center mut"),{textContent:"No submissions to show for this round."})); return box; }
   _presenting=true;
-  try{ box.append(analysisBody(g, list, false)); }
+  try{ const both = g==="gov" ? gvWithElection1(list, sc) : list; if(both!==list) box.append(gvBothNote()); box.append(analysisBody(g, both, false)); }
   catch(e){ box.append(Object.assign(el("div","note-box"),{textContent:"Couldn't draw the results here — see the console."})); }
   finally{ _presenting=false; }
   return box;
@@ -8389,7 +8403,7 @@ function presentView(){
     const hide=el("button","btn neutral","Hide results"); hide.onclick=()=>writeControl({phase:"waiting"});
     ctr.append(hide);
     // G14 has no generic "next round": Election 1 → "Start Election 2"; after Election 2 the game is over (no loop back)
-    if(g==="gov"){ const nx=gvNextBtn(); if(nx) ctr.append(nx); else if(gvBothPlayed()) ctr.append(Object.assign(el("span","sm mut"),{textContent:"Both elections played — results are in Review",style:"align-self:center"})); }
+    if(g==="gov"){ const nx=gvNextBtn(); if(nx) ctr.append(nx); else if(gvBothPlayed()) ctr.append(Object.assign(el("span","sm mut"),{textContent:"Both elections played — shown above, Election 1 first",style:"align-self:center"})); }
     else { const nextR=el("button","btn","Next round →"); nextR.onclick=()=>runNextRound(); ctr.append(nextR); }
   } else {
     const reveal=el("button","btn gold","Reveal results"); reveal.onclick=()=>{ doReveal(); };
